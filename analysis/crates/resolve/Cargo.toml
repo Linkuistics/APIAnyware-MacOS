@@ -1,0 +1,18 @@
+[package]
+name = "apianyware-macos-resolve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Datalog pass 1: inheritance resolution, effective methods, ownership families"
+
+[dependencies]
+apianyware-macos-types.workspace = true
+apianyware-macos-datalog.workspace = true
+ascent.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

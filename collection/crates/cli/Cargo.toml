@@ -1,0 +1,18 @@
+[package]
+name = "apianyware-macos-collect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CLI: apianyware-macos-collect — extract macOS API metadata from SDK"
+
+[dependencies]
+apianyware-macos-types.workspace = true
+apianyware-macos-extract.workspace = true
+apianyware-macos-extract-swift.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true

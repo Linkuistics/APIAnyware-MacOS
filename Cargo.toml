@@ -1,0 +1,55 @@
+[workspace]
+resolver = "2"
+members = [
+    # Shared types
+    "collection/crates/types",
+    # Collection phase
+    "collection/crates/extract",
+    "collection/crates/extract-swift",
+    "collection/crates/cli",
+    # Analysis phase
+    "analysis/crates/datalog",
+    "analysis/crates/resolve",
+    "analysis/crates/annotate",
+    "analysis/crates/enrich",
+    "analysis/crates/cli",
+    # Generation phase (deferred — uncomment when ready)
+    # "generation/crates/emit",
+    # "generation/crates/emit-racket",
+    # "generation/crates/emit-chez",
+    # "generation/crates/emit-gerbil",
+    # "generation/crates/cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ascent = "0.7"
+anyhow = "1"
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Internal crates
+apianyware-macos-types = { path = "collection/crates/types" }
+apianyware-macos-extract = { path = "collection/crates/extract" }
+apianyware-macos-extract-swift = { path = "collection/crates/extract-swift" }
+apianyware-macos-datalog = { path = "analysis/crates/datalog" }
+apianyware-macos-resolve = { path = "analysis/crates/resolve" }
+apianyware-macos-annotate = { path = "analysis/crates/annotate" }
+apianyware-macos-enrich = { path = "analysis/crates/enrich" }
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+future_incompatible = "warn"
+nonstandard_style = "warn"
+rust_2018_idioms = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
