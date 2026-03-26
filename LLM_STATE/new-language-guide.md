@@ -1,0 +1,210 @@
+# Adding a New Language Target
+
+Step-by-step guide for adding a language target to APIAnyware-MacOS.
+
+## Prerequisites
+
+- Milestone 8 (Test Infrastructure & Workflow) is complete
+- The shared emitter framework (`generation/crates/emit/`) is available
+- At least one language target (Racket) has been completed as a reference
+- The target language has a working FFI mechanism for calling C functions
+
+## Step 1: Plan the language
+
+Create `LLM_STATE/plan-{lang}.md` by instantiating `LLM_STATE/plan-template.md`:
+
+1. Copy the template structure
+2. Fill in the header fields:
+   - **Language** — display name
+   - **Implementations** — which compilers/runtimes (e.g., "GHC" for Haskell, "SBCL, CCL" for Common Lisp)
+   - **Binding styles** — what paradigm variants to generate (e.g., "Monadic, Lens-based")
+   - **Swift dylib** — `libAPIAnyware{Lang}.dylib`
+   - **Milestone** — next available milestone number in `plan.md`
+   - **Emitter crate** — `emit-{lang}`
+   - **Runtime location** — `generation/targets/{lang}/runtime/`
+3. Rename the style-specific steps (X.7, X.8) to match the binding styles
+4. Add any language-specific notes
+
+## Step 2: Create the emitter crate
+
+```
+generation/crates/emit-{lang}/
+  Cargo.toml
+  src/
+    lib.rs
+    naming.rs
+    method_filter.rs
+    emit_class.rs
+    emit_protocol.rs
+    emit_enums.rs
+    emit_constants.rs
+    emit_framework.rs
+```
+
+### Cargo.toml
+
+```toml
+[package]
+name = "apianyware-macos-emit-{lang}"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "{Language} code generation: ..."
+
+[dependencies]
+apianyware-macos-types.workspace = true
+apianyware-macos-emit.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
+```
+
+### Add to workspace
+
+In the root `Cargo.toml`:
+
+1. Add `"generation/crates/emit-{lang}"` to `[workspace] members`
+2. Add `apianyware-macos-emit-{lang} = { path = "generation/crates/emit-{lang}" }` to `[workspace.dependencies]`
+
+### Implement FfiTypeMapper
+
+If the target language needs a different FFI type mapping than any existing language, implement the `FfiTypeMapper` trait:
+
+```rust
+use apianyware_macos_emit::ffi_type_mapping::FfiTypeMapper;
+use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
+
+pub struct {Lang}FfiTypeMapper;
+
+impl FfiTypeMapper for {Lang}FfiTypeMapper {
+    fn map_type(&self, type_ref: &TypeRef, is_return_type: bool) -> String {
+        // Map each TypeRefKind to the target language's FFI type string
+        todo!()
+    }
+}
+```
+
+### Implement LanguageInfo
+
+In `emit_framework.rs`:
+
+```rust
+use apianyware_macos_emit::binding_style::{BindingStyle, LanguageInfo};
+
+pub const {LANG}_LANGUAGE_INFO: LanguageInfo = LanguageInfo {
+    id: "{lang}",
+    display_name: "{Language}",
+    supported_styles: &[BindingStyle::Functional],  // adjust per language
+    default_style: BindingStyle::Functional,
+};
+```
+
+### Key design decisions per language
+
+- **Naming conventions** — how ObjC selectors map to the language's identifier style
+- **Dispatch strategy** — how methods are called (direct FFI, message passing, etc.)
+- **Memory model** — how the language's GC/ownership interacts with ObjC retain/release
+- **Block bridging** — how closures/lambdas become ObjC blocks
+- **Error handling** — how error-out parameters map to the language's error model
+
+Use the Racket emitter (`generation/crates/emit-racket/`) as a reference implementation.
+
+## Step 3: Create the runtime library
+
+Create `generation/targets/{lang}/runtime/` with source files in the target language.
+
+Every runtime must provide:
+
+| Module | Purpose |
+|--------|---------|
+| Swift helpers | Conditional loading of `libAPIAnyware{Lang}.dylib` |
+| Object base | Wrap ObjC pointers with release finalizers |
+| Coercion | Auto-convert native types to ObjC types for method parameters |
+| Block bridging | Create ObjC blocks from native closures |
+| Delegate bridging | Create ObjC delegate instances from native callbacks |
+| Type mapping | String, array, dictionary conversions + geometry structs |
+| Variadic helpers | Alternatives for variadic ObjC methods |
+
+The runtime must work with and without the Swift dylib (graceful fallback to libobjc).
+
+## Step 4: Create or extend the Swift dylib
+
+If the language needs a Swift dylib:
+
+1. Check if `swift/Sources/APIAnyware{Lang}/` exists (Chez and Gerbil have stubs)
+2. If not, create a new product in `swift/Package.swift`:
+   - Add a `.library(name: "APIAnyware{Lang}", type: .dynamic, targets: ["APIAnyware{Lang}"])`
+   - Create `swift/Sources/APIAnyware{Lang}/` importing `APIAnywareCommon`
+3. Add language-specific modules as needed (block bridging, delegate bridging, GC prevention)
+4. Run `swift build` and `swift test`
+
+## Step 5: Register with the generation CLI
+
+In `generation/crates/cli/`:
+
+1. Add the emitter crate as a dependency
+2. Add the language to the `--lang` flag's accepted values
+3. Wire up: `--lang {lang}` → load enriched IR → call emitter → write output
+
+## Step 6: Create golden files
+
+1. Run the emitter against Foundation and AppKit
+2. Review the output for correctness
+3. Check in as golden files for snapshot regression testing
+
+## Step 7: Write smoke tests
+
+Create non-GUI tests in the target language that verify basic binding functionality:
+
+- Object creation and method calls
+- Property get/set
+- Block creation and invocation
+- Type conversions (string, array, dictionary)
+- Error handling patterns
+
+## Step 8: Build sample apps
+
+Implement the 7 standard sample apps (one set per binding style):
+
+1. Read the spec in `generation/apps/specs/{app}.md`
+2. Implement in `generation/targets/{lang}/apps/{style}/{app}/`
+3. Verify it builds and runs
+4. Run TestAnyware validation against it
+
+## Step 9: Validate and review
+
+- All Rust tests pass
+- All snapshot tests pass
+- All smoke tests pass
+- All sample apps pass TestAnyware validation
+- Per-framework exercisers work
+- Documentation requirements recorded
+
+## Reference implementations
+
+- **Racket** — `generation/crates/emit-racket/` and `generation/targets/racket/` — the most complete reference
+- **Shared framework** — `generation/crates/emit/` — common utilities available to all emitters
+- **Swift helpers** — `swift/Sources/APIAnywareCommon/` — shared C-callable ObjC runtime interface
+
+## Checklist
+
+```
+[ ] plan-{lang}.md created from template
+[ ] emit-{lang} crate created, compiles, tests pass
+[ ] Runtime library written, loads in target language
+[ ] Swift dylib builds and FFI verified
+[ ] Registered in generation CLI
+[ ] Golden files checked in
+[ ] Smoke tests pass
+[ ] Sample apps — Style 1 (all 7)
+[ ] Sample apps — Style 2 (all 7, if applicable)
+[ ] TestAnyware validation complete
+[ ] Per-framework exercisers pass
+[ ] Documentation requirements recorded
+[ ] Review gate passed
+[ ] Main plan.md updated with completion status
+```

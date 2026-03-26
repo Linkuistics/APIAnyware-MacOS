@@ -1,0 +1,133 @@
+#lang racket/base
+;; type-mapping.rkt — Conversions between Racket and ObjC Foundation types
+;;
+;; Provides:
+;;   string->nsstring / nsstring->string  — Racket string ↔ NSString
+;;   list->nsarray / nsarray->list        — Racket list ↔ NSArray
+;;   hash->nsdictionary / nsdictionary->hash — Racket hash ↔ NSDictionary
+;;   make-nsrect, make-nspoint, make-nssize — struct constructors
+
+(require ffi/unsafe
+         ffi/unsafe/objc
+         "objc-base.rkt")
+
+(provide string->nsstring
+         nsstring->string
+         list->nsarray
+         nsarray->list
+         hash->nsdictionary
+         nsdictionary->hash
+         make-nspoint
+         make-nssize
+         make-nsrect
+         _NSPoint _NSSize _NSRect _NSRange
+         NSPoint-x NSPoint-y
+         NSSize-width NSSize-height
+         NSRect-origin NSRect-size
+         NSRange-location NSRange-length
+         _NSUInteger _NSInteger)
+
+;; Import Foundation classes
+(import-class NSString NSMutableArray NSDictionary NSMutableDictionary)
+
+;; CoreFoundation for string creation (toll-free bridged with NSString)
+(define cf-lib
+  (ffi-lib "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"))
+(define CFStringCreateWithCString
+  (get-ffi-obj "CFStringCreateWithCString" cf-lib
+    (_fun _pointer _string _uint32 -> _id)))
+(define kCFStringEncodingUTF8 #x08000100)
+
+;; Low-level ObjC runtime for methods with non-id parameters
+(define objc-lib (ffi-lib "libobjc"))
+(define msg-uint64->id
+  (get-ffi-obj "objc_msgSend" objc-lib
+    (_fun _pointer _pointer _uint64 -> _pointer)))
+(define msg-id->id
+  (get-ffi-obj "objc_msgSend" objc-lib
+    (_fun _pointer _pointer _id -> _pointer)))
+
+;; Selectors used internally
+(define sel-objectAtIndex (sel_registerName "objectAtIndex:"))
+(define sel-objectForKey (sel_registerName "objectForKey:"))
+(define sel-count (sel_registerName "count"))
+
+;; arm64 integer types
+(define _NSUInteger _uint64)
+(define _NSInteger _int64)
+
+;; --- NSString conversions ---
+
+;; Convert a Racket string to an NSString (returns raw ObjC pointer, retained +1).
+(define (string->nsstring str)
+  (CFStringCreateWithCString #f str kCFStringEncodingUTF8))
+
+;; Convert an NSString (raw pointer) to a Racket string
+(define (nsstring->string nsstr)
+  (if (not nsstr)
+      ""
+      (tell #:type _string nsstr UTF8String)))
+
+;; --- NSArray conversions ---
+
+;; Convert a Racket list of raw ObjC pointers to an NSArray (retained +1)
+(define (list->nsarray lst)
+  (let ([arr (tell (tell NSMutableArray alloc) init)])
+    (for ([item (in-list lst)])
+      (tell arr addObject: item))
+    arr))
+
+;; Convert an NSArray to a Racket list of raw ObjC pointers
+(define (nsarray->list nsarr)
+  (let ([count (tell #:type _NSUInteger nsarr count)])
+    (for/list ([i (in-range count)])
+      (cast (msg-uint64->id nsarr sel-objectAtIndex i) _pointer _id))))
+
+;; --- NSDictionary conversions ---
+
+;; Convert a Racket hash (string keys → ObjC pointer values) to NSDictionary (retained +1)
+(define (hash->nsdictionary ht)
+  (let ([dict (tell (tell NSMutableDictionary alloc) init)])
+    (for ([(k v) (in-hash ht)])
+      (let ([nskey (string->nsstring k)])
+        (tell dict setObject: v forKey: nskey)
+        (tell nskey release)))
+    dict))
+
+;; Convert an NSDictionary to a Racket hash (string keys → ObjC pointers)
+(define (nsdictionary->hash nsdict)
+  (let* ([keys (tell nsdict allKeys)]
+         [count (tell #:type _NSUInteger keys count)]
+         [ht (make-hash)])
+    (for ([i (in-range count)])
+      (let* ([key (cast (msg-uint64->id keys sel-objectAtIndex i) _pointer _id)]
+             [val (cast (msg-id->id nsdict sel-objectForKey key) _pointer _id)]
+             [key-str (nsstring->string key)])
+        (hash-set! ht key-str val)))
+    ht))
+
+;; --- Geometry struct types ---
+;; These match the arm64 ABI layout.
+
+;; NSPoint / CGPoint: {x: double, y: double}
+(define-cstruct _NSPoint ([x _double] [y _double]))
+
+;; NSSize / CGSize: {width: double, height: double}
+(define-cstruct _NSSize ([width _double] [height _double]))
+
+;; NSRect / CGRect: {origin: NSPoint, size: NSSize}
+(define-cstruct _NSRect ([origin _NSPoint] [size _NSSize]))
+
+;; NSRange: {location: uint64, length: uint64}
+(define-cstruct _NSRange ([location _uint64] [length _uint64]))
+
+;; Convenience constructors
+(define (make-nspoint x y)
+  (make-NSPoint (exact->inexact x) (exact->inexact y)))
+
+(define (make-nssize w h)
+  (make-NSSize (exact->inexact w) (exact->inexact h)))
+
+(define (make-nsrect x y w h)
+  (make-NSRect (make-NSPoint (exact->inexact x) (exact->inexact y))
+               (make-NSSize (exact->inexact w) (exact->inexact h))))

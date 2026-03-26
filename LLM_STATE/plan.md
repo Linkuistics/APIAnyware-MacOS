@@ -3,7 +3,10 @@
 Build a three-phase pipeline (Collection → Analysis → Generation) for extracting, analyzing, and generating language bindings for macOS platform APIs.
 
 Full spec: `docs/specs/2026-03-26-macos-workspace-design.md`
+Restructure spec: `docs/specs/2026-03-27-plan-restructure-design.md`
 POC project: `../APIAnyware/` (harvest code from here)
+TestAnyware: `../TestAnyware/` (GUI testing — use dev build, can fix bugs in-place)
+The Great Explainer: `../TheGreatExplainer/` (documentation generation — requirements only for now)
 
 ## Session Continuation Prompt
 
@@ -12,11 +15,14 @@ You MUST first read `LLM_CONTEXT/index.md` and `LLM_CONTEXT/coding-style.md`.
 
 Then continue working on the task outlined in `LLM_STATE/plan.md`.
 Review the file to see current progress, then continue from the next incomplete step.
+For language-specific work, also read the sub-plan: `LLM_STATE/plan-{lang}.md`.
 
 Design spec: `docs/specs/2026-03-26-macos-workspace-design.md`
+Restructure spec: `docs/specs/2026-03-27-plan-restructure-design.md`
+Language template: `LLM_STATE/plan-template.md`
 POC to harvest from: `../APIAnyware/`
 
-After completing each step, update this plan file with:
+After completing each step, update the relevant plan file with:
 1. Mark the step as complete [x]
 2. Add any learnings discovered
 
@@ -276,18 +282,144 @@ Build the shared emitter framework, port the Racket emitter from POC, then add e
   - [x] `APIAnywareChez` and `APIAnywareGerbil` — stubs importing Common
   - [x] 64 tests passing: 7 Common test files (MessageSend 15, ClassLookup 5, MemoryManagement 2, AutoreleasePool 3, StringConversion 4, StructMarshal 13, ObservationBridge 3) + 3 Racket test files (GCPrevention 5, BlockBridge 8, DelegateBridge 7)
   - [x] All 3 dylibs build successfully: libAPIAnywareRacket.dylib, libAPIAnywareChez.dylib, libAPIAnywareGerbil.dylib
-- [ ] 7.3 Port Racket emitter + runtime (OO + functional styles)
-- [ ] 7.4 Add Chez Scheme emitter + runtime (functional style)
-- [ ] 7.5 Add Gerbil Scheme emitter + runtime (OO + functional styles)
-- [ ] 7.6 Add Common Lisp emitter + runtime (CLOS + functional styles; SBCL and CCL)
-- [ ] 7.7 Add Haskell emitter + runtime (monadic + lens-based)
-- [ ] 7.8 Add Idris2 emitter + runtime (dependently-typed wrappers)
-- [ ] 7.9 Add OCaml emitter + runtime (modules + OO styles)
-- [ ] 7.10 Add Prolog/Mercury emitter + runtime (relational style)
-- [ ] 7.11 Add Rhombus emitter + runtime (OO style)
-- [ ] 7.12 Add Pharo Smalltalk emitter + runtime (message-passing OO)
-- [ ] 7.13 Add Zig emitter + runtime (low-level procedural)
-- [ ] 7.14 Generated documentation with cross-references to Apple docs
+- [x] 7.3 Port Racket emitter + runtime (OO + functional styles)
+  - [x] `emit-racket` crate: 8 modules ported from POC (naming, method_filter, shared_signatures, emit_class, emit_protocol, emit_enums, emit_constants, emit_framework)
+  - [x] Adapted imports: `apianyware_core::ir` → `apianyware_macos_types::ir` + `type_ref`, `apianyware_emit` → `apianyware_macos_emit`
+  - [x] Adapted for new IR types: `Enum.enum_type` is `TypeRef` (not `String`), `EnumValue.value` is `i64` (not `String`), Method has `source`/`provenance`/`doc_refs` fields
+  - [x] Added `is_family_match` support for Swift-style `init(...)` selectors (POC didn't have this)
+  - [x] Framework header uses generic format string instead of per-framework match arms
+  - [x] `RACKET_LANGUAGE_INFO` constant declares OO + Functional binding styles
+  - [x] `EmitResult` uses shared type from emit crate (not POC's local struct)
+  - [x] 7 Racket runtime files ported to `generation/targets/racket/runtime/`
+  - [x] Updated dylib name: `libanyware_racket` → `libAPIAnywareRacket` in `swift-helpers.rkt`
+  - [x] 20 tests passing, workspace builds clean (236 total), `cargo +nightly fmt` applied
+**Milestones 7.4–7.14 superseded.** Language targets are now individual milestones (9–19) with comprehensive substeps. See `docs/specs/2026-03-27-plan-restructure-design.md`.
+
+---
+
+### Milestone 8: Test Infrastructure & Workflow
+
+Build the machinery that every language target uses. Must complete before any language target finishes.
+
+- [ ] 8.1 Generation CLI (`apianyware-macos-generate`)
+  - [ ] Binary crate at `generation/crates/cli/`
+  - [ ] `--lang` flag selects language (default: all registered)
+  - [ ] Reads enriched IR from `analysis/ir/enriched/`
+  - [ ] Invokes registered emitter, writes to `generation/targets/{lang}/generated/{style}/{framework}/`
+  - [ ] `--list-languages` shows available emitters and their binding styles
+- [ ] 8.2 Snapshot test harness
+  - [ ] Framework for golden-file regression tests
+  - [ ] Per-language, per-binding-style golden sets
+  - [ ] Integrated into `cargo test`
+- [ ] 8.3 Sample app specifications
+  - [ ] `generation/apps/specs/hello-window.md`
+  - [ ] `generation/apps/specs/counter.md`
+  - [ ] `generation/apps/specs/ui-controls-gallery.md`
+  - [ ] `generation/apps/specs/file-lister.md`
+  - [ ] `generation/apps/specs/text-editor.md`
+  - [ ] `generation/apps/specs/mini-browser.md`
+  - [ ] `generation/apps/specs/menu-bar-tool.md`
+  - [ ] `generation/apps/tests/` — language-independent TestAnyware validation steps per app
+- [ ] 8.4 TestAnyware workflow documentation
+  - [ ] LLM-driven QA workflow: boot VM, build app, launch, screenshot-driven exploration
+  - [ ] Uses dev build from `../TestAnyware/` (can fix bugs in-place, see `TestAnyware/docs/driver-project-setup.md`)
+  - [ ] Conventions for test artifacts (screenshots, reports)
+- [ ] 8.5 New language guide
+  - [ ] `LLM_STATE/new-language-guide.md` — step-by-step instructions for adding a language target
+
+### Milestone 9: Racket (OO + Functional)
+
+First language target — proves the template. See `LLM_STATE/plan-racket.md` for full details.
+
+- [x] 9.1 Emitter crate (20 tests)
+- [x] 9.2 Runtime library (7 files)
+- [ ] 9.3 Swift dylib integration (FFI verification from Racket)
+- [ ] 9.4 Generation CLI wiring
+- [ ] 9.5 Snapshot tests
+- [ ] 9.6 Language-side smoke tests
+- [ ] 9.7 Sample apps — OO style (8 apps)
+- [ ] 9.8 Sample apps — Functional style (8 apps)
+- [ ] 9.9 TestAnyware validation
+- [ ] 9.10 Per-framework exercisers
+- [ ] 9.11 Documentation placeholder
+
+### Milestone 10: Chez Scheme (Functional)
+
+See `LLM_STATE/plan-chez.md` (created when work begins).
+
+- [ ] 10.1–10.11 (follows template, single binding style)
+
+### Milestone 11: Gerbil Scheme (OO + Functional)
+
+See `LLM_STATE/plan-gerbil.md` (created when work begins).
+
+- [ ] 11.1–11.11 (follows template)
+
+### Milestone 12: Haskell (Monadic + Lens-based)
+
+See `LLM_STATE/plan-haskell.md` (created when work begins).
+
+- [ ] 12.1–12.11 (follows template)
+
+### Milestone 13: OCaml (Modules + OO)
+
+See `LLM_STATE/plan-ocaml.md` (created when work begins).
+
+- [ ] 13.1–13.11 (follows template)
+
+### Milestone 14: Prolog/Mercury (Relational)
+
+See `LLM_STATE/plan-prolog.md` (created when work begins).
+
+- [ ] 14.1–14.11 (follows template, single binding style)
+
+### Milestone 15: Idris2 (Dependently-typed)
+
+See `LLM_STATE/plan-idris2.md` (created when work begins).
+
+- [ ] 15.1–15.11 (follows template, single binding style)
+
+### Milestone 16: Common Lisp (CLOS + Functional; SBCL and CCL)
+
+See `LLM_STATE/plan-cl.md` (created when work begins).
+
+- [ ] 16.1–16.11 (follows template, two implementations)
+
+### Milestone 17: Rhombus (OO)
+
+See `LLM_STATE/plan-rhombus.md` (created when work begins).
+
+- [ ] 17.1–17.11 (follows template, single binding style)
+
+### Milestone 18: Pharo Smalltalk (Message-passing OO)
+
+See `LLM_STATE/plan-smalltalk.md` (created when work begins).
+
+- [ ] 18.1–18.11 (follows template, single binding style)
+
+### Milestone 19: Zig (Procedural)
+
+See `LLM_STATE/plan-zig.md` (created when work begins).
+
+- [ ] 19.1–19.11 (follows template, single binding style)
+
+### Milestone 20: The Great Explainer — Requirements
+
+Create the companion project and define requirements. See `../TheGreatExplainer/`.
+
+- [ ] 20.1 Create project structure and README
+- [ ] 20.2 Write requirements document (driven by APIAnyware-MacOS needs)
+- [ ] 20.3 Define integration contract (input: enriched IR + bindings + sample apps → output: docs)
+- [ ] 20.4 Sketch architecture for tutorial validation (container/VM-based step verification)
+
+### Milestone 21: Documentation Pass
+
+Blocked on The Great Explainer. Apply to all completed language targets.
+
+- [ ] 21.1 API reference generation for each language
+- [ ] 21.2 Tutorial generation for each language (paradigm-appropriate)
+- [ ] 21.3 Tutorial validation (every code snippet runs, every step verified)
+- [ ] 21.4 Cross-references to Apple documentation
 
 ## Learnings
 
@@ -330,3 +462,6 @@ Build the shared emitter framework, port the Racket emitter from POC, then add e
 - **Added snake_case utilities for non-Lisp emitters:** The POC only had kebab-case (for Racket). Added `camel_to_snake` and `selector_to_snake_name` for languages like Haskell, OCaml, and Zig that use snake_case conventions.
 - **Pattern dispatch separates classification from rendering:** `classify_pattern` maps stereotypes to `IdiomaticConstruct` variants (language-neutral). Each language emitter then renders the construct in its own syntax. DelegateProtocol and TargetAction are PassThrough because they're handled inline during class generation, not as separate constructs.
 - **Swift helper dylibs port verbatim:** The POC's `swift/` directory has no Rust dependencies — it's pure Swift using `@_cdecl`, `@_silgen_name`, `dlsym`, and ObjC runtime APIs. All 7 Common modules and 4 Racket modules ported without changes. The package name changed from `APIAnyware` to `APIAnywareMacOS` to match the new project. All 64 tests pass immediately after port.
+- **Racket emitter ports cleanly with type adaptations:** The emit-racket crate ports from POC with three IR type changes: `Enum.enum_type` is `TypeRef` (not `String`), `EnumValue.value` is `i64` (not `String`), and Method now has `source`/`provenance`/`doc_refs` optional fields. The `{}`-formatting of `i64` in Racket `(define name value)` works identically to the POC's string values.
+- **Racket runtime dylib name must match Swift package product:** The POC used `libanyware_racket` but the new project builds `libAPIAnywareRacket.dylib` (matching the Swift package product name `APIAnywareRacket`). Only `swift-helpers.rkt` references the dylib name — all other runtime files use `swift-helpers.rkt` indirectly.
+- **Framework header simplified from POC:** The POC had per-framework match arms for AppKit/Foundation in `emit_header`. The new version uses a single format string `"/System/Library/Frameworks/{0}.framework/{0}"` — all frameworks follow this path convention on macOS, so the special cases were unnecessary.
