@@ -331,12 +331,18 @@ fn extract_protocol(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Protocol
         EntityVisitResult::Continue
     });
 
+    let provenance = extract_provenance(entity, sdk_path);
+    let doc_refs = extract_doc_refs(entity);
+
     Some(ir::Protocol {
         name,
         inherits,
         required_methods,
         optional_methods,
         properties,
+        source: Some(DeclarationSource::ObjcHeader),
+        provenance: Some(provenance),
+        doc_refs: Some(doc_refs),
     })
 }
 
@@ -408,7 +414,7 @@ fn extract_category(
 // Enum extraction
 // ---------------------------------------------------------------------------
 
-fn extract_enum(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Enum> {
+fn extract_enum(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Enum> {
     let name = entity.get_name()?;
 
     let enum_clang_type = entity.get_enum_underlying_type()?;
@@ -429,10 +435,16 @@ fn extract_enum(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Enum> {
         EntityVisitResult::Continue
     });
 
+    let provenance = extract_provenance(entity, sdk_path);
+    let doc_refs = extract_doc_refs(entity);
+
     Some(ir::Enum {
         name,
         enum_type,
         values,
+        source: Some(DeclarationSource::ObjcHeader),
+        provenance: Some(provenance),
+        doc_refs: Some(doc_refs),
     })
 }
 
@@ -440,7 +452,7 @@ fn extract_enum(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Enum> {
 // Struct extraction
 // ---------------------------------------------------------------------------
 
-fn extract_struct(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Struct> {
+fn extract_struct(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Struct> {
     let name = entity.get_name()?;
 
     let mut fields = Vec::new();
@@ -458,14 +470,23 @@ fn extract_struct(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Struct> {
         EntityVisitResult::Continue
     });
 
-    Some(ir::Struct { name, fields })
+    let provenance = extract_provenance(entity, sdk_path);
+    let doc_refs = extract_doc_refs(entity);
+
+    Some(ir::Struct {
+        name,
+        fields,
+        source: Some(DeclarationSource::ObjcHeader),
+        provenance: Some(provenance),
+        doc_refs: Some(doc_refs),
+    })
 }
 
 // ---------------------------------------------------------------------------
 // Function extraction
 // ---------------------------------------------------------------------------
 
-fn extract_function(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Function> {
+fn extract_function(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Function> {
     let name = entity.get_name()?;
 
     // Skip compiler intrinsics and internal functions
@@ -482,12 +503,18 @@ fn extract_function(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Functio
     // Check if the function is declared as inline
     let inline = entity.is_inline_function();
 
+    let provenance = extract_provenance(entity, sdk_path);
+    let doc_refs = extract_doc_refs(entity);
+
     Some(ir::Function {
         name,
         params,
         return_type,
         inline,
         variadic,
+        source: Some(DeclarationSource::ObjcHeader),
+        provenance: Some(provenance),
+        doc_refs: Some(doc_refs),
     })
 }
 
@@ -495,7 +522,7 @@ fn extract_function(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Functio
 // Constant extraction
 // ---------------------------------------------------------------------------
 
-fn extract_constant(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Constant> {
+fn extract_constant(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Constant> {
     let name = entity.get_name()?;
 
     // Skip internal/private constants
@@ -506,9 +533,15 @@ fn extract_constant(entity: &Entity<'_>, _sdk_path: &Path) -> Option<ir::Constan
     let constant_clang_type = entity.get_type()?;
     let constant_type = map_type(&constant_clang_type);
 
+    let provenance = extract_provenance(entity, sdk_path);
+    let doc_refs = extract_doc_refs(entity);
+
     Some(ir::Constant {
         name,
         constant_type,
+        source: Some(DeclarationSource::ObjcHeader),
+        provenance: Some(provenance),
+        doc_refs: Some(doc_refs),
     })
 }
 

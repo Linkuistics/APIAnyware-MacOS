@@ -81,6 +81,10 @@ pub fn map_abi_to_framework(doc: &AbiDocument, sdk_version: &str) -> ir::Framewo
         structs,
         functions,
         constants,
+        class_annotations: vec![],
+        api_patterns: vec![],
+        enrichment: None,
+        verification: None,
         ir_level: None,
     }
 }
@@ -190,6 +194,9 @@ fn map_protocol(node: &AbiNode) -> Option<ir::Protocol> {
         required_methods,
         optional_methods,
         properties,
+        source: Some(DeclarationSource::SwiftInterface),
+        provenance: build_provenance(node),
+        doc_refs: build_doc_refs(node),
     })
 }
 
@@ -223,6 +230,9 @@ fn map_enum(node: &AbiNode) -> Option<ir::Enum> {
             },
         },
         values,
+        source: Some(DeclarationSource::SwiftInterface),
+        provenance: build_provenance(node),
+        doc_refs: build_doc_refs(node),
     })
 }
 
@@ -246,6 +256,9 @@ fn map_struct(node: &AbiNode) -> Option<ir::Struct> {
     Some(ir::Struct {
         name: node.name.clone(),
         fields,
+        source: Some(DeclarationSource::SwiftInterface),
+        provenance: build_provenance(node),
+        doc_refs: build_doc_refs(node),
     })
 }
 
@@ -408,6 +421,9 @@ fn map_top_level_function(node: &AbiNode) -> Option<ir::Function> {
         return_type,
         inline: false,
         variadic: false,
+        source: Some(DeclarationSource::SwiftInterface),
+        provenance: build_provenance(node),
+        doc_refs: build_doc_refs(node),
     })
 }
 
@@ -420,6 +436,9 @@ fn map_top_level_constant(node: &AbiNode) -> Option<ir::Constant> {
     Some(ir::Constant {
         name: node.name.clone(),
         constant_type: map_swift_type(type_node),
+        source: Some(DeclarationSource::SwiftInterface),
+        provenance: build_provenance(node),
+        doc_refs: build_doc_refs(node),
     })
 }
 

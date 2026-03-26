@@ -1,9 +1,9 @@
 //! Tests: round-trip serialization/deserialization of annotation types.
 
 use apianyware_macos_types::annotation::{
-    AnnotationOverride, AnnotationOverrides, AnnotationSource, BlockInvocationStyle,
+    AnnotationOverride, AnnotationOverrides, AnnotationSource, ApiPattern, BlockInvocationStyle,
     BlockParamAnnotation, ClassAnnotations, ErrorPattern, FrameworkAnnotations, MethodAnnotation,
-    OwnershipKind, ParamOwnership, ThreadingConstraint,
+    OwnershipKind, ParamOwnership, PatternConstraint, PatternStereotype, ThreadingConstraint,
 };
 
 #[test]
@@ -180,4 +180,74 @@ fn empty_optional_fields_skipped_in_serialization() {
     assert!(!json.contains("block_parameters"));
     assert!(!json.contains("threading"));
     assert!(!json.contains("error_pattern"));
+}
+
+#[test]
+fn api_pattern_roundtrip() {
+    let pattern = ApiPattern {
+        stereotype: PatternStereotype::ResourceLifecycle,
+        name: "NSMutableAttributedString editing session".to_string(),
+        participants: serde_json::json!({
+            "open": {"class": "NSMutableAttributedString", "selector": "beginEditing"},
+            "operations": [
+                {"class": "NSMutableAttributedString", "selector": "addAttribute:value:range:"}
+            ],
+            "close": {"class": "NSMutableAttributedString", "selector": "endEditing"}
+        }),
+        constraints: vec![
+            PatternConstraint {
+                kind: "ordering".to_string(),
+                description: "beginEditing must precede mutations; endEditing must follow"
+                    .to_string(),
+            },
+            PatternConstraint {
+                kind: "thread_safety".to_string(),
+                description: "not thread-safe; all calls must be on same thread".to_string(),
+            },
+        ],
+        source: AnnotationSource::Llm,
+        doc_ref: Some(
+            "Attributed String Programming Guide > Changing an Attributed String".to_string(),
+        ),
+    };
+
+    let json = serde_json::to_string_pretty(&pattern).unwrap();
+    let deserialized: ApiPattern = serde_json::from_str(&json).unwrap();
+
+    assert_eq!(
+        deserialized.stereotype,
+        PatternStereotype::ResourceLifecycle
+    );
+    assert_eq!(
+        deserialized.name,
+        "NSMutableAttributedString editing session"
+    );
+    assert_eq!(deserialized.constraints.len(), 2);
+    assert_eq!(deserialized.constraints[0].kind, "ordering");
+    assert_eq!(deserialized.source, AnnotationSource::Llm);
+    assert!(deserialized.doc_ref.is_some());
+}
+
+#[test]
+fn pattern_stereotype_serialization() {
+    assert_eq!(
+        serde_json::to_string(&PatternStereotype::ResourceLifecycle).unwrap(),
+        "\"resource_lifecycle\""
+    );
+    assert_eq!(
+        serde_json::to_string(&PatternStereotype::ObserverPair).unwrap(),
+        "\"observer_pair\""
+    );
+    assert_eq!(
+        serde_json::to_string(&PatternStereotype::PairedState).unwrap(),
+        "\"paired_state\""
+    );
+    assert_eq!(
+        serde_json::to_string(&PatternStereotype::FactoryCluster).unwrap(),
+        "\"factory_cluster\""
+    );
+    assert_eq!(
+        serde_json::to_string(&PatternStereotype::TargetAction).unwrap(),
+        "\"target_action\""
+    );
 }

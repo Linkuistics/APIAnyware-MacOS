@@ -77,3 +77,16 @@ pub enum TypeRefKind {
     #[serde(rename = "struct")]
     Struct { name: String },
 }
+
+impl TypeRef {
+    /// Create a `void` type reference (used as placeholder for cross-framework methods
+    /// where the original declaration is not available in the current framework).
+    pub fn void() -> Self {
+        Self {
+            nullable: false,
+            kind: TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        }
+    }
+}

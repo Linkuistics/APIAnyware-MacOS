@@ -181,6 +181,10 @@ mod tests {
             structs: vec![],
             functions: vec![],
             constants: vec![],
+            class_annotations: vec![],
+            api_patterns: vec![],
+            enrichment: None,
+            verification: None,
             ir_level: None,
         }
     }
@@ -272,6 +276,9 @@ mod tests {
             required_methods: vec![],
             optional_methods: vec![],
             properties: vec![],
+            source: None,
+            provenance: None,
+            doc_refs: None,
         });
 
         let mut swift = empty_framework("TestKit");
@@ -281,6 +288,9 @@ mod tests {
             required_methods: vec![],
             optional_methods: vec![],
             properties: vec![],
+            source: None,
+            provenance: None,
+            doc_refs: None,
         });
         swift.protocols.push(ir::Protocol {
             name: "SwiftProto".to_string(), // New: add
@@ -288,6 +298,9 @@ mod tests {
             required_methods: vec![],
             optional_methods: vec![],
             properties: vec![],
+            source: None,
+            provenance: None,
+            doc_refs: None,
         });
 
         merge_swift_into_objc(&mut objc, swift);

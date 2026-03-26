@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::annotation::{ApiPattern, ClassAnnotations};
+use crate::enrichment::{EnrichmentData, VerificationReport};
 use crate::provenance::{DeclarationSource, DocRefs, SourceProvenance};
 use crate::serde_helpers::null_as_empty_vec;
 use crate::type_ref::TypeRef;
@@ -74,6 +76,24 @@ pub struct Framework {
     /// Global constants and extern variables.
     #[serde(default, deserialize_with = "null_as_empty_vec")]
     pub constants: Vec<Constant>,
+
+    // --- Annotated phase additions ---
+    /// Per-class method annotations (populated by annotate step).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub class_annotations: Vec<ClassAnnotations>,
+
+    /// Multi-method behavioral patterns (populated by annotate step).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub api_patterns: Vec<ApiPattern>,
+
+    // --- Enriched phase additions ---
+    /// Annotation-derived enrichment relations (populated by enrich step).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enrichment: Option<EnrichmentData>,
+
+    /// Verification report (populated by enrich step).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification: Option<VerificationReport>,
 
     // --- Legacy POC fields (read-only backward compatibility) ---
     /// Legacy: IR level from POC (0 = collected, 1 = resolved). Ignored in new format.
@@ -292,6 +312,18 @@ pub struct Protocol {
     /// Properties declared by this protocol.
     #[serde(default)]
     pub properties: Vec<Property>,
+
+    /// Which extractor produced this declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<DeclarationSource>,
+
+    /// Source location and availability information.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<SourceProvenance>,
+
+    /// Documentation references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_refs: Option<DocRefs>,
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +343,18 @@ pub struct Enum {
     /// Enum values (name + integer value pairs).
     #[serde(default)]
     pub values: Vec<EnumValue>,
+
+    /// Which extractor produced this declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<DeclarationSource>,
+
+    /// Source location and availability information.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<SourceProvenance>,
+
+    /// Documentation references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_refs: Option<DocRefs>,
 }
 
 /// Single value in an enumeration.
@@ -335,6 +379,18 @@ pub struct Struct {
     /// Struct fields.
     #[serde(default)]
     pub fields: Vec<StructField>,
+
+    /// Which extractor produced this declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<DeclarationSource>,
+
+    /// Source location and availability information.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<SourceProvenance>,
+
+    /// Documentation references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_refs: Option<DocRefs>,
 }
 
 /// Field within a C struct.
@@ -371,6 +427,18 @@ pub struct Function {
     /// Whether this function accepts variadic arguments.
     #[serde(default)]
     pub variadic: bool,
+
+    /// Which extractor produced this declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<DeclarationSource>,
+
+    /// Source location and availability information.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<SourceProvenance>,
+
+    /// Documentation references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_refs: Option<DocRefs>,
 }
 
 // ---------------------------------------------------------------------------
@@ -385,4 +453,16 @@ pub struct Constant {
     /// Constant type.
     #[serde(rename = "type")]
     pub constant_type: TypeRef,
+
+    /// Which extractor produced this declaration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<DeclarationSource>,
+
+    /// Source location and availability information.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<SourceProvenance>,
+
+    /// Documentation references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_refs: Option<DocRefs>,
 }

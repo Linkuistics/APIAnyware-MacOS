@@ -1,0 +1,559 @@
+//! Naming-convention heuristics for classifying ObjC API semantics.
+//!
+//! These heuristics derive annotations from selector names and type signatures.
+//! They serve as a validation cross-check against LLM-derived annotations:
+//! agreement = high confidence, disagreement = flag for human review.
+
+use apianyware_macos_types::annotation::{
+    AnnotationSource, BlockInvocationStyle, BlockParamAnnotation, ErrorPattern, MethodAnnotation,
+    OwnershipKind, ParamOwnership, ThreadingConstraint,
+};
+use apianyware_macos_types::ir::Method;
+use apianyware_macos_types::type_ref::TypeRefKind;
+
+/// Derive heuristic annotations for a single method.
+pub fn annotate_method_heuristic(class_name: &str, method: &Method) -> MethodAnnotation {
+    let selector = &method.selector;
+    let is_instance = !method.class_method;
+
+    let parameter_ownership = derive_parameter_ownership(class_name, selector, method);
+    let block_parameters = derive_block_parameters(selector, method);
+    let threading = derive_threading(class_name, selector);
+    let error_pattern = derive_error_pattern(method);
+
+    MethodAnnotation {
+        selector: selector.clone(),
+        is_instance,
+        parameter_ownership,
+        block_parameters,
+        threading,
+        error_pattern,
+        source: AnnotationSource::Heuristic,
+    }
+}
+
+/// Derive parameter ownership from selector naming conventions.
+///
+/// - "delegate" or "dataSource" params are weak
+/// - Block params are copied
+/// - Everything else is strong (default, not emitted)
+fn derive_parameter_ownership(
+    _class_name: &str,
+    selector: &str,
+    method: &Method,
+) -> Vec<ParamOwnership> {
+    let mut result = Vec::new();
+
+    let selector_parts: Vec<&str> = selector.split(':').collect();
+
+    for (i, param) in method.params.iter().enumerate() {
+        let ownership = if is_delegate_param(selector, &selector_parts, i, &param.name) {
+            OwnershipKind::Weak
+        } else if matches!(param.param_type.kind, TypeRefKind::Block { .. }) {
+            OwnershipKind::Copy
+        } else {
+            // Strong is the default — only emit non-default annotations
+            continue;
+        };
+
+        result.push(ParamOwnership {
+            param_index: i,
+            ownership,
+        });
+    }
+
+    result
+}
+
+/// Check if a parameter is likely a delegate or data source (weak reference).
+fn is_delegate_param(
+    selector: &str,
+    selector_parts: &[&str],
+    param_index: usize,
+    param_name: &str,
+) -> bool {
+    let name_lower = param_name.to_lowercase();
+    let sel_lower = selector.to_lowercase();
+
+    // Direct name matching
+    if name_lower.contains("delegate") || name_lower.contains("datasource") {
+        return true;
+    }
+
+    // Selector part matching (e.g., "setDelegate:" -> first param is delegate)
+    if let Some(part) = selector_parts.get(param_index) {
+        let part_lower = part.to_lowercase();
+        if part_lower.contains("delegate") || part_lower.contains("datasource") {
+            return true;
+        }
+    }
+
+    // Known setter patterns
+    if sel_lower == "setdelegate:" || sel_lower == "setdatasource:" {
+        return param_index == 0;
+    }
+
+    false
+}
+
+/// Derive block parameter invocation style from selector naming.
+fn derive_block_parameters(selector: &str, method: &Method) -> Vec<BlockParamAnnotation> {
+    let mut result = Vec::new();
+
+    for (i, param) in method.params.iter().enumerate() {
+        if !matches!(param.param_type.kind, TypeRefKind::Block { .. }) {
+            continue;
+        }
+
+        let invocation = classify_block_invocation(selector, i, method.params.len());
+        result.push(BlockParamAnnotation {
+            param_index: i,
+            invocation,
+        });
+    }
+
+    result
+}
+
+/// Classify a block parameter as synchronous, async-copied, or stored based on naming.
+fn classify_block_invocation(
+    selector: &str,
+    param_index: usize,
+    total_params: usize,
+) -> BlockInvocationStyle {
+    let sel_lower = selector.to_lowercase();
+
+    // Synchronous patterns: enumerate, sort, compare, predicate, filter
+    let sync_patterns = [
+        "enumerate",
+        "sortedarray",
+        "sortusing",
+        "comparator",
+        "predicate",
+        "filteredarray",
+        "filtered",
+        "indexofobject",
+        "indexesofobjects",
+        "passingtest",
+    ];
+    for pattern in &sync_patterns {
+        if sel_lower.contains(pattern) {
+            return BlockInvocationStyle::Synchronous;
+        }
+    }
+
+    // Async patterns: completion, handler, callback, reply
+    let async_patterns = ["completion", "handler", "callback", "reply", "withresponse"];
+    for pattern in &async_patterns {
+        if sel_lower.contains(pattern) {
+            return BlockInvocationStyle::AsyncCopied;
+        }
+    }
+
+    // If the block is the last param and the method name suggests async operation
+    if param_index == total_params - 1 {
+        let async_method_patterns = [
+            "datatask", "download", "upload", "fetch", "load", "perform", "animate",
+        ];
+        for pattern in &async_method_patterns {
+            if sel_lower.contains(pattern) {
+                return BlockInvocationStyle::AsyncCopied;
+            }
+        }
+    }
+
+    // Stored patterns: observer, notification, handler registration
+    let stored_patterns = ["addobserver", "observe", "notification", "addoperation"];
+    for pattern in &stored_patterns {
+        if sel_lower.contains(pattern) {
+            return BlockInvocationStyle::Stored;
+        }
+    }
+
+    // Default: async-copied (safer assumption — explicit free is only needed for sync)
+    BlockInvocationStyle::AsyncCopied
+}
+
+/// Derive threading constraints from class/selector naming.
+fn derive_threading(class_name: &str, selector: &str) -> Option<ThreadingConstraint> {
+    // UI classes are main-thread-only
+    let main_thread_classes = [
+        "NSView",
+        "NSWindow",
+        "NSButton",
+        "NSTextField",
+        "NSTextView",
+        "NSTableView",
+        "NSOutlineView",
+        "NSCollectionView",
+        "NSStackView",
+        "NSScrollView",
+        "NSClipView",
+        "NSSplitView",
+        "NSTabView",
+        "NSMenuItem",
+        "NSMenu",
+        "NSToolbar",
+        "NSToolbarItem",
+        "NSAlert",
+        "NSPanel",
+        "NSSavePanel",
+        "NSOpenPanel",
+        "NSColorPanel",
+        "NSFontPanel",
+        "NSApplication",
+        "NSWorkspace",
+        "NSImage",
+        "NSBitmapImageRep",
+        // UIKit equivalents (future-proofing)
+        "UIView",
+        "UIWindow",
+        "UIButton",
+        "UILabel",
+        "UITextField",
+        "UITableView",
+        "UICollectionView",
+        "UIViewController",
+    ];
+
+    if main_thread_classes.contains(&class_name) {
+        return Some(ThreadingConstraint::MainThreadOnly);
+    }
+
+    // UI-related selectors on any class
+    let main_thread_selectors = [
+        "display",
+        "setNeedsDisplay",
+        "setNeedsLayout",
+        "layout",
+        "drawRect:",
+        "updateLayer",
+    ];
+    if main_thread_selectors.contains(&selector) {
+        return Some(ThreadingConstraint::MainThreadOnly);
+    }
+
+    // No heuristic available for most methods
+    None
+}
+
+/// Derive error handling pattern from method signature.
+fn derive_error_pattern(method: &Method) -> Option<ErrorPattern> {
+    // Check for NSError** out-param (last parameter is pointer to NSError class)
+    if let Some(last_param) = method.params.last() {
+        // NSError** appears as Pointer type with name containing "error"
+        let name_lower = last_param.name.to_lowercase();
+        if name_lower == "error" || name_lower.ends_with("error") {
+            if matches!(last_param.param_type.kind, TypeRefKind::Pointer) {
+                return Some(ErrorPattern::ErrorOutParam);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use apianyware_macos_types::ir::Param;
+    use apianyware_macos_types::type_ref::TypeRef;
+
+    fn make_type_id() -> TypeRef {
+        TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Id,
+        }
+    }
+
+    fn make_type_block() -> TypeRef {
+        TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Block {
+                params: vec![],
+                return_type: Box::new(TypeRef {
+                    nullable: false,
+                    kind: TypeRefKind::Primitive {
+                        name: "void".to_string(),
+                    },
+                }),
+            },
+        }
+    }
+
+    fn make_type_pointer() -> TypeRef {
+        TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Pointer,
+        }
+    }
+
+    fn make_method(
+        selector: &str,
+        class_method: bool,
+        params: Vec<Param>,
+        return_type: TypeRef,
+    ) -> Method {
+        Method {
+            selector: selector.to_string(),
+            class_method,
+            init_method: false,
+            params,
+            return_type,
+            deprecated: false,
+            variadic: false,
+            source: None,
+            provenance: None,
+            doc_refs: None,
+            origin: None,
+            category: None,
+            overrides: None,
+            returns_retained: None,
+            satisfies_protocol: None,
+        }
+    }
+
+    #[test]
+    fn test_delegate_param_detection() {
+        let method = make_method(
+            "setDelegate:",
+            false,
+            vec![Param {
+                name: "delegate".to_string(),
+                param_type: make_type_id(),
+            }],
+            TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "void".to_string(),
+                },
+            },
+        );
+
+        let ann = annotate_method_heuristic("NSWindow", &method);
+        assert_eq!(ann.parameter_ownership.len(), 1);
+        assert_eq!(ann.parameter_ownership[0].ownership, OwnershipKind::Weak);
+    }
+
+    #[test]
+    fn test_block_sync_detection() {
+        let method = make_method(
+            "enumerateObjectsUsingBlock:",
+            false,
+            vec![Param {
+                name: "block".to_string(),
+                param_type: make_type_block(),
+            }],
+            TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "void".to_string(),
+                },
+            },
+        );
+
+        let ann = annotate_method_heuristic("NSArray", &method);
+        assert_eq!(ann.block_parameters.len(), 1);
+        assert_eq!(
+            ann.block_parameters[0].invocation,
+            BlockInvocationStyle::Synchronous
+        );
+    }
+
+    #[test]
+    fn test_block_async_detection() {
+        let method = make_method(
+            "dataTaskWithURL:completionHandler:",
+            false,
+            vec![
+                Param {
+                    name: "url".to_string(),
+                    param_type: make_type_id(),
+                },
+                Param {
+                    name: "completionHandler".to_string(),
+                    param_type: make_type_block(),
+                },
+            ],
+            TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "void".to_string(),
+                },
+            },
+        );
+
+        let ann = annotate_method_heuristic("NSURLSession", &method);
+        assert_eq!(ann.block_parameters.len(), 1);
+        assert_eq!(
+            ann.block_parameters[0].invocation,
+            BlockInvocationStyle::AsyncCopied
+        );
+    }
+
+    #[test]
+    fn test_block_stored_detection() {
+        let method = make_method(
+            "addObserverForName:object:queue:usingBlock:",
+            false,
+            vec![
+                Param {
+                    name: "name".to_string(),
+                    param_type: make_type_id(),
+                },
+                Param {
+                    name: "obj".to_string(),
+                    param_type: make_type_id(),
+                },
+                Param {
+                    name: "queue".to_string(),
+                    param_type: make_type_id(),
+                },
+                Param {
+                    name: "block".to_string(),
+                    param_type: make_type_block(),
+                },
+            ],
+            make_type_id(),
+        );
+
+        let ann = annotate_method_heuristic("NSNotificationCenter", &method);
+        assert_eq!(ann.block_parameters.len(), 1);
+        assert_eq!(
+            ann.block_parameters[0].invocation,
+            BlockInvocationStyle::Stored
+        );
+    }
+
+    #[test]
+    fn test_error_outparam_detection() {
+        let method = make_method(
+            "contentsOfDirectoryAtPath:error:",
+            false,
+            vec![
+                Param {
+                    name: "path".to_string(),
+                    param_type: make_type_id(),
+                },
+                Param {
+                    name: "error".to_string(),
+                    param_type: make_type_pointer(),
+                },
+            ],
+            make_type_id(),
+        );
+
+        let ann = annotate_method_heuristic("NSFileManager", &method);
+        assert_eq!(ann.error_pattern, Some(ErrorPattern::ErrorOutParam));
+    }
+
+    #[test]
+    fn test_threading_ui_class() {
+        let method = make_method(
+            "setTitle:",
+            false,
+            vec![Param {
+                name: "title".to_string(),
+                param_type: make_type_id(),
+            }],
+            TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "void".to_string(),
+                },
+            },
+        );
+
+        let ann = annotate_method_heuristic("NSWindow", &method);
+        assert_eq!(ann.threading, Some(ThreadingConstraint::MainThreadOnly));
+    }
+
+    #[test]
+    fn test_no_threading_foundation_class() {
+        let method = make_method(
+            "length",
+            false,
+            vec![],
+            TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "NSUInteger".to_string(),
+                },
+            },
+        );
+
+        let ann = annotate_method_heuristic("NSString", &method);
+        assert_eq!(ann.threading, None);
+    }
+
+    #[test]
+    fn test_threading_ui_selector_on_any_class() {
+        let method = make_method(
+            "drawRect:",
+            false,
+            vec![Param {
+                name: "rect".to_string(),
+                param_type: TypeRef {
+                    nullable: false,
+                    kind: TypeRefKind::Struct {
+                        name: "CGRect".to_string(),
+                    },
+                },
+            }],
+            TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "void".to_string(),
+                },
+            },
+        );
+
+        let ann = annotate_method_heuristic("MyCustomView", &method);
+        assert_eq!(ann.threading, Some(ThreadingConstraint::MainThreadOnly));
+    }
+
+    #[test]
+    fn test_datasource_param_detection() {
+        let method = make_method(
+            "setDataSource:",
+            false,
+            vec![Param {
+                name: "dataSource".to_string(),
+                param_type: make_type_id(),
+            }],
+            TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "void".to_string(),
+                },
+            },
+        );
+
+        let ann = annotate_method_heuristic("NSTableView", &method);
+        assert_eq!(ann.parameter_ownership.len(), 1);
+        assert_eq!(ann.parameter_ownership[0].ownership, OwnershipKind::Weak);
+    }
+
+    #[test]
+    fn test_block_param_copy_ownership() {
+        let method = make_method(
+            "sortedArrayUsingComparator:",
+            false,
+            vec![Param {
+                name: "cmptr".to_string(),
+                param_type: make_type_block(),
+            }],
+            make_type_id(),
+        );
+
+        let ann = annotate_method_heuristic("NSArray", &method);
+        // Block params should be Copy ownership AND synchronous invocation
+        assert_eq!(ann.parameter_ownership.len(), 1);
+        assert_eq!(ann.parameter_ownership[0].ownership, OwnershipKind::Copy);
+        assert_eq!(ann.block_parameters.len(), 1);
+        assert_eq!(
+            ann.block_parameters[0].invocation,
+            BlockInvocationStyle::Synchronous
+        );
+    }
+}

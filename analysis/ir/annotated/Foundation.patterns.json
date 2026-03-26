@@ -1,0 +1,543 @@
+{
+  "framework": "Foundation",
+  "api_patterns": [
+    {
+      "stereotype": "observer_pair",
+      "name": "NSNotificationCenter observer registration",
+      "participants": {
+        "register": [
+          {"class": "NSNotificationCenter", "selector": "addObserver:selector:name:object:"},
+          {"class": "NSNotificationCenter", "selector": "addObserverForName:object:queue:usingBlock:"}
+        ],
+        "callback": [
+          {"description": "The selector specified in addObserver:selector:name:object:"},
+          {"description": "The block passed to addObserverForName:object:queue:usingBlock:"}
+        ],
+        "unregister": [
+          {"class": "NSNotificationCenter", "selector": "removeObserver:"},
+          {"class": "NSNotificationCenter", "selector": "removeObserver:name:object:"}
+        ]
+      },
+      "constraints": {
+        "ordering": "register before unregister; unregister before observer deallocation",
+        "thread_safety": "addObserver/removeObserver are thread-safe; callbacks delivered on posting thread or specified queue",
+        "ownership": "block-based observer returns token that must be removed; selector-based observer uses weak reference to observer object"
+      },
+      "source": "llm",
+      "doc_ref": "Notification Programming Topics > Registering for a Notification"
+    },
+    {
+      "stereotype": "observer_pair",
+      "name": "Key-Value Observing (KVO)",
+      "participants": {
+        "register": [
+          {"class": "NSObject", "selector": "addObserver:forKeyPath:options:context:"}
+        ],
+        "callback": [
+          {"class": "NSObject", "selector": "observeValueForKeyPath:ofObject:change:context:"}
+        ],
+        "unregister": [
+          {"class": "NSObject", "selector": "removeObserver:forKeyPath:"},
+          {"class": "NSObject", "selector": "removeObserver:forKeyPath:context:"}
+        ]
+      },
+      "constraints": {
+        "ordering": "register before unregister; must unregister before either object deallocates",
+        "thread_safety": "KVO notifications delivered on the thread that made the change",
+        "ownership": "observer is not retained; crashes if observer deallocates while registered"
+      },
+      "source": "llm",
+      "doc_ref": "Key-Value Observing Programming Guide > Registering for Key-Value Observing"
+    },
+    {
+      "stereotype": "observer_pair",
+      "name": "NSDistributedNotificationCenter observer",
+      "participants": {
+        "register": [
+          {"class": "NSDistributedNotificationCenter", "selector": "addObserver:selector:name:object:"},
+          {"class": "NSDistributedNotificationCenter", "selector": "addObserver:selector:name:object:suspensionBehavior:"}
+        ],
+        "callback": [
+          {"description": "The selector specified during registration"}
+        ],
+        "unregister": [
+          {"class": "NSDistributedNotificationCenter", "selector": "removeObserver:name:object:"}
+        ]
+      },
+      "constraints": {
+        "ordering": "register before unregister",
+        "thread_safety": "notifications delivered on main thread",
+        "ownership": "observer is not retained"
+      },
+      "source": "llm",
+      "doc_ref": "Notification Programming Topics > Distributed Notifications"
+    },
+    {
+      "stereotype": "resource_lifecycle",
+      "name": "NSMutableAttributedString editing session",
+      "participants": {
+        "open": {"class": "NSMutableAttributedString", "selector": "beginEditing"},
+        "operations": [
+          {"class": "NSMutableAttributedString", "selector": "addAttribute:value:range:"},
+          {"class": "NSMutableAttributedString", "selector": "addAttributes:range:"},
+          {"class": "NSMutableAttributedString", "selector": "removeAttribute:range:"},
+          {"class": "NSMutableAttributedString", "selector": "replaceCharactersInRange:withString:"},
+          {"class": "NSMutableAttributedString", "selector": "setAttributes:range:"}
+        ],
+        "close": {"class": "NSMutableAttributedString", "selector": "endEditing"}
+      },
+      "constraints": {
+        "ordering": "beginEditing must precede mutations; endEditing must follow all mutations",
+        "thread_safety": "not thread-safe; all calls must be on same thread",
+        "ownership": "no ownership transfer; editing session is a state bracket"
+      },
+      "source": "llm",
+      "doc_ref": "Attributed String Programming Guide > Changing an Attributed String"
+    },
+    {
+      "stereotype": "resource_lifecycle",
+      "name": "NSBundleResourceRequest on-demand resource access",
+      "participants": {
+        "open": {"class": "NSBundleResourceRequest", "selector": "beginAccessingResourcesWithCompletionHandler:"},
+        "operations": [
+          {"description": "Access the bundle resources via NSBundle APIs"}
+        ],
+        "close": {"class": "NSBundleResourceRequest", "selector": "endAccessingResources"}
+      },
+      "constraints": {
+        "ordering": "beginAccessing (async) must complete before using resources; endAccessing when done",
+        "thread_safety": "completion handler called on arbitrary queue",
+        "ownership": "system may purge resources after endAccessing"
+      },
+      "source": "llm",
+      "doc_ref": "On-Demand Resources Guide"
+    },
+    {
+      "stereotype": "resource_lifecycle",
+      "name": "NSProcessInfo activity assertion",
+      "participants": {
+        "open": {"class": "NSProcessInfo", "selector": "beginActivityWithOptions:reason:"},
+        "operations": [
+          {"description": "Perform the activity that requires the assertion"}
+        ],
+        "close": {"class": "NSProcessInfo", "selector": "endActivity:"}
+      },
+      "constraints": {
+        "ordering": "beginActivity returns token; pass token to endActivity when done",
+        "thread_safety": "thread-safe",
+        "ownership": "token must be retained until endActivity is called"
+      },
+      "source": "llm",
+      "doc_ref": "Energy Efficiency Guide for Mac Apps > Prioritize Work at the App Level"
+    },
+    {
+      "stereotype": "transaction_bracket",
+      "name": "NSUndoManager undo grouping",
+      "participants": {
+        "begin": {"class": "NSUndoManager", "selector": "beginUndoGrouping"},
+        "mutations": [
+          {"class": "NSUndoManager", "selector": "registerUndoWithTarget:selector:object:"},
+          {"class": "NSUndoManager", "selector": "prepareWithInvocationTarget:"}
+        ],
+        "commit": {"class": "NSUndoManager", "selector": "endUndoGrouping"}
+      },
+      "constraints": {
+        "ordering": "beginUndoGrouping before mutations; endUndoGrouping after all mutations",
+        "nesting": "undo groupings can nest; each begin must have matching end",
+        "thread_safety": "not thread-safe"
+      },
+      "source": "llm",
+      "doc_ref": "Undo Architecture > Grouping Undo Operations"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSString class cluster",
+      "participants": {
+        "abstract_class": "NSString",
+        "mutable_variant": "NSMutableString",
+        "factory_methods": [
+          {"class": "NSString", "selector": "string"},
+          {"class": "NSString", "selector": "stringWithFormat:"},
+          {"class": "NSString", "selector": "stringWithUTF8String:"},
+          {"class": "NSString", "selector": "stringWithContentsOfFile:encoding:error:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSString instances are immutable; use NSMutableString for mutation",
+        "bridging": "toll-free bridged with CFStringRef",
+        "copying": "copy returns self (already immutable); mutableCopy returns NSMutableString"
+      },
+      "source": "llm",
+      "doc_ref": "Cocoa Core Competencies > Class Clusters"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSArray class cluster",
+      "participants": {
+        "abstract_class": "NSArray",
+        "mutable_variant": "NSMutableArray",
+        "factory_methods": [
+          {"class": "NSArray", "selector": "array"},
+          {"class": "NSArray", "selector": "arrayWithObject:"},
+          {"class": "NSArray", "selector": "arrayWithObjects:count:"},
+          {"class": "NSArray", "selector": "arrayWithContentsOfFile:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSArray instances are immutable; use NSMutableArray for mutation",
+        "bridging": "toll-free bridged with CFArrayRef",
+        "copying": "copy returns self; mutableCopy returns NSMutableArray"
+      },
+      "source": "llm",
+      "doc_ref": "Collections Programming Topics > Arrays"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSDictionary class cluster",
+      "participants": {
+        "abstract_class": "NSDictionary",
+        "mutable_variant": "NSMutableDictionary",
+        "factory_methods": [
+          {"class": "NSDictionary", "selector": "dictionary"},
+          {"class": "NSDictionary", "selector": "dictionaryWithObjects:forKeys:count:"},
+          {"class": "NSDictionary", "selector": "dictionaryWithContentsOfFile:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSDictionary instances are immutable",
+        "bridging": "toll-free bridged with CFDictionaryRef",
+        "key_requirement": "keys must conform to NSCopying; keys are copied on insertion"
+      },
+      "source": "llm",
+      "doc_ref": "Collections Programming Topics > Dictionaries"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSData class cluster",
+      "participants": {
+        "abstract_class": "NSData",
+        "mutable_variant": "NSMutableData",
+        "factory_methods": [
+          {"class": "NSData", "selector": "data"},
+          {"class": "NSData", "selector": "dataWithBytes:length:"},
+          {"class": "NSData", "selector": "dataWithContentsOfFile:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSData instances are immutable",
+        "bridging": "toll-free bridged with CFDataRef"
+      },
+      "source": "llm",
+      "doc_ref": "Binary Data Programming Topics"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSSet class cluster",
+      "participants": {
+        "abstract_class": "NSSet",
+        "mutable_variant": "NSMutableSet",
+        "factory_methods": [
+          {"class": "NSSet", "selector": "set"},
+          {"class": "NSSet", "selector": "setWithObject:"},
+          {"class": "NSSet", "selector": "setWithObjects:count:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSSet instances are immutable",
+        "bridging": "toll-free bridged with CFSetRef"
+      },
+      "source": "llm",
+      "doc_ref": "Collections Programming Topics > Sets"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSCharacterSet class cluster",
+      "participants": {
+        "abstract_class": "NSCharacterSet",
+        "mutable_variant": "NSMutableCharacterSet",
+        "factory_methods": [
+          {"class": "NSCharacterSet", "selector": "alphanumericCharacterSet"},
+          {"class": "NSCharacterSet", "selector": "whitespaceCharacterSet"},
+          {"class": "NSCharacterSet", "selector": "characterSetWithCharactersInString:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSCharacterSet instances are immutable",
+        "bridging": "toll-free bridged with CFCharacterSetRef"
+      },
+      "source": "llm",
+      "doc_ref": "String Programming Guide > Character Sets"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSAttributedString class cluster",
+      "participants": {
+        "abstract_class": "NSAttributedString",
+        "mutable_variant": "NSMutableAttributedString",
+        "factory_methods": [
+          {"class": "NSAttributedString", "selector": "initWithString:"},
+          {"class": "NSAttributedString", "selector": "initWithString:attributes:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSAttributedString instances are immutable; use NSMutableAttributedString for editing",
+        "editing_session": "NSMutableAttributedString should use beginEditing/endEditing for batched changes"
+      },
+      "source": "llm",
+      "doc_ref": "Attributed String Programming Guide"
+    },
+    {
+      "stereotype": "builder_sequence",
+      "name": "NSMutableURLRequest configuration",
+      "participants": {
+        "create": {"class": "NSMutableURLRequest", "selector": "requestWithURL:"},
+        "configure": [
+          {"class": "NSMutableURLRequest", "selector": "setHTTPMethod:"},
+          {"class": "NSMutableURLRequest", "selector": "setValue:forHTTPHeaderField:"},
+          {"class": "NSMutableURLRequest", "selector": "addValue:forHTTPHeaderField:"},
+          {"class": "NSMutableURLRequest", "selector": "setHTTPBody:"},
+          {"class": "NSMutableURLRequest", "selector": "setTimeoutInterval:"},
+          {"class": "NSMutableURLRequest", "selector": "setCachePolicy:"}
+        ],
+        "finalize": {"description": "Pass to NSURLSession methods or copy to NSURLRequest"}
+      },
+      "constraints": {
+        "ordering": "create before configure; configure before use",
+        "thread_safety": "not thread-safe during configuration"
+      },
+      "source": "llm",
+      "doc_ref": "URL Loading System > Fetching Website Data into Memory"
+    },
+    {
+      "stereotype": "enumeration",
+      "name": "NSArray block-based enumeration",
+      "participants": {
+        "container": {"class": "NSArray"},
+        "iterate": [
+          {"class": "NSArray", "selector": "enumerateObjectsUsingBlock:"},
+          {"class": "NSArray", "selector": "enumerateObjectsWithOptions:usingBlock:"},
+          {"class": "NSArray", "selector": "enumerateObjectsAtIndexes:options:usingBlock:"}
+        ]
+      },
+      "constraints": {
+        "block_style": "synchronous — block is called during enumeration, not copied",
+        "mutation": "do not mutate the array during enumeration (undefined behavior)",
+        "concurrency": "NSEnumerationConcurrent option available for parallel enumeration"
+      },
+      "source": "llm",
+      "doc_ref": "Collections Programming Topics > Arrays > Enumerating Arrays"
+    },
+    {
+      "stereotype": "enumeration",
+      "name": "NSDictionary block-based enumeration",
+      "participants": {
+        "container": {"class": "NSDictionary"},
+        "iterate": [
+          {"class": "NSDictionary", "selector": "enumerateKeysAndObjectsUsingBlock:"},
+          {"class": "NSDictionary", "selector": "enumerateKeysAndObjectsWithOptions:usingBlock:"}
+        ]
+      },
+      "constraints": {
+        "block_style": "synchronous",
+        "mutation": "do not mutate during enumeration"
+      },
+      "source": "llm",
+      "doc_ref": "Collections Programming Topics > Dictionaries"
+    },
+    {
+      "stereotype": "enumeration",
+      "name": "NSSet block-based enumeration",
+      "participants": {
+        "container": {"class": "NSSet"},
+        "iterate": [
+          {"class": "NSSet", "selector": "enumerateObjectsUsingBlock:"},
+          {"class": "NSSet", "selector": "enumerateObjectsWithOptions:usingBlock:"}
+        ]
+      },
+      "constraints": {
+        "block_style": "synchronous",
+        "mutation": "do not mutate during enumeration"
+      },
+      "source": "llm",
+      "doc_ref": "Collections Programming Topics > Sets"
+    },
+    {
+      "stereotype": "delegate_protocol",
+      "name": "NSCache delegate",
+      "participants": {
+        "setter": {"class": "NSCache", "selector": "setDelegate:"},
+        "protocol": "NSCacheDelegate",
+        "callbacks": [
+          {"protocol": "NSCacheDelegate", "selector": "cache:willEvictObject:"}
+        ]
+      },
+      "constraints": {
+        "ownership": "delegate is weak (not retained)",
+        "thread_safety": "delegate methods may be called from any thread"
+      },
+      "source": "llm",
+      "doc_ref": "NSCache Class Reference"
+    },
+    {
+      "stereotype": "delegate_protocol",
+      "name": "NSFileManager delegate",
+      "participants": {
+        "setter": {"class": "NSFileManager", "selector": "setDelegate:"},
+        "protocol": "NSFileManagerDelegate",
+        "callbacks": [
+          {"protocol": "NSFileManagerDelegate", "selector": "fileManager:shouldCopyItemAtPath:toPath:"},
+          {"protocol": "NSFileManagerDelegate", "selector": "fileManager:shouldMoveItemAtPath:toPath:"},
+          {"protocol": "NSFileManagerDelegate", "selector": "fileManager:shouldRemoveItemAtPath:"}
+        ]
+      },
+      "constraints": {
+        "ownership": "delegate is weak",
+        "thread_safety": "delegate methods called on the thread that initiated the file operation"
+      },
+      "source": "llm",
+      "doc_ref": "File System Programming Guide"
+    },
+    {
+      "stereotype": "delegate_protocol",
+      "name": "NSURLSession delegate",
+      "participants": {
+        "setter": {"description": "Configured at init time via NSURLSessionConfiguration"},
+        "protocol": "NSURLSessionDelegate",
+        "callbacks": [
+          {"protocol": "NSURLSessionDelegate", "selector": "URLSession:didBecomeInvalidWithError:"},
+          {"protocol": "NSURLSessionDelegate", "selector": "URLSession:didReceiveChallenge:completionHandler:"}
+        ]
+      },
+      "constraints": {
+        "ownership": "session retains delegate until invalidation",
+        "thread_safety": "delegate methods called on the delegate queue specified at init"
+      },
+      "source": "llm",
+      "doc_ref": "URL Loading System > NSURLSession"
+    },
+    {
+      "stereotype": "delegate_protocol",
+      "name": "NSXMLParser delegate",
+      "participants": {
+        "setter": {"class": "NSXMLParser", "selector": "setDelegate:"},
+        "protocol": "NSXMLParserDelegate",
+        "callbacks": [
+          {"protocol": "NSXMLParserDelegate", "selector": "parser:didStartElement:namespaceURI:qualifiedName:attributes:"},
+          {"protocol": "NSXMLParserDelegate", "selector": "parser:didEndElement:namespaceURI:qualifiedName:"},
+          {"protocol": "NSXMLParserDelegate", "selector": "parser:foundCharacters:"},
+          {"protocol": "NSXMLParserDelegate", "selector": "parser:parseErrorOccurred:"}
+        ]
+      },
+      "constraints": {
+        "ownership": "delegate is weak",
+        "thread_safety": "delegate methods called on the thread that calls parse"
+      },
+      "source": "llm",
+      "doc_ref": "Event-Driven XML Programming Guide"
+    },
+    {
+      "stereotype": "paired_state",
+      "name": "NSLock critical section",
+      "participants": {
+        "enable": {"class": "NSLock", "selector": "lock"},
+        "disable": {"class": "NSLock", "selector": "unlock"}
+      },
+      "constraints": {
+        "ordering": "every lock must have matching unlock",
+        "nesting": "NSLock does NOT support nesting; use NSRecursiveLock for nested locking",
+        "thread_safety": "lock and unlock must be called from the same thread",
+        "error_handling": "unlock must be called even on error (bracket semantics)"
+      },
+      "source": "llm",
+      "doc_ref": "Threading Programming Guide > Using Locks"
+    },
+    {
+      "stereotype": "paired_state",
+      "name": "NSRecursiveLock critical section",
+      "participants": {
+        "enable": {"class": "NSRecursiveLock", "selector": "lock"},
+        "disable": {"class": "NSRecursiveLock", "selector": "unlock"}
+      },
+      "constraints": {
+        "ordering": "every lock must have matching unlock",
+        "nesting": "supports nesting; each lock must have matching unlock at same level",
+        "thread_safety": "lock and unlock must be called from the same thread"
+      },
+      "source": "llm",
+      "doc_ref": "Threading Programming Guide > Using Locks"
+    },
+    {
+      "stereotype": "paired_state",
+      "name": "KVO change notification",
+      "participants": {
+        "enable": {"class": "NSObject", "selector": "willChangeValueForKey:"},
+        "disable": {"class": "NSObject", "selector": "didChangeValueForKey:"}
+      },
+      "constraints": {
+        "ordering": "willChange before mutation; didChange after mutation",
+        "nesting": "supports nesting for different keys",
+        "purpose": "manual KVO notification; not needed with automatic KVO"
+      },
+      "source": "llm",
+      "doc_ref": "Key-Value Observing Programming Guide > Manual Change Notification"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSNumber class cluster",
+      "participants": {
+        "abstract_class": "NSNumber",
+        "factory_methods": [
+          {"class": "NSNumber", "selector": "numberWithInt:"},
+          {"class": "NSNumber", "selector": "numberWithFloat:"},
+          {"class": "NSNumber", "selector": "numberWithDouble:"},
+          {"class": "NSNumber", "selector": "numberWithBool:"},
+          {"class": "NSNumber", "selector": "numberWithInteger:"},
+          {"class": "NSNumber", "selector": "numberWithUnsignedInteger:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSNumber instances are always immutable (no mutable variant)",
+        "bridging": "toll-free bridged with CFNumberRef and CFBooleanRef",
+        "value_semantics": "two NSNumber instances with same value may be same object (tagged pointers)"
+      },
+      "source": "llm",
+      "doc_ref": "Cocoa Core Competencies > Class Clusters"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSIndexSet class cluster",
+      "participants": {
+        "abstract_class": "NSIndexSet",
+        "mutable_variant": "NSMutableIndexSet",
+        "factory_methods": [
+          {"class": "NSIndexSet", "selector": "indexSet"},
+          {"class": "NSIndexSet", "selector": "indexSetWithIndex:"},
+          {"class": "NSIndexSet", "selector": "indexSetWithIndexesInRange:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSIndexSet instances are immutable"
+      },
+      "source": "llm",
+      "doc_ref": "Collections Programming Topics"
+    },
+    {
+      "stereotype": "factory_cluster",
+      "name": "NSOrderedSet class cluster",
+      "participants": {
+        "abstract_class": "NSOrderedSet",
+        "mutable_variant": "NSMutableOrderedSet",
+        "factory_methods": [
+          {"class": "NSOrderedSet", "selector": "orderedSet"},
+          {"class": "NSOrderedSet", "selector": "orderedSetWithObject:"},
+          {"class": "NSOrderedSet", "selector": "orderedSetWithObjects:count:"}
+        ]
+      },
+      "constraints": {
+        "immutability": "NSOrderedSet instances are immutable"
+      },
+      "source": "llm",
+      "doc_ref": "Collections Programming Topics"
+    }
+  ]
+}

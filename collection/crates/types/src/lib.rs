@@ -5,6 +5,7 @@
 //! and deserialize using these types.
 
 pub mod annotation;
+pub mod enrichment;
 pub mod ir;
 pub mod provenance;
 pub mod serde_helpers;
