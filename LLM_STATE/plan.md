@@ -258,16 +258,24 @@ Implement Datalog pass 2: annotation-derived relations, API pattern enrichment, 
   - [x] Annotation workflow doc is complete (new doc covering full pipeline, LLM annotation options, heuristic classifications, merge precedence, verification checking)
   - [x] Enrich rules doc created (documents all 8 derived relations + 2 verification rules with meanings, derivation logic, emitter actions, and Foundation numbers)
 
-### Milestone 7: Generation (Deferred)
+### Milestone 7: Generation
 
-Build the shared emitter framework, port the Racket emitter from POC, then add emitters for all target languages. Each emitter produces idiomatic bindings — not thin C wrappers. Languages with multiple paradigms (OO + functional) get multiple binding styles from the same enriched IR. Not started until Milestones 1-6 are complete.
+Build the shared emitter framework, port the Racket emitter from POC, then add emitters for all target languages. Each emitter produces idiomatic bindings — not thin C wrappers. Languages with multiple paradigms (OO + functional) get multiple binding styles from the same enriched IR.
 
-- [ ] 7.1 Port shared emitter framework (`emit` crate)
-  - [ ] Common utilities: name mapping, type resolution, doc rendering, framework ordering
-  - [ ] Binding style abstraction: OO vs functional vs procedural output from same IR
-  - [ ] API pattern → idiomatic construct dispatch: stereotype-to-template mapping per language
-  - [ ] Pattern templates: resource lifecycle → `with-*`/bracket/RAII; builder → DSL/chain; observer → scoped; transaction → `atomically`/`with-transaction`
-- [ ] 7.2 Port Swift helper dylibs (shared C-callable ObjC runtime interface)
+- [x] 7.1 Port shared emitter framework (`emit` crate)
+  - [x] Common utilities: name mapping (`naming.rs` — camelCase/kebab/snake conversions, selector parsing, mutating detection), FFI type mapping (`ffi_type_mapping.rs` — `FfiTypeMapper` trait + `RacketFfiTypeMapper`), code writer (`code_writer.rs` — `CodeWriter` + `FileEmitter` + `write_line!` macro)
+  - [x] Framework ordering (`framework_ordering.rs` — topological sort via Kahn's algorithm on `depends_on` DAG)
+  - [x] Doc rendering (`doc_rendering.rs` — `DocBlock` from provenance/doc_refs, language-neutral lines with `format_doc_lines` prefix adapter)
+  - [x] Binding style abstraction (`binding_style.rs` — `BindingStyle` enum: OO/Functional/Procedural, `LanguageInfo` metadata, `EmitResult` counters)
+  - [x] API pattern → idiomatic construct dispatch (`pattern_dispatch.rs` — `classify_pattern` maps stereotypes to `IdiomaticConstruct` variants: ScopedResource, BuilderDsl, ScopedObserver, TransactionBracket, IterationAdapter, ResultWrapper, SmartConstructor, ScopedGuard, PassThrough)
+  - [x] 45 tests passing, workspace builds clean, `cargo +nightly fmt` applied
+- [x] 7.2 Port Swift helper dylibs (shared C-callable ObjC runtime interface)
+  - [x] `swift/Package.swift` — Swift 6.0, macOS 14+, 3 dynamic library products (Racket, Chez, Gerbil), each statically embedding APIAnywareCommon
+  - [x] `APIAnywareCommon` — 7 modules: MessageSend (typed objc_msgSend wrappers for ptr/void/bool/uint/int/double/struct returns), ClassLookup (class/selector lookup), MemoryManagement (retain/release), AutoreleasePool (push/pop via ObjC runtime), StringConversion (NSString<->UTF-8), StructMarshal (pack/unpack CGPoint/CGSize/CGRect/NSRange/NSEdgeInsets), ObservationBridge (Swift Observation framework bridge to C FFI)
+  - [x] `APIAnywareRacket` — 4 modules: RacketFFI (re-export), GCPrevention (registry preventing language-runtime GC of live callbacks), BlockBridge (ObjC block creation from C function pointers with _NSConcreteGlobalBlock isa, copy/dispose helpers, automatic GC handle lifecycle), DelegateBridge (dynamic ObjC class creation with per-instance dispatch table, IMP trampolines for void/bool/id returns with 0-3 args, dealloc cleanup)
+  - [x] `APIAnywareChez` and `APIAnywareGerbil` — stubs importing Common
+  - [x] 64 tests passing: 7 Common test files (MessageSend 15, ClassLookup 5, MemoryManagement 2, AutoreleasePool 3, StringConversion 4, StructMarshal 13, ObservationBridge 3) + 3 Racket test files (GCPrevention 5, BlockBridge 8, DelegateBridge 7)
+  - [x] All 3 dylibs build successfully: libAPIAnywareRacket.dylib, libAPIAnywareChez.dylib, libAPIAnywareGerbil.dylib
 - [ ] 7.3 Port Racket emitter + runtime (OO + functional styles)
 - [ ] 7.4 Add Chez Scheme emitter + runtime (functional style)
 - [ ] 7.5 Add Gerbil Scheme emitter + runtime (OO + functional styles)
@@ -317,3 +325,8 @@ Build the shared emitter framework, port the Racket emitter from POC, then add e
 - **Category methods don't go through resolve:** The resolve step only processes `methods` on each class (direct declarations). Category methods (from category_methods groups) have no `returns_retained` annotation from resolve. The flag_mismatch verification rule must gate on `resolve_processed_method` to avoid false positives on category init methods.
 - **Framework file discovery must skip ancillary files:** The annotated IR directory may contain `Foundation.patterns.json` alongside `Foundation.json`. The `discover_framework_files` loader must filter to `{Name}.json` (no dots in the stem) to avoid trying to parse non-Framework JSON as Framework checkpoints.
 - **Foundation enrichment numbers:** 81 sync blocks, 116 async blocks, 4 stored blocks, 199 error methods, 10 collection iterables (NSArray, NSDictionary, NSEnumerator, NSHashTable, NSMapTable, NSOrderedCollectionDifference, NSOrderedSet, NSPointerArray, NSSet + via NSFastEnumeration), 4 scoped resources (NSBundleResourceRequest, NSMutableAttributedString, NSURLHandle, NSUndoManager), 0 delegate protocols (Foundation doesn't use setDelegate: — AppKit does), 0 main thread classes (Foundation is thread-safe — AppKit/UI have main-thread-only).
+- **POC emit crate uses `apianyware-core` import:** The POC's `ffi_type_mapping.rs` imports `apianyware_core::ir::{TypeRef, TypeRefKind}`. In the new project this becomes `apianyware_macos_types::type_ref::{TypeRef, TypeRefKind}`. The `naming.rs` and `code_writer.rs` modules are pure Rust with no IR imports, so they port unchanged.
+- **Framework has no `category_methods` field:** `category_methods` is on `Class`, not on `Framework`. Test helpers for constructing `Framework` must not include it. The POC's IR had category_methods at the class level too.
+- **Added snake_case utilities for non-Lisp emitters:** The POC only had kebab-case (for Racket). Added `camel_to_snake` and `selector_to_snake_name` for languages like Haskell, OCaml, and Zig that use snake_case conventions.
+- **Pattern dispatch separates classification from rendering:** `classify_pattern` maps stereotypes to `IdiomaticConstruct` variants (language-neutral). Each language emitter then renders the construct in its own syntax. DelegateProtocol and TargetAction are PassThrough because they're handled inline during class generation, not as separate constructs.
+- **Swift helper dylibs port verbatim:** The POC's `swift/` directory has no Rust dependencies — it's pure Swift using `@_cdecl`, `@_silgen_name`, `dlsym`, and ObjC runtime APIs. All 7 Common modules and 4 Racket modules ported without changes. The package name changed from `APIAnyware` to `APIAnywareMacOS` to match the new project. All 64 tests pass immediately after port.
