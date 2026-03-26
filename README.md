@@ -1,8 +1,17 @@
 # APIAnyware-MacOS
 
-Extract, analyze, and generate language bindings for macOS platform APIs (ObjC, C, Swift).
+Idiomatic macOS API bindings for every language.
+
+Extracts, analyzes, and generates native bindings for the full macOS platform API surface (ObjC, C, Swift) — targeting a broad set of languages: Racket, Chez Scheme, Gerbil Scheme, Common Lisp (SBCL, CCL), Haskell, Idris2, OCaml, Prolog, Mercury, Rhombus, Pharo Smalltalk, Zig, and others.
 
 Part of the [APIAnyware](https://linkuistics.com) family — see also `APIAnyware-Windows` and `APIAnyware-Linux` (planned).
+
+## Goals
+
+- **Idiomatic, not mechanical.** Each target language gets bindings that feel native — not a lowest-common-denominator C wrapper. A Haskell user gets monadic error handling; a Smalltalk user gets message-passing objects; an OCaml user gets modules and variants.
+- **Multiple binding styles per language.** Languages with both OO and functional idioms (e.g., Common Lisp, OCaml, Racket) can produce both an object-oriented API and a functional/procedural API from the same enriched IR.
+- **Full API coverage.** Every framework in the macOS SDK, not just Foundation and AppKit. Both ObjC and Swift-only APIs.
+- **Auto-generated with human-quality results.** The enriched IR carries enough semantic information (ownership, threading, block lifecycle, error patterns) for emitters to make intelligent wrapping decisions without per-method human intervention.
 
 ## Architecture
 
@@ -16,7 +25,7 @@ Collection ──► Analysis ──► Generation
 
 **Analysis** resolves inheritance via Datalog, adds semantic annotations (block invocation style, parameter ownership, threading constraints, error patterns) via heuristics and LLM analysis, then enriches with Datalog-derived relations for generation.
 
-**Generation** emits per-language bindings (Racket, Chez Scheme, Gerbil Scheme) with runtime support libraries and Swift helper dylibs.
+**Generation** emits per-language bindings with runtime support libraries and Swift helper dylibs. Each emitter reads the same enriched IR but produces output shaped to the target language's idioms and conventions.
 
 ## Pipeline & Checkpoints
 
@@ -83,7 +92,7 @@ APIAnyware-MacOS/
   collection/
     crates/
       types/          # apianyware-macos-types      — shared IR + annotation schema
-      extract/        # apianyware-macos-extract     — libclang ObjC/C parsing
+      extract-objc/   # apianyware-macos-extract-objc — libclang ObjC/C parsing
       extract-swift/  # apianyware-macos-extract-swift — swift-api-digester
       cli/            # apianyware-macos-collect     — collection CLI
     ir/collected/                                    — checkpoint output
@@ -101,9 +110,43 @@ APIAnyware-MacOS/
     docs/                                            — memory model, workflow docs
     scripts/                                         — LLM annotation scripts
 
-  generation/         # (deferred — emitters + runtimes)
+  generation/         # (deferred — per-language emitters + runtimes)
+    crates/
+      emit/           # shared emitter framework
+      emit-racket/    # one crate per target language
+      emit-chez/
+      emit-gerbil/
+      emit-cl/        # Common Lisp (SBCL, CCL)
+      emit-haskell/
+      emit-idris2/
+      emit-ocaml/
+      emit-prolog/    # Prolog + Mercury
+      emit-rhombus/
+      emit-smalltalk/ # Pharo Smalltalk
+      emit-zig/
+      cli/            # apianyware-macos-generate
+    targets/          # runtime support per language
+
   swift/              # (deferred — Swift helper dylibs)
 ```
+
+### Target Languages
+
+| Language | Style(s) | Status |
+|---|---|---|
+| Racket | OO (classes) + functional | POC exists |
+| Chez Scheme | Functional | Planned |
+| Gerbil Scheme | OO + functional | Planned |
+| Common Lisp (SBCL, CCL) | CLOS + functional | Planned |
+| Haskell | Monadic + lens-based | Planned |
+| Idris2 | Dependently-typed wrappers | Planned |
+| OCaml | Modules + OO | Planned |
+| Prolog / Mercury | Relational | Planned |
+| Rhombus | OO (classes) | Planned |
+| Pharo Smalltalk | Message-passing OO | Planned |
+| Zig | Low-level procedural | Planned |
+
+Languages with both OO and functional paradigms produce multiple binding styles from the same enriched IR — for example, Common Lisp gets both CLOS wrappers and a `defun`-based procedural API.
 
 ## Documentation
 

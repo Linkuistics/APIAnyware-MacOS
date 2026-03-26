@@ -6,7 +6,9 @@
 
 ## Purpose
 
-Define the structure, naming, and inter-phase contracts for `APIAnyware-MacOS` — a Rust workspace that extracts, analyzes, and generates bindings for macOS platform APIs. This is the first platform in a family that will eventually include `APIAnyware-Windows` and `APIAnyware-Linux`, each as independent repos with their own workspaces.
+Define the structure, naming, and inter-phase contracts for `APIAnyware-MacOS` — a Rust workspace that extracts, analyzes, and generates idiomatic language bindings for macOS platform APIs. This is the first platform in a family that will eventually include `APIAnyware-Windows` and `APIAnyware-Linux`, each as independent repos with their own workspaces.
+
+The generation phase targets a broad set of languages: Racket, Chez Scheme, Gerbil Scheme, Common Lisp (SBCL, CCL), Haskell, Idris2, OCaml, Prolog, Mercury, Rhombus, Pharo Smalltalk, Zig, and others. Each target produces bindings idiomatic to that language's conventions — not a lowest-common-denominator C wrapper. Languages with both OO and functional idioms may produce multiple binding styles from the same enriched IR.
 
 ## Principles
 
@@ -14,7 +16,7 @@ Define the structure, naming, and inter-phase contracts for `APIAnyware-MacOS` �
 2. **Checkpoints are resumable.** Expensive steps (especially LLM annotation) are not re-run unless their inputs change. Each checkpoint is a complete, self-contained JSON file per framework.
 3. **Collection is mechanical.** It uses existing parsers (libclang, swift-api-extract) and is easy to get 100% right. It runs once per SDK update.
 4. **Analysis improves over time.** Datalog rules and LLM annotations evolve independently. The checkpoint model allows iterating on either without re-running the other.
-5. **Generation is per-language.** Each target language gets its own emitter crate and runtime support library.
+5. **Generation is per-language and idiomatic.** Each target language gets its own emitter crate and runtime support library. Bindings are shaped to the target language's idioms — not a thin veneer over C. Languages with multiple paradigms (e.g., OO + functional) may produce multiple binding styles from the same enriched IR.
 6. **Framework discovery is automatic.** Tools scan the SDK or checkpoint directories — no manual framework lists needed for normal operation.
 7. **LLM provider is flexible.** The annotation schema is the contract. Annotations can come from Claude Code sessions, cloud APIs, local models, or manual editing.
 8. **Rich provenance from collection.** Every declaration carries source location, SDK version, availability attributes, documentation references, and Apple doc URLs. Generation uses these to produce cross-referenced documentation.
@@ -27,7 +29,7 @@ Define the structure, naming, and inter-phase contracts for `APIAnyware-MacOS` �
 
 **Naming conventions:**
 - GitHub repos and development directories: PascalCase hyphen-separated (`APIAnyware-MacOS`)
-- Rust crate names: lowercase hyphen-separated (`apianyware-macos-extract`)
+- Rust crate names: lowercase hyphen-separated (`apianyware-macos-extract-objc`)
 - CLI binary names: lowercase hyphen-separated (`apianyware-macos-collect`, `apianyware-macos-analyze`)
 - File paths and identifiers: lowercase hyphen-separated
 
@@ -45,7 +47,7 @@ APIAnyware-MacOS/
   collection/
     crates/
       types/                              # apianyware-macos-types
-      extract/                            # apianyware-macos-extract (libclang)
+      extract-objc/                       # apianyware-macos-extract-objc (libclang)
       extract-swift/                      # apianyware-macos-extract-swift (swift-api-digester)
       cli/                                # apianyware-macos-collect (binary)
     ir/collected/                         # output: {Framework}.json
@@ -74,25 +76,27 @@ APIAnyware-MacOS/
   generation/
     crates/
       emit/                               # apianyware-macos-emit (shared emitter framework)
-      emit-racket/                        # apianyware-macos-emit-racket
-      emit-chez/                          # apianyware-macos-emit-chez
-      emit-gerbil/                        # apianyware-macos-emit-gerbil
+      emit-racket/                        # one emitter crate per target language
+      emit-chez/
+      emit-gerbil/
+      emit-cl/                            # Common Lisp (SBCL, CCL)
+      emit-haskell/
+      emit-idris2/
+      emit-ocaml/
+      emit-prolog/                        # Prolog + Mercury
+      emit-rhombus/
+      emit-smalltalk/                     # Pharo Smalltalk
+      emit-zig/
       cli/                                # apianyware-macos-generate (binary)
     targets/
-      racket/runtime/                     # runtime support library
-      racket/generated/                   # emitter output
-      chez/runtime/
-      chez/generated/
-      gerbil/runtime/
-      gerbil/generated/
+      {lang}/runtime/                     # per-language runtime support library
+      {lang}/generated/                   # per-language emitter output
 
   # === Shared (cross-phase) ===
-  swift/                                  # Swift helper dylibs
+  swift/                                  # Swift helper dylibs (C-callable ObjC runtime)
     Package.swift
-    Sources/APIAnywareCommon/
-    Sources/APIAnywareRacket/
-    Sources/APIAnywareChez/
-    Sources/APIAnywareGerbil/
+    Sources/APIAnywareCommon/             # shared across all target languages
+    Sources/APIAnyware{Lang}/             # per-language if needed
     Tests/
 
   # === Development infrastructure ===
@@ -256,14 +260,36 @@ Reads `analysis/ir/annotated/` and runs Datalog with annotation facts to produce
 
 ## Phase 3: Generation (Outline)
 
-Not the current focus. Moves from the existing POC project with minimal changes.
+Not the current focus. The Racket emitter moves from the existing POC; all other emitters are new.
 
+**Core principle: idiomatic, not mechanical.** Each emitter produces bindings shaped to its target language's conventions. A Haskell emitter produces monadic APIs with lens-based property access. A Smalltalk emitter produces message-passing objects. A Zig emitter produces explicit allocation with errdefer patterns. The enriched IR carries enough semantic information for emitters to make these decisions automatically.
+
+**Multiple binding styles.** Languages with both OO and functional idioms can produce multiple APIs from the same IR. For example, Common Lisp gets both CLOS class wrappers and a `defun`-based procedural API; OCaml gets both a module-based functional API and an OO API using OCaml's object system. Each style is a separate emitter output, not a compromise between the two.
+
+**Architecture:**
 - Reads `analysis/ir/enriched/{Framework}.json`
-- Per-language emitter crates produce target-specific bindings
-- Each emitter uses enrichment relations to decide wrapping patterns
-- Runtime support libraries provide `wrap-objc-object`, block/delegate bridging
-- Swift helper dylibs provide the C-callable ObjC runtime interface
+- Shared emitter framework (`emit` crate) provides common utilities: name mapping, type resolution, documentation rendering, framework dependency ordering
+- Per-language emitter crates (`emit-racket`, `emit-haskell`, etc.) implement language-specific code generation
+- Each emitter uses enrichment relations (ownership, threading, block lifecycle, error patterns) to decide wrapping patterns
+- Runtime support libraries (per-language) provide ObjC object lifecycle management, block/delegate bridging, memory safety guarantees appropriate to the target language
+- Swift helper dylibs provide the C-callable ObjC runtime interface shared across all target languages
 - Generated documentation cross-references Apple docs using `doc_refs` from collected IR
+
+**Target languages:**
+
+| Language | Binding style(s) | Notes |
+|---|---|---|
+| Racket | OO (classes) + functional | POC exists; port first |
+| Chez Scheme | Functional | |
+| Gerbil Scheme | OO + functional | |
+| Common Lisp (SBCL, CCL) | CLOS + functional | Two implementations, one emitter |
+| Haskell | Monadic + lens-based | |
+| Idris2 | Dependently-typed wrappers | |
+| OCaml | Modules + OO | |
+| Prolog / Mercury | Relational | |
+| Rhombus | OO (classes) | |
+| Pharo Smalltalk | Message-passing OO | |
+| Zig | Low-level procedural | |
 
 ---
 
@@ -424,7 +450,10 @@ apianyware-macos-analyze --only Foundation     # process specific framework(s)
 ```
 apianyware-macos-generate                     # generate all languages, all frameworks
 apianyware-macos-generate --lang racket       # generate specific language
+apianyware-macos-generate --lang cl --style oo       # CLOS bindings
+apianyware-macos-generate --lang cl --style functional  # defun-based bindings
 apianyware-macos-generate --only Foundation    # generate specific framework(s)
+apianyware-macos-generate --list-langs         # list available target languages
 ```
 
 ### Claude Code

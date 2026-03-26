@@ -1,0 +1,1279 @@
+{
+  "ABIRoot": {
+    "kind": "Root",
+    "name": "Observation",
+    "printedName": "Observation",
+    "children": [
+      {
+        "kind": "Import",
+        "name": "Darwin",
+        "printedName": "Darwin",
+        "declKind": "Import",
+        "moduleName": "Observation"
+      },
+      {
+        "kind": "Import",
+        "name": "_Concurrency",
+        "printedName": "_Concurrency",
+        "declKind": "Import",
+        "moduleName": "Observation"
+      },
+      {
+        "kind": "Import",
+        "name": "_SwiftConcurrencyShims",
+        "printedName": "_SwiftConcurrencyShims",
+        "declKind": "Import",
+        "moduleName": "Observation"
+      },
+      {
+        "kind": "Import",
+        "name": "Darwin.os.lock",
+        "printedName": "Darwin.os.lock",
+        "declKind": "Import",
+        "moduleName": "Observation"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "Observable",
+        "printedName": "Observable",
+        "declKind": "Protocol",
+        "usr": "s:11Observation10ObservableP",
+        "mangledName": "$s11Observation10ObservableP",
+        "moduleName": "Observation",
+        "intro_Macosx": "14.0",
+        "intro_iOS": "17.0",
+        "intro_tvOS": "17.0",
+        "intro_watchOS": "10.0",
+        "declAttributes": [
+          "Available",
+          "Available",
+          "Available",
+          "Available"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "Escapable",
+            "printedName": "Escapable",
+            "usr": "s:s9EscapableP",
+            "mangledName": "$ss9EscapableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Copyable",
+            "printedName": "Copyable",
+            "usr": "s:s8CopyableP",
+            "mangledName": "$ss8CopyableP"
+          }
+        ]
+      },
+      {
+        "kind": "Root",
+        "name": "Observable",
+        "printedName": "Observable",
+        "children": [
+          {
+            "kind": "TypeFunc",
+            "name": "Function",
+            "printedName": "() -> ()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ]
+          }
+        ],
+        "declKind": "Macro",
+        "usr": "s:11Observation10Observableyycfm",
+        "mangledName": "$s11Observation10Observableyycfm",
+        "moduleName": "Observation",
+        "intro_Macosx": "14.0",
+        "intro_iOS": "17.0",
+        "intro_tvOS": "17.0",
+        "intro_watchOS": "10.0",
+        "declAttributes": [
+          "MacroRole",
+          "MacroRole",
+          "MacroRole",
+          "Available",
+          "Available",
+          "Available",
+          "Available"
+        ]
+      },
+      {
+        "kind": "Root",
+        "name": "ObservationTracked",
+        "printedName": "ObservationTracked",
+        "children": [
+          {
+            "kind": "TypeFunc",
+            "name": "Function",
+            "printedName": "() -> ()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ]
+          }
+        ],
+        "declKind": "Macro",
+        "usr": "s:11Observation0A7Trackedyycfm",
+        "mangledName": "$s11Observation0A7Trackedyycfm",
+        "moduleName": "Observation",
+        "intro_Macosx": "14.0",
+        "intro_iOS": "17.0",
+        "intro_tvOS": "17.0",
+        "intro_watchOS": "10.0",
+        "declAttributes": [
+          "MacroRole",
+          "MacroRole",
+          "Available",
+          "Available",
+          "Available",
+          "Available"
+        ]
+      },
+      {
+        "kind": "Root",
+        "name": "ObservationIgnored",
+        "printedName": "ObservationIgnored",
+        "children": [
+          {
+            "kind": "TypeFunc",
+            "name": "Function",
+            "printedName": "() -> ()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ]
+          }
+        ],
+        "declKind": "Macro",
+        "usr": "s:11Observation0A7Ignoredyycfm",
+        "mangledName": "$s11Observation0A7Ignoredyycfm",
+        "moduleName": "Observation",
+        "intro_Macosx": "14.0",
+        "intro_iOS": "17.0",
+        "intro_tvOS": "17.0",
+        "intro_watchOS": "10.0",
+        "declAttributes": [
+          "MacroRole",
+          "Available",
+          "Available",
+          "Available",
+          "Available"
+        ]
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "ObservationRegistrar",
+        "printedName": "ObservationRegistrar",
+        "children": [
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "ObservationRegistrar",
+                "printedName": "Observation.ObservationRegistrar",
+                "usr": "s:11Observation0A9RegistrarV"
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "s:11Observation0A9RegistrarVACycfc",
+            "mangledName": "$s11Observation0A9RegistrarVACycfc",
+            "moduleName": "Observation",
+            "init_kind": "Designated"
+          },
+          {
+            "kind": "Function",
+            "name": "access",
+            "printedName": "access(_:keyPath:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "GenericTypeParam",
+                "printedName": "Subject"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "KeyPath",
+                "printedName": "Swift.KeyPath<Subject, Member>",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Subject"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Member"
+                  }
+                ],
+                "usr": "s:s7KeyPathC"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:11Observation0A9RegistrarV6access_7keyPathyx_s03KeyE0Cyxq_GtAA10ObservableRzr0_lF",
+            "mangledName": "$s11Observation0A9RegistrarV6access_7keyPathyx_s03KeyE0Cyxq_GtAA10ObservableRzr0_lF",
+            "moduleName": "Observation",
+            "genericSig": "<Subject, Member where Subject : Observation.Observable>",
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "willSet",
+            "printedName": "willSet(_:keyPath:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "GenericTypeParam",
+                "printedName": "Subject"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "KeyPath",
+                "printedName": "Swift.KeyPath<Subject, Member>",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Subject"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Member"
+                  }
+                ],
+                "usr": "s:s7KeyPathC"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:11Observation0A9RegistrarV7willSet_7keyPathyx_s03KeyF0Cyxq_GtAA10ObservableRzr0_lF",
+            "mangledName": "$s11Observation0A9RegistrarV7willSet_7keyPathyx_s03KeyF0Cyxq_GtAA10ObservableRzr0_lF",
+            "moduleName": "Observation",
+            "genericSig": "<Subject, Member where Subject : Observation.Observable>",
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "didSet",
+            "printedName": "didSet(_:keyPath:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "GenericTypeParam",
+                "printedName": "Subject"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "KeyPath",
+                "printedName": "Swift.KeyPath<Subject, Member>",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Subject"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Member"
+                  }
+                ],
+                "usr": "s:s7KeyPathC"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:11Observation0A9RegistrarV6didSet_7keyPathyx_s03KeyF0Cyxq_GtAA10ObservableRzr0_lF",
+            "mangledName": "$s11Observation0A9RegistrarV6didSet_7keyPathyx_s03KeyF0Cyxq_GtAA10ObservableRzr0_lF",
+            "moduleName": "Observation",
+            "genericSig": "<Subject, Member where Subject : Observation.Observable>",
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "withMutation",
+            "printedName": "withMutation(of:keyPath:_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "GenericTypeParam",
+                "printedName": "T"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "GenericTypeParam",
+                "printedName": "Subject"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "KeyPath",
+                "printedName": "Swift.KeyPath<Subject, Member>",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Subject"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Member"
+                  }
+                ],
+                "usr": "s:s7KeyPathC"
+              },
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "() throws -> T",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "T"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  }
+                ],
+                "typeAttributes": [
+                  "noescape"
+                ]
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:11Observation0A9RegistrarV12withMutation2of7keyPath_q0_x_s03KeyG0Cyxq_Gq0_yKXEtKAA10ObservableRzr1_lF",
+            "mangledName": "$s11Observation0A9RegistrarV12withMutation2of7keyPath_q0_x_s03KeyG0Cyxq_Gq0_yKXEtKAA10ObservableRzr1_lF",
+            "moduleName": "Observation",
+            "genericSig": "<Subject, Member, T where Subject : Observation.Observable>",
+            "declAttributes": [
+              "Rethrows"
+            ],
+            "throwing": true,
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init(from:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "ObservationRegistrar",
+                "printedName": "Observation.ObservationRegistrar",
+                "usr": "s:11Observation0A9RegistrarV"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Decoder",
+                "printedName": "any Swift.Decoder",
+                "usr": "s:s7DecoderP"
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "s:11Observation0A9RegistrarV4fromACs7Decoder_p_tKcfc",
+            "mangledName": "$s11Observation0A9RegistrarV4fromACs7Decoder_p_tKcfc",
+            "moduleName": "Observation",
+            "isFromExtension": true,
+            "throwing": true,
+            "init_kind": "Designated"
+          },
+          {
+            "kind": "Function",
+            "name": "encode",
+            "printedName": "encode(to:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Encoder",
+                "printedName": "any Swift.Encoder",
+                "usr": "s:s7EncoderP"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:11Observation0A9RegistrarV6encode2toys7Encoder_p_tF",
+            "mangledName": "$s11Observation0A9RegistrarV6encode2toys7Encoder_p_tF",
+            "moduleName": "Observation",
+            "isFromExtension": true,
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "==",
+            "printedName": "==(_:_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Bool",
+                "printedName": "Swift.Bool",
+                "usr": "s:Sb"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "ObservationRegistrar",
+                "printedName": "Observation.ObservationRegistrar",
+                "usr": "s:11Observation0A9RegistrarV"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "ObservationRegistrar",
+                "printedName": "Observation.ObservationRegistrar",
+                "usr": "s:11Observation0A9RegistrarV"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:11Observation0A9RegistrarV2eeoiySbAC_ACtFZ",
+            "mangledName": "$s11Observation0A9RegistrarV2eeoiySbAC_ACtFZ",
+            "moduleName": "Observation",
+            "static": true,
+            "isFromExtension": true,
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "hash",
+            "printedName": "hash(into:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Hasher",
+                "printedName": "Swift.Hasher",
+                "paramValueOwnership": "InOut",
+                "usr": "s:s6HasherV"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:11Observation0A9RegistrarV4hash4intoys6HasherVz_tF",
+            "mangledName": "$s11Observation0A9RegistrarV4hash4intoys6HasherVz_tF",
+            "moduleName": "Observation",
+            "isFromExtension": true,
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Var",
+            "name": "hashValue",
+            "printedName": "hashValue",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Int",
+                "printedName": "Swift.Int",
+                "usr": "s:Si"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "s:11Observation0A9RegistrarV9hashValueSivp",
+            "mangledName": "$s11Observation0A9RegistrarV9hashValueSivp",
+            "moduleName": "Observation",
+            "isFromExtension": true,
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Int",
+                    "printedName": "Swift.Int",
+                    "usr": "s:Si"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "s:11Observation0A9RegistrarV9hashValueSivg",
+                "mangledName": "$s11Observation0A9RegistrarV9hashValueSivg",
+                "moduleName": "Observation",
+                "isFromExtension": true,
+                "accessorKind": "get"
+              }
+            ]
+          }
+        ],
+        "declKind": "Struct",
+        "usr": "s:11Observation0A9RegistrarV",
+        "mangledName": "$s11Observation0A9RegistrarV",
+        "moduleName": "Observation",
+        "intro_Macosx": "14.0",
+        "intro_iOS": "17.0",
+        "intro_tvOS": "17.0",
+        "intro_watchOS": "10.0",
+        "declAttributes": [
+          "Available",
+          "Available",
+          "Available",
+          "Available"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "Copyable",
+            "printedName": "Copyable",
+            "usr": "s:s8CopyableP",
+            "mangledName": "$ss8CopyableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Decodable",
+            "printedName": "Decodable",
+            "usr": "s:Se",
+            "mangledName": "$sSe"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Encodable",
+            "printedName": "Encodable",
+            "usr": "s:SE",
+            "mangledName": "$sSE"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Equatable",
+            "printedName": "Equatable",
+            "usr": "s:SQ",
+            "mangledName": "$sSQ"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Escapable",
+            "printedName": "Escapable",
+            "usr": "s:s9EscapableP",
+            "mangledName": "$ss9EscapableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Hashable",
+            "printedName": "Hashable",
+            "usr": "s:SH",
+            "mangledName": "$sSH"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Sendable",
+            "printedName": "Sendable",
+            "usr": "s:s8SendableP",
+            "mangledName": "$ss8SendableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "SendableMetatype",
+            "printedName": "SendableMetatype",
+            "usr": "s:s16SendableMetatypeP",
+            "mangledName": "$ss16SendableMetatypeP"
+          }
+        ]
+      },
+      {
+        "kind": "Function",
+        "name": "withObservationTracking",
+        "printedName": "withObservationTracking(_:onChange:)",
+        "children": [
+          {
+            "kind": "TypeNominal",
+            "name": "GenericTypeParam",
+            "printedName": "T"
+          },
+          {
+            "kind": "TypeFunc",
+            "name": "Function",
+            "printedName": "() -> T",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "GenericTypeParam",
+                "printedName": "T"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ],
+            "typeAttributes": [
+              "noescape"
+            ]
+          },
+          {
+            "kind": "TypeFunc",
+            "name": "Function",
+            "printedName": "() -> () -> Swift.Void",
+            "children": [
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "() -> Swift.Void",
+                "children": [
+                  {
+                    "kind": "TypeNameAlias",
+                    "name": "Void",
+                    "printedName": "Swift.Void",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Void",
+                        "printedName": "()"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  }
+                ]
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ],
+            "typeAttributes": [
+              "noescape"
+            ]
+          }
+        ],
+        "declKind": "Func",
+        "usr": "s:11Observation04withA8Tracking_8onChangexxyXE_yyYbcyXKtlF",
+        "mangledName": "$s11Observation04withA8Tracking_8onChangexxyXE_yyYbcyXKtlF",
+        "moduleName": "Observation",
+        "genericSig": "<T>",
+        "intro_Macosx": "14.0",
+        "intro_iOS": "17.0",
+        "intro_tvOS": "17.0",
+        "intro_watchOS": "10.0",
+        "declAttributes": [
+          "Available",
+          "Available",
+          "Available",
+          "Available"
+        ],
+        "funcSelfKind": "NonMutating"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "Observations",
+        "printedName": "Observations",
+        "children": [
+          {
+            "kind": "TypeDecl",
+            "name": "Iteration",
+            "printedName": "Iteration",
+            "children": [
+              {
+                "kind": "Var",
+                "name": "next",
+                "printedName": "next",
+                "children": [
+                  {
+                    "kind": "TypeFunc",
+                    "name": "GenericFunction",
+                    "printedName": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error> (Observation.Observations<Element, Failure>.Iteration.Type) -> (Element) -> Observation.Observations<Element, Failure>.Iteration",
+                    "children": [
+                      {
+                        "kind": "TypeFunc",
+                        "name": "Function",
+                        "printedName": "(Element) -> Observation.Observations<Element, Failure>.Iteration",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Iteration",
+                            "printedName": "Observation.Observations<Element, Failure>.Iteration",
+                            "usr": "s:11Observation12ObservationsV9IterationO"
+                          },
+                          {
+                            "kind": "TypeNominal",
+                            "name": "GenericTypeParam",
+                            "printedName": "Element"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Metatype",
+                        "printedName": "Observation.Observations<Element, Failure>.Iteration.Type",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Iteration",
+                            "printedName": "Observation.Observations<Element, Failure>.Iteration",
+                            "usr": "s:11Observation12ObservationsV9IterationO"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "declKind": "EnumElement",
+                "usr": "s:11Observation12ObservationsV9IterationO4nextyAEyxq__GxcAGms8SendableRzs5ErrorR_r0_lF",
+                "mangledName": "$s11Observation12ObservationsV9IterationO4nextyAEyxq__GxcAGms8SendableRzs5ErrorR_r0_lF",
+                "moduleName": "Observation"
+              },
+              {
+                "kind": "Var",
+                "name": "finish",
+                "printedName": "finish",
+                "children": [
+                  {
+                    "kind": "TypeFunc",
+                    "name": "GenericFunction",
+                    "printedName": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error> (Observation.Observations<Element, Failure>.Iteration.Type) -> Observation.Observations<Element, Failure>.Iteration",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Iteration",
+                        "printedName": "Observation.Observations<Element, Failure>.Iteration",
+                        "usr": "s:11Observation12ObservationsV9IterationO"
+                      },
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Metatype",
+                        "printedName": "Observation.Observations<Element, Failure>.Iteration.Type",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "Iteration",
+                            "printedName": "Observation.Observations<Element, Failure>.Iteration",
+                            "usr": "s:11Observation12ObservationsV9IterationO"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "declKind": "EnumElement",
+                "usr": "s:11Observation12ObservationsV9IterationO6finishyAEyxq__GAGms8SendableRzs5ErrorR_r0_lF",
+                "mangledName": "$s11Observation12ObservationsV9IterationO6finishyAEyxq__GAGms8SendableRzs5ErrorR_r0_lF",
+                "moduleName": "Observation"
+              }
+            ],
+            "declKind": "Enum",
+            "usr": "s:11Observation12ObservationsV9IterationO",
+            "mangledName": "$s11Observation12ObservationsV9IterationO",
+            "moduleName": "Observation",
+            "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+            "conformances": [
+              {
+                "kind": "Conformance",
+                "name": "Copyable",
+                "printedName": "Copyable",
+                "usr": "s:s8CopyableP",
+                "mangledName": "$ss8CopyableP"
+              },
+              {
+                "kind": "Conformance",
+                "name": "Escapable",
+                "printedName": "Escapable",
+                "usr": "s:s9EscapableP",
+                "mangledName": "$ss9EscapableP"
+              },
+              {
+                "kind": "Conformance",
+                "name": "Sendable",
+                "printedName": "Sendable",
+                "usr": "s:s8SendableP",
+                "mangledName": "$ss8SendableP"
+              },
+              {
+                "kind": "Conformance",
+                "name": "SendableMetatype",
+                "printedName": "SendableMetatype",
+                "usr": "s:s16SendableMetatypeP",
+                "mangledName": "$ss16SendableMetatypeP"
+              }
+            ]
+          },
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init(_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Observations",
+                "printedName": "Observation.Observations<Element, Failure>",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Element"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Failure"
+                  }
+                ],
+                "usr": "s:11Observation12ObservationsV"
+              },
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "() throws(Failure) -> Element",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Element"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  }
+                ]
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "s:11Observation12ObservationsVyACyxq_GxyYbq_YKYAccfc",
+            "mangledName": "$s11Observation12ObservationsVyACyxq_GxyYbq_YKYAccfc",
+            "moduleName": "Observation",
+            "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+            "init_kind": "Designated"
+          },
+          {
+            "kind": "Function",
+            "name": "untilFinished",
+            "printedName": "untilFinished(_:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Observations",
+                "printedName": "Observation.Observations<Element, Failure>",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Element"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Failure"
+                  }
+                ],
+                "usr": "s:11Observation12ObservationsV"
+              },
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "() throws(Failure) -> Observation.Observations<Element, Failure>.Iteration",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Iteration",
+                    "printedName": "Observation.Observations<Element, Failure>.Iteration",
+                    "usr": "s:11Observation12ObservationsV9IterationO"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  }
+                ]
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:11Observation12ObservationsV13untilFinishedyACyxq_GAC9IterationOyxq__GyYbq_YKYAcFZ",
+            "mangledName": "$s11Observation12ObservationsV13untilFinishedyACyxq_GAC9IterationOyxq__GyYbq_YKYAcFZ",
+            "moduleName": "Observation",
+            "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+            "static": true,
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "TypeDecl",
+            "name": "Iterator",
+            "printedName": "Iterator",
+            "children": [
+              {
+                "kind": "Function",
+                "name": "next",
+                "printedName": "next(isolation:)",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Optional",
+                    "printedName": "Element?",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "GenericTypeParam",
+                        "printedName": "Element"
+                      }
+                    ],
+                    "usr": "s:Sq"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Optional",
+                    "printedName": "(any _Concurrency.Actor)?",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Actor",
+                        "printedName": "any _Concurrency.Actor",
+                        "usr": "s:ScA"
+                      }
+                    ],
+                    "hasDefaultArg": true,
+                    "usr": "s:Sq"
+                  }
+                ],
+                "declKind": "Func",
+                "usr": "s:11Observation12ObservationsV8IteratorV4next9isolationxSgScA_pSgYi_tYaq_YKF",
+                "mangledName": "$s11Observation12ObservationsV8IteratorV4next9isolationxSgScA_pSgYi_tYaq_YKF",
+                "moduleName": "Observation",
+                "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+                "throwing": true,
+                "funcSelfKind": "Mutating"
+              },
+              {
+                "kind": "TypeAlias",
+                "name": "Element",
+                "printedName": "Element",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Element"
+                  }
+                ],
+                "declKind": "TypeAlias",
+                "usr": "s:11Observation12ObservationsV8IteratorV7Elementa",
+                "mangledName": "$s11Observation12ObservationsV8IteratorV7Elementa",
+                "moduleName": "Observation",
+                "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+                "implicit": true,
+                "intro_Macosx": "26.0",
+                "intro_iOS": "26.0",
+                "intro_tvOS": "26.0",
+                "intro_watchOS": "26.0",
+                "declAttributes": [
+                  "Available",
+                  "Available",
+                  "Available",
+                  "Available",
+                  "Available"
+                ]
+              }
+            ],
+            "declKind": "Struct",
+            "usr": "s:11Observation12ObservationsV8IteratorV",
+            "mangledName": "$s11Observation12ObservationsV8IteratorV",
+            "moduleName": "Observation",
+            "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+            "conformances": [
+              {
+                "kind": "Conformance",
+                "name": "Copyable",
+                "printedName": "Copyable",
+                "usr": "s:s8CopyableP",
+                "mangledName": "$ss8CopyableP"
+              },
+              {
+                "kind": "Conformance",
+                "name": "Escapable",
+                "printedName": "Escapable",
+                "usr": "s:s9EscapableP",
+                "mangledName": "$ss9EscapableP"
+              },
+              {
+                "kind": "Conformance",
+                "name": "AsyncIteratorProtocol",
+                "printedName": "AsyncIteratorProtocol",
+                "children": [
+                  {
+                    "kind": "TypeWitness",
+                    "name": "Element",
+                    "printedName": "Element",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "GenericTypeParam",
+                        "printedName": "Element"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "TypeWitness",
+                    "name": "Failure",
+                    "printedName": "Failure",
+                    "children": [
+                      {
+                        "kind": "TypeNameAlias",
+                        "name": "__AsyncIteratorProtocol_Failure",
+                        "printedName": "Observation.Observations<Element, Failure>.Iterator.__AsyncIteratorProtocol_Failure",
+                        "children": [
+                          {
+                            "kind": "TypeNominal",
+                            "name": "GenericTypeParam",
+                            "printedName": "Failure"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "usr": "s:ScI",
+                "mangledName": "$sScI"
+              }
+            ]
+          },
+          {
+            "kind": "Function",
+            "name": "makeAsyncIterator",
+            "printedName": "makeAsyncIterator()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Iterator",
+                "printedName": "Observation.Observations<Element, Failure>.Iterator",
+                "usr": "s:11Observation12ObservationsV8IteratorV"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:11Observation12ObservationsV17makeAsyncIteratorAC0E0Vyxq__GyF",
+            "mangledName": "$s11Observation12ObservationsV17makeAsyncIteratorAC0E0Vyxq__GyF",
+            "moduleName": "Observation",
+            "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "TypeAlias",
+            "name": "AsyncIterator",
+            "printedName": "AsyncIterator",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Iterator",
+                "printedName": "Observation.Observations<Element, Failure>.Iterator",
+                "usr": "s:11Observation12ObservationsV8IteratorV"
+              }
+            ],
+            "declKind": "TypeAlias",
+            "usr": "s:11Observation12ObservationsV13AsyncIteratora",
+            "mangledName": "$s11Observation12ObservationsV13AsyncIteratora",
+            "moduleName": "Observation",
+            "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+            "intro_Macosx": "26.0",
+            "intro_iOS": "26.0",
+            "intro_tvOS": "26.0",
+            "intro_watchOS": "26.0",
+            "declAttributes": [
+              "Available",
+              "Available",
+              "Available",
+              "Available",
+              "Available"
+            ]
+          },
+          {
+            "kind": "TypeAlias",
+            "name": "Element",
+            "printedName": "Element",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "GenericTypeParam",
+                "printedName": "Element"
+              }
+            ],
+            "declKind": "TypeAlias",
+            "usr": "s:11Observation12ObservationsV7Elementa",
+            "mangledName": "$s11Observation12ObservationsV7Elementa",
+            "moduleName": "Observation",
+            "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+            "implicit": true,
+            "intro_Macosx": "26.0",
+            "intro_iOS": "26.0",
+            "intro_tvOS": "26.0",
+            "intro_watchOS": "26.0",
+            "declAttributes": [
+              "Available",
+              "Available",
+              "Available",
+              "Available",
+              "Available"
+            ]
+          }
+        ],
+        "declKind": "Struct",
+        "usr": "s:11Observation12ObservationsV",
+        "mangledName": "$s11Observation12ObservationsV",
+        "moduleName": "Observation",
+        "genericSig": "<Element, Failure where Element : Swift.Sendable, Failure : Swift.Error>",
+        "intro_Macosx": "26.0",
+        "intro_iOS": "26.0",
+        "intro_tvOS": "26.0",
+        "intro_watchOS": "26.0",
+        "declAttributes": [
+          "Available",
+          "Available",
+          "Available",
+          "Available",
+          "Available"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "Copyable",
+            "printedName": "Copyable",
+            "usr": "s:s8CopyableP",
+            "mangledName": "$ss8CopyableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Escapable",
+            "printedName": "Escapable",
+            "usr": "s:s9EscapableP",
+            "mangledName": "$ss9EscapableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Sendable",
+            "printedName": "Sendable",
+            "usr": "s:s8SendableP",
+            "mangledName": "$ss8SendableP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "SendableMetatype",
+            "printedName": "SendableMetatype",
+            "usr": "s:s16SendableMetatypeP",
+            "mangledName": "$ss16SendableMetatypeP"
+          },
+          {
+            "kind": "Conformance",
+            "name": "AsyncSequence",
+            "printedName": "AsyncSequence",
+            "children": [
+              {
+                "kind": "TypeWitness",
+                "name": "AsyncIterator",
+                "printedName": "AsyncIterator",
+                "children": [
+                  {
+                    "kind": "TypeNameAlias",
+                    "name": "AsyncIterator",
+                    "printedName": "Observation.Observations<Element, Failure>.AsyncIterator",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Iterator",
+                        "printedName": "Observation.Observations<Element, Failure>.Iterator",
+                        "usr": "s:11Observation12ObservationsV8IteratorV"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "TypeWitness",
+                "name": "Element",
+                "printedName": "Element",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "GenericTypeParam",
+                    "printedName": "Element"
+                  }
+                ]
+              },
+              {
+                "kind": "TypeWitness",
+                "name": "Failure",
+                "printedName": "Failure",
+                "children": [
+                  {
+                    "kind": "TypeNameAlias",
+                    "name": "__AsyncSequence_Failure",
+                    "printedName": "Observation.Observations<Element, Failure>.__AsyncSequence_Failure",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "GenericTypeParam",
+                        "printedName": "Failure"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "usr": "s:Sci",
+            "mangledName": "$sSci"
+          }
+        ]
+      }
+    ],
+    "json_format_version": 8,
+    "tool_arguments": [
+      "-dump-sdk",
+      "-module",
+      "Observation",
+      "-sdk",
+      "\/Applications\/Xcode.app\/Contents\/Developer\/Platforms\/MacOSX.platform\/Developer\/SDKs\/MacOSX.sdk",
+      "-target",
+      "arm64-apple-macos14.0",
+      "-o",
+      "\/tmp\/observation_abi.json",
+      "-sdk-version",
+      "25E236"
+    ]
+  }
+}

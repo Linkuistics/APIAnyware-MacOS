@@ -1,0 +1,79 @@
+//! Type reference system for representing Objective-C, C, and Swift types.
+//!
+//! [`TypeRef`] wraps a [`TypeRefKind`] variant with an optional nullability flag,
+//! providing a uniform way to represent all type references in method signatures,
+//! property types, and function parameters.
+
+use serde::{Deserialize, Serialize};
+
+/// Universal type reference. Wraps a [`TypeRefKind`] variant with an optional
+/// `nullable` flag that can apply to any kind.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeRef {
+    /// Whether this type is annotated as nullable (`_Nullable` in ObjC).
+    #[serde(default)]
+    pub nullable: bool,
+
+    /// The specific type kind.
+    #[serde(flatten)]
+    pub kind: TypeRefKind,
+}
+
+/// The discriminated union of type kinds. Serialized as `{"kind": "..."}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum TypeRefKind {
+    /// Type alias (typedef). Example: `NSStringEncoding`.
+    #[serde(rename = "alias")]
+    Alias {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        framework: Option<String>,
+    },
+
+    /// ObjC block type with parameter types and a return type.
+    #[serde(rename = "block")]
+    Block {
+        #[serde(default)]
+        params: Vec<TypeRef>,
+        return_type: Box<TypeRef>,
+    },
+
+    /// ObjC class reference with optional generic type parameters.
+    #[serde(rename = "class")]
+    Class {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        framework: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        params: Vec<TypeRef>,
+    },
+
+    /// Metatype reference (`Class` in ObjC — the class object itself).
+    #[serde(rename = "class_ref")]
+    ClassRef,
+
+    /// Untyped object pointer (`id`).
+    #[serde(rename = "id")]
+    Id,
+
+    /// Return type that matches the receiver's type.
+    #[serde(rename = "instancetype")]
+    Instancetype,
+
+    /// Raw C pointer (e.g., `const char *`, `void *`).
+    #[serde(rename = "pointer")]
+    Pointer,
+
+    /// C primitive type (int, float, bool, void, etc.).
+    #[serde(rename = "primitive")]
+    Primitive { name: String },
+
+    /// ObjC selector type (`SEL`).
+    #[serde(rename = "selector")]
+    Selector,
+
+    /// C struct type.
+    #[serde(rename = "struct")]
+    Struct { name: String },
+}

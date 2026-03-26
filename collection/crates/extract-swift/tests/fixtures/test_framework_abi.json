@@ -1,0 +1,548 @@
+{
+  "ABIRoot": {
+    "kind": "Root",
+    "name": "TestFramework",
+    "printedName": "TestFramework",
+    "children": [
+      {
+        "kind": "Import",
+        "name": "Foundation",
+        "printedName": "Foundation",
+        "declKind": "Import",
+        "moduleName": "TestFramework"
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "SomeProtocol",
+        "printedName": "SomeProtocol",
+        "children": [
+          {
+            "kind": "Function",
+            "name": "doWork",
+            "printedName": "doWork()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Void",
+                "printedName": "()"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:13TestFramework12SomeProtocolP6doWorkyyF",
+            "mangledName": "$s13TestFramework12SomeProtocolP6doWorkyyF",
+            "moduleName": "TestFramework",
+            "genericSig": "<Self where Self : TestFramework.SomeProtocol>",
+            "protocolReq": true,
+            "funcSelfKind": "NonMutating"
+          }
+        ],
+        "declKind": "Protocol",
+        "usr": "s:13TestFramework12SomeProtocolP",
+        "mangledName": "$s13TestFramework12SomeProtocolP",
+        "moduleName": "TestFramework",
+        "intro_Macosx": "14.0",
+        "intro_iOS": "17.0",
+        "declAttributes": [
+          "Available",
+          "Available"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "Copyable",
+            "printedName": "Copyable",
+            "usr": "s:s8CopyableP",
+            "mangledName": "$ss8CopyableP"
+          }
+        ]
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "Widget",
+        "printedName": "Widget",
+        "children": [
+          {
+            "kind": "Constructor",
+            "name": "init",
+            "printedName": "init(name:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Widget",
+                "printedName": "TestFramework.Widget",
+                "usr": "s:13TestFramework6WidgetC"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              }
+            ],
+            "declKind": "Constructor",
+            "usr": "s:13TestFramework6WidgetC4nameACSS_tcfc",
+            "mangledName": "$s13TestFramework6WidgetC4nameACSS_tcfc",
+            "moduleName": "TestFramework",
+            "init_kind": "Designated"
+          },
+          {
+            "kind": "Function",
+            "name": "process",
+            "printedName": "process(input:)",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Bool",
+                "printedName": "Swift.Bool",
+                "usr": "s:Sb"
+              },
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:13TestFramework6WidgetC7process5inputSbSS_tF",
+            "mangledName": "$s13TestFramework6WidgetC7process5inputSbSS_tF",
+            "moduleName": "TestFramework",
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Function",
+            "name": "defaultWidget",
+            "printedName": "defaultWidget()",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Widget",
+                "printedName": "TestFramework.Widget",
+                "usr": "s:13TestFramework6WidgetC"
+              }
+            ],
+            "declKind": "Func",
+            "usr": "s:13TestFramework6WidgetC07defaultB0ACyFZ",
+            "mangledName": "$s13TestFramework6WidgetC07defaultB0ACyFZ",
+            "moduleName": "TestFramework",
+            "static": true,
+            "funcSelfKind": "NonMutating"
+          },
+          {
+            "kind": "Var",
+            "name": "title",
+            "printedName": "title",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "s:13TestFramework6WidgetC5titleSSvp",
+            "mangledName": "$s13TestFramework6WidgetC5titleSSvp",
+            "moduleName": "TestFramework",
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "String",
+                    "printedName": "Swift.String",
+                    "usr": "s:SS"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "s:13TestFramework6WidgetC5titleSSvg",
+                "mangledName": "$s13TestFramework6WidgetC5titleSSvg",
+                "moduleName": "TestFramework",
+                "accessorKind": "get"
+              },
+              {
+                "kind": "Accessor",
+                "name": "Set",
+                "printedName": "Set()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "String",
+                    "printedName": "Swift.String",
+                    "usr": "s:SS"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "s:13TestFramework6WidgetC5titleSSvs",
+                "mangledName": "$s13TestFramework6WidgetC5titleSSvs",
+                "moduleName": "TestFramework",
+                "accessorKind": "set"
+              }
+            ]
+          },
+          {
+            "kind": "Var",
+            "name": "identifier",
+            "printedName": "identifier",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Optional",
+                "printedName": "Swift.String?",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "String",
+                    "printedName": "Swift.String",
+                    "usr": "s:SS"
+                  }
+                ],
+                "usr": "s:Sq"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "s:13TestFramework6WidgetC10identifierSSSgvp",
+            "mangledName": "$s13TestFramework6WidgetC10identifierSSSgvp",
+            "moduleName": "TestFramework",
+            "isLet": true,
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Optional",
+                    "printedName": "Swift.String?",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "String",
+                        "printedName": "Swift.String",
+                        "usr": "s:SS"
+                      }
+                    ],
+                    "usr": "s:Sq"
+                  }
+                ],
+                "declKind": "Accessor",
+                "usr": "s:13TestFramework6WidgetC10identifierSSSgvg",
+                "mangledName": "$s13TestFramework6WidgetC10identifierSSSgvg",
+                "moduleName": "TestFramework",
+                "accessorKind": "get"
+              }
+            ]
+          }
+        ],
+        "declKind": "Class",
+        "usr": "s:13TestFramework6WidgetC",
+        "mangledName": "$s13TestFramework6WidgetC",
+        "moduleName": "TestFramework",
+        "intro_Macosx": "14.0",
+        "declAttributes": [
+          "Available"
+        ],
+        "superclassUsr": "s:13TestFramework4BaseC",
+        "superclassNames": [
+          "TestFramework.Base"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "SomeProtocol",
+            "printedName": "SomeProtocol",
+            "usr": "s:13TestFramework12SomeProtocolP",
+            "mangledName": "$s13TestFramework12SomeProtocolP"
+          }
+        ]
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "Priority",
+        "printedName": "Priority",
+        "children": [
+          {
+            "kind": "Var",
+            "name": "low",
+            "printedName": "low",
+            "children": [
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "(TestFramework.Priority.Type) -> TestFramework.Priority",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Priority",
+                    "printedName": "TestFramework.Priority",
+                    "usr": "s:13TestFramework8PriorityO"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Metatype",
+                    "printedName": "TestFramework.Priority.Type",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Priority",
+                        "printedName": "TestFramework.Priority",
+                        "usr": "s:13TestFramework8PriorityO"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "declKind": "EnumElement",
+            "usr": "s:13TestFramework8PriorityO3lowyA2CmF",
+            "mangledName": "$s13TestFramework8PriorityO3lowyA2CmF",
+            "moduleName": "TestFramework"
+          },
+          {
+            "kind": "Var",
+            "name": "medium",
+            "printedName": "medium",
+            "children": [
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "(TestFramework.Priority.Type) -> TestFramework.Priority",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Priority",
+                    "printedName": "TestFramework.Priority",
+                    "usr": "s:13TestFramework8PriorityO"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Metatype",
+                    "printedName": "TestFramework.Priority.Type",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Priority",
+                        "printedName": "TestFramework.Priority",
+                        "usr": "s:13TestFramework8PriorityO"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "declKind": "EnumElement",
+            "usr": "s:13TestFramework8PriorityO6mediumyA2CmF",
+            "mangledName": "$s13TestFramework8PriorityO6mediumyA2CmF",
+            "moduleName": "TestFramework"
+          },
+          {
+            "kind": "Var",
+            "name": "high",
+            "printedName": "high",
+            "children": [
+              {
+                "kind": "TypeFunc",
+                "name": "Function",
+                "printedName": "(TestFramework.Priority.Type) -> TestFramework.Priority",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Priority",
+                    "printedName": "TestFramework.Priority",
+                    "usr": "s:13TestFramework8PriorityO"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Metatype",
+                    "printedName": "TestFramework.Priority.Type",
+                    "children": [
+                      {
+                        "kind": "TypeNominal",
+                        "name": "Priority",
+                        "printedName": "TestFramework.Priority",
+                        "usr": "s:13TestFramework8PriorityO"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "declKind": "EnumElement",
+            "usr": "s:13TestFramework8PriorityO4highyA2CmF",
+            "mangledName": "$s13TestFramework8PriorityO4highyA2CmF",
+            "moduleName": "TestFramework"
+          }
+        ],
+        "declKind": "Enum",
+        "usr": "s:13TestFramework8PriorityO",
+        "mangledName": "$s13TestFramework8PriorityO",
+        "moduleName": "TestFramework",
+        "intro_Macosx": "14.0",
+        "declAttributes": [
+          "Available"
+        ],
+        "conformances": [
+          {
+            "kind": "Conformance",
+            "name": "Equatable",
+            "printedName": "Equatable",
+            "usr": "s:SQ",
+            "mangledName": "$sSQ"
+          },
+          {
+            "kind": "Conformance",
+            "name": "Hashable",
+            "printedName": "Hashable",
+            "usr": "s:SH",
+            "mangledName": "$sSH"
+          }
+        ]
+      },
+      {
+        "kind": "TypeDecl",
+        "name": "Config",
+        "printedName": "Config",
+        "children": [
+          {
+            "kind": "Var",
+            "name": "maxRetries",
+            "printedName": "maxRetries",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "Int",
+                "printedName": "Swift.Int",
+                "usr": "s:Si"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "s:13TestFramework6ConfigV10maxRetriesSivp",
+            "mangledName": "$s13TestFramework6ConfigV10maxRetriesSivp",
+            "moduleName": "TestFramework",
+            "declAttributes": [
+              "HasStorage"
+            ],
+            "isLet": true,
+            "hasStorage": true,
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Int",
+                    "printedName": "Swift.Int",
+                    "usr": "s:Si"
+                  }
+                ],
+                "declKind": "Accessor",
+                "accessorKind": "get"
+              }
+            ]
+          },
+          {
+            "kind": "Var",
+            "name": "name",
+            "printedName": "name",
+            "children": [
+              {
+                "kind": "TypeNominal",
+                "name": "String",
+                "printedName": "Swift.String",
+                "usr": "s:SS"
+              }
+            ],
+            "declKind": "Var",
+            "usr": "s:13TestFramework6ConfigV4nameSSvp",
+            "mangledName": "$s13TestFramework6ConfigV4nameSSvp",
+            "moduleName": "TestFramework",
+            "declAttributes": [
+              "HasStorage"
+            ],
+            "hasStorage": true,
+            "accessors": [
+              {
+                "kind": "Accessor",
+                "name": "Get",
+                "printedName": "Get()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "String",
+                    "printedName": "Swift.String",
+                    "usr": "s:SS"
+                  }
+                ],
+                "declKind": "Accessor",
+                "accessorKind": "get"
+              },
+              {
+                "kind": "Accessor",
+                "name": "Set",
+                "printedName": "Set()",
+                "children": [
+                  {
+                    "kind": "TypeNominal",
+                    "name": "Void",
+                    "printedName": "()"
+                  },
+                  {
+                    "kind": "TypeNominal",
+                    "name": "String",
+                    "printedName": "Swift.String",
+                    "usr": "s:SS"
+                  }
+                ],
+                "declKind": "Accessor",
+                "accessorKind": "set"
+              }
+            ]
+          }
+        ],
+        "declKind": "Struct",
+        "usr": "s:13TestFramework6ConfigV",
+        "mangledName": "$s13TestFramework6ConfigV",
+        "moduleName": "TestFramework",
+        "intro_Macosx": "14.0",
+        "declAttributes": [
+          "Available"
+        ],
+        "conformances": []
+      },
+      {
+        "kind": "Function",
+        "name": "createDefaultWidget",
+        "printedName": "createDefaultWidget(name:)",
+        "children": [
+          {
+            "kind": "TypeNominal",
+            "name": "Widget",
+            "printedName": "TestFramework.Widget",
+            "usr": "s:13TestFramework6WidgetC"
+          },
+          {
+            "kind": "TypeNominal",
+            "name": "String",
+            "printedName": "Swift.String",
+            "usr": "s:SS"
+          }
+        ],
+        "declKind": "Func",
+        "usr": "s:13TestFramework19createDefaultWidget4nameAA0D0CSS_tF",
+        "mangledName": "$s13TestFramework19createDefaultWidget4nameAA0D0CSS_tF",
+        "moduleName": "TestFramework"
+      }
+    ]
+  }
+}

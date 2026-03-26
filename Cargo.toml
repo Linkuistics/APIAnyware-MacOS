@@ -4,7 +4,7 @@ members = [
     # Shared types
     "collection/crates/types",
     # Collection phase
-    "collection/crates/extract",
+    "collection/crates/extract-objc",
     "collection/crates/extract-swift",
     "collection/crates/cli",
     # Analysis phase
@@ -35,10 +35,12 @@ thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clang = { version = "2", features = ["clang_10_0", "runtime"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 
 # Internal crates
 apianyware-macos-types = { path = "collection/crates/types" }
-apianyware-macos-extract = { path = "collection/crates/extract" }
+apianyware-macos-extract-objc = { path = "collection/crates/extract-objc" }
 apianyware-macos-extract-swift = { path = "collection/crates/extract-swift" }
 apianyware-macos-datalog = { path = "analysis/crates/datalog" }
 apianyware-macos-resolve = { path = "analysis/crates/resolve" }

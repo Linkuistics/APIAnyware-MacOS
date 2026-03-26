@@ -2,3 +2,8 @@ target/
 .build/
 *.swp
 .DS_Store
+
+# Generated IR checkpoints (large JSON files)
+collection/ir/collected/
+analysis/ir/resolved/
+analysis/ir/enriched/

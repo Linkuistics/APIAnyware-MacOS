@@ -7,8 +7,9 @@ description = "CLI: apianyware-macos-collect — extract macOS API metadata from
 
 [dependencies]
 apianyware-macos-types.workspace = true
-apianyware-macos-extract.workspace = true
+apianyware-macos-extract-objc.workspace = true
 apianyware-macos-extract-swift.workspace = true
+serde_json.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tracing.workspace = true
