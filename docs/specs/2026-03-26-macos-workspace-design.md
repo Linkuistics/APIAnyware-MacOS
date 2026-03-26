@@ -225,6 +225,75 @@ All paths produce the same schema. The `annotate` crate's merge step integrates 
 
 **The prompt template** (`analysis/scripts/prompt-template.md`) is the reusable asset. It describes the annotation schema, the method signature format, and what to look for in Apple documentation.
 
+### API Pattern Recognition
+
+Many macOS APIs implement stereotypical multi-method behavioral contracts. Individual method annotations (ownership, threading, block style) are necessary but not sufficient — emitters also need to know which methods work together as a group, what ordering/lifecycle constraints govern them, and what idiomatic construct the group maps to in each target language.
+
+**Pattern stereotypes** (discovered via research; see Milestone 5.5 in plan):
+
+| Stereotype | Shape | macOS examples | Idiomatic target |
+|---|---|---|---|
+| **Resource lifecycle** | open → use* → close | `CGPathCreateMutable` → add* → release; `CGContextBeginPath` → draw* → `StrokePath` | `with-path`, `withContext`, RAII guard |
+| **Builder sequence** | create → configure* → build | `NSMutableURLRequest` setters → copy to `NSURLRequest` | builder DSL, `let`-chain |
+| **Observer pair** | register → (callback)* → unregister | `addObserver:` / `removeObserver:`; KVO | scoped observer, bracket pattern |
+| **Transaction bracket** | begin → mutate* → commit/rollback | `CATransaction.begin()` / `.commit()` | `with-transaction`, `atomically` |
+| **Enumeration** | container → iterate → element* | `NSFastEnumeration`, `enumerateObjectsUsingBlock:` | `for`/`map`/`fold`, lazy sequence |
+| **Error-out** | call → check error param → handle | `...error:(NSError **)` pattern | `Result`, `Either`, exception, condition |
+| **Delegate protocol** | setDelegate → (callbacks)* | `NSWindowDelegate`, `UITableViewDataSource` | trait impl, protocol extension, mixin |
+| **Target-action** | setTarget + setAction + (trigger)* | `NSControl` / `NSMenuItem` | event handler, signal/slot |
+| **Paired state** | enable/disable, lock/unlock, show/hide | `NSLock.lock()` / `.unlock()` | `with-lock`, scoped guard |
+| **Factory cluster** | abstract class → concrete subclass selection | `NSNumber numberWithInt:`, `NSString stringWith*:` | smart constructor, `from`/`into` |
+
+**How patterns are discovered:**
+
+1. **Heuristic detection** (Rust, deterministic): Selector naming conventions and type signatures catch many instances — `begin`/`end` pairs, `add`/`remove` observer pairs, `create`/`release` lifecycles, mutable/immutable class pairs.
+
+2. **LLM analysis of documentation** (primary source): The LLM reads not only API reference documentation but also **Apple's programming guides and tutorials** (e.g., "Quartz 2D Programming Guide", "Cocoa Drawing Guide", "Key-Value Observing Programming Guide"). Guides describe usage patterns explicitly — they show the sequence of calls, the constraints, and the intended lifecycle. This is information that cannot be derived from headers alone.
+
+3. **Pattern catalog** (`analysis/docs/api-pattern-catalog.md`): A curated, versioned catalog of known stereotypes with their detection rules and per-language translation templates. LLM analysis proposes new instances; human review promotes them to the catalog. The catalog is the contract between analysis and generation.
+
+**Pattern representation in the IR:**
+
+Patterns are stored in the annotated checkpoint alongside per-method annotations:
+
+```json
+{
+  "api_patterns": [
+    {
+      "stereotype": "resource_lifecycle",
+      "name": "CGPath construction",
+      "participants": {
+        "open": { "function": "CGPathCreateMutable" },
+        "operations": [
+          { "function": "CGPathMoveToPoint" },
+          { "function": "CGPathAddLineToPoint" },
+          { "function": "CGPathAddArc" },
+          { "function": "CGPathCloseSubpath" }
+        ],
+        "close": { "function": "CGPathRelease" }
+      },
+      "constraints": {
+        "ordering": "open must precede operations; close must follow all operations",
+        "thread_safety": "not thread-safe; all calls must be on same thread",
+        "ownership": "caller owns from open to close"
+      },
+      "source": "llm",
+      "doc_ref": "Quartz 2D Programming Guide > Paths"
+    }
+  ]
+}
+```
+
+**How emitters use patterns:**
+
+Each emitter maps stereotypes to language-idiomatic constructs. The shared `emit` crate provides the stereotype → translation-template dispatch; per-language emitters supply the templates:
+
+- **Resource lifecycle** → `with-path` (Scheme/Lisp), `withCGPath` (Haskell bracket), RAII guard (Zig), `ensure` block (Smalltalk)
+- **Builder sequence** → builder DSL with method chaining or `let`-pipeline
+- **Observer pair** → scoped observer that auto-unregisters, or bracket pattern
+- **Transaction bracket** → `with-transaction` / `atomically` / scoped commit
+- **Error-out** → `Result`/`Either` (Haskell/OCaml/Zig), conditions (CL), `exn` (Racket)
+
 ### Enrich (`enrich` crate) — Datalog Pass 2
 
 Reads `analysis/ir/annotated/` and runs Datalog with annotation facts to produce generation-facing derived relations.
@@ -238,6 +307,13 @@ Reads `analysis/ir/annotated/` and runs Datalog with annotation facts to produce
 - `collection_iterable(class)` — class with count + objectAtIndex: or NSFastEnumeration
 - `scoped_resource(class, open_selector, close_selector)` — begin/end or open/close pairs for `with-` forms
 - `main_thread_class(class)` — all methods on this class must be called from main thread
+
+**Pattern-derived relations** (from API pattern annotations):
+- `pattern_instance(stereotype, pattern_name, framework)` — a recognized API usage pattern
+- `pattern_participant(pattern_name, role, class_or_function, selector)` — method/function participating in a pattern
+- `pattern_constraint(pattern_name, constraint_kind, description)` — ordering, threading, or ownership constraints on a pattern
+
+These relations enable emitters to query "give me all resource-lifecycle patterns in CoreGraphics" and generate `with-*` forms, bracket patterns, or RAII guards as appropriate for the target language.
 
 **Verification rules (violations = CI failure):**
 - `violation_unwrapped(class, selector)` — id-returning method not wrapped
@@ -270,7 +346,8 @@ Not the current focus. The Racket emitter moves from the existing POC; all other
 - Reads `analysis/ir/enriched/{Framework}.json`
 - Shared emitter framework (`emit` crate) provides common utilities: name mapping, type resolution, documentation rendering, framework dependency ordering
 - Per-language emitter crates (`emit-racket`, `emit-haskell`, etc.) implement language-specific code generation
-- Each emitter uses enrichment relations (ownership, threading, block lifecycle, error patterns) to decide wrapping patterns
+- Each emitter uses enrichment relations (ownership, threading, block lifecycle, error patterns) and API pattern instances to decide wrapping strategies
+- API pattern stereotypes drive high-level idiomatic constructs: resource lifecycles → `with-*` / bracket / RAII; builder sequences → DSLs or `let`-chains; observer pairs → scoped auto-unregister; transaction brackets → `atomically` / `with-transaction`
 - Runtime support libraries (per-language) provide ObjC object lifecycle management, block/delegate bridging, memory safety guarantees appropriate to the target language
 - Swift helper dylibs provide the C-callable ObjC runtime interface shared across all target languages
 - Generated documentation cross-references Apple docs using `doc_refs` from collected IR
@@ -417,7 +494,28 @@ Adds to the annotated format:
       { "class": "NSFileManager", "selector": "contentsOfDirectoryAtPath:error:" }
     ],
     "main_thread_classes": ["NSView", "NSWindow", "NSApplication"],
-    "collection_iterables": ["NSArray", "NSSet", "NSOrderedSet"]
+    "collection_iterables": ["NSArray", "NSSet", "NSOrderedSet"],
+    "api_patterns": [
+      {
+        "stereotype": "resource_lifecycle",
+        "name": "CGPath construction",
+        "participants": {
+          "open": { "function": "CGPathCreateMutable" },
+          "operations": ["CGPathMoveToPoint", "CGPathAddLineToPoint", "CGPathAddArc", "CGPathCloseSubpath"],
+          "close": { "function": "CGPathRelease" }
+        },
+        "constraints": ["open-before-use", "close-after-use", "single-thread"]
+      },
+      {
+        "stereotype": "observer_pair",
+        "name": "NSNotificationCenter observation",
+        "participants": {
+          "register": { "class": "NSNotificationCenter", "selector": "addObserver:selector:name:object:" },
+          "unregister": { "class": "NSNotificationCenter", "selector": "removeObserver:" }
+        },
+        "constraints": ["must-unregister-before-dealloc"]
+      }
+    ]
   },
   "verification": {
     "passed": true,

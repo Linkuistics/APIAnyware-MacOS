@@ -155,9 +155,9 @@ Implement Datalog pass 1: inheritance flattening, ownership detection, protocol 
   - [ ] `apianyware-macos-analyze resolve` processes all collected frameworks
   - [ ] Auto-discovers `collection/ir/collected/*.json`
 
-### Milestone 5: Annotation
+### Milestone 5: Annotation & API Pattern Recognition
 
-Implement heuristic classification and LLM annotation merge.
+Implement heuristic classification, LLM annotation merge, and API usage pattern recognition.
 
 - [ ] 5.1 Harvest heuristics from POC
   - [ ] `heuristics.rs` → `analysis/crates/annotate/src/heuristics.rs`
@@ -176,10 +176,32 @@ Implement heuristic classification and LLM annotation merge.
 - [ ] 5.4 Wire up CLI
   - [ ] `apianyware-macos-analyze annotate` processes all resolved frameworks
   - [ ] Auto-discovers `analysis/ir/resolved/*.json`
+- [ ] 5.5 Research API pattern stereotypes
+  - [ ] Survey macOS frameworks for recurring multi-method behavioral contracts
+  - [ ] Identify stereotypes: resource lifecycle, builder sequence, observer pair, transaction bracket, enumeration, error-out, delegate protocol, target-action, paired state, factory cluster
+  - [ ] For each stereotype: document the shape (method roles, ordering constraints, ownership/threading implications)
+  - [ ] For each stereotype: identify canonical macOS examples from Apple's programming guides and tutorials
+  - [ ] For each stereotype: sketch idiomatic translations for representative target languages
+  - [ ] Write `analysis/docs/api-pattern-catalog.md` — the versioned catalog of stereotypes, detection rules, and translation templates
+- [ ] 5.6 Define API pattern IR schema
+  - [ ] Add `ApiPattern`, `PatternStereotype`, `PatternParticipant`, `PatternConstraint` types to `collection/crates/types/`
+  - [ ] Add `api_patterns` field to `Framework` (populated during annotation, carried through enrichment)
+  - [ ] Write tests: pattern schema roundtrip serialization
+- [ ] 5.7 Implement heuristic pattern detection
+  - [ ] Detect resource lifecycles from `create`/`release` and `begin`/`end` selector pairs
+  - [ ] Detect observer pairs from `addObserver`/`removeObserver` selector pairs
+  - [ ] Detect paired state from `lock`/`unlock`, `enable`/`disable`, `show`/`hide` pairs
+  - [ ] Detect error-out from `(NSError **)` parameter signature
+  - [ ] Detect mutable/immutable factory clusters from class name pairs
+- [ ] 5.8 Extend LLM prompt for pattern recognition
+  - [ ] Update `prompt-template.md` to request API pattern annotations
+  - [ ] LLM reads not only API reference docs but also Apple programming guides and tutorials
+  - [ ] LLM proposes pattern instances with stereotype, participants, and constraints
+  - [ ] Merge LLM-discovered patterns with heuristic-detected patterns (LLM takes precedence)
 
 ### Milestone 6: Enrichment
 
-Implement Datalog pass 2: annotation-derived relations and verification.
+Implement Datalog pass 2: annotation-derived relations, API pattern enrichment, and verification.
 
 - [ ] 6.1 Implement enrichment rules in `analysis/crates/enrich/`
   - [ ] Load type facts + annotation facts
@@ -187,18 +209,26 @@ Implement Datalog pass 2: annotation-derived relations and verification.
   - [ ] Derive: `delegate_protocol`, `convenience_error_method`
   - [ ] Derive: `collection_iterable`, `scoped_resource`
   - [ ] Derive: `main_thread_class`
-- [ ] 6.2 Implement verification rules
+- [ ] 6.2 Implement API pattern enrichment
+  - [ ] Load pattern annotations from annotated checkpoint
+  - [ ] Derive: `pattern_instance(stereotype, pattern_name, framework)`
+  - [ ] Derive: `pattern_participant(pattern_name, role, class_or_function, selector)`
+  - [ ] Derive: `pattern_constraint(pattern_name, constraint_kind, description)`
+  - [ ] Cross-reference patterns with per-method annotations (e.g., resource lifecycle + ownership)
+  - [ ] Validate pattern consistency: all participants exist, constraints are satisfiable
+- [ ] 6.3 Implement verification rules
   - [ ] `violation_unwrapped` — every id-returning method is wrapped
   - [ ] `violation_flag_mismatch` — retained flag matches ownership family
   - [ ] `violation_unclassified_block` — every block param classified
   - [ ] Write verification report alongside enriched checkpoint
-- [ ] 6.3 Wire up CLI
+- [ ] 6.4 Wire up CLI
   - [ ] `apianyware-macos-analyze enrich` processes all annotated frameworks
   - [ ] `apianyware-macos-analyze` runs full pipeline: resolve → annotate → enrich
   - [ ] Auto-discovers input files at each step
-- [ ] 6.4 Validate enrichment
+- [ ] 6.5 Validate enrichment
   - [ ] Foundation + AppKit: zero verification violations
   - [ ] Enrichment relations are populated and sensible
+  - [ ] API patterns are populated for frameworks with known stereotypes
   - [ ] Enriched checkpoint is self-contained (Generation can read only this file)
 
 ### Review 6
@@ -206,6 +236,7 @@ Implement Datalog pass 2: annotation-derived relations and verification.
   - [ ] Full pipeline: collect → resolve → annotate → enrich runs end-to-end
   - [ ] All checkpoints are valid JSON matching the spec
   - [ ] Verification passes for all frameworks
+  - [ ] API pattern catalog is documented and pattern instances are populated
   - [ ] Memory architecture doc is complete and accurate
   - [ ] Annotation workflow doc is complete
 
@@ -216,6 +247,8 @@ Build the shared emitter framework, port the Racket emitter from POC, then add e
 - [ ] 7.1 Port shared emitter framework (`emit` crate)
   - [ ] Common utilities: name mapping, type resolution, doc rendering, framework ordering
   - [ ] Binding style abstraction: OO vs functional vs procedural output from same IR
+  - [ ] API pattern → idiomatic construct dispatch: stereotype-to-template mapping per language
+  - [ ] Pattern templates: resource lifecycle → `with-*`/bracket/RAII; builder → DSL/chain; observer → scoped; transaction → `atomically`/`with-transaction`
 - [ ] 7.2 Port Swift helper dylibs (shared C-callable ObjC runtime interface)
 - [ ] 7.3 Port Racket emitter + runtime (OO + functional styles)
 - [ ] 7.4 Add Chez Scheme emitter + runtime (functional style)

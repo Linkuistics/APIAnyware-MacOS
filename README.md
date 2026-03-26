@@ -11,7 +11,8 @@ Part of the [APIAnyware](https://linkuistics.com) family — see also `APIAnywar
 - **Idiomatic, not mechanical.** Each target language gets bindings that feel native — not a lowest-common-denominator C wrapper. A Haskell user gets monadic error handling; a Smalltalk user gets message-passing objects; an OCaml user gets modules and variants.
 - **Multiple binding styles per language.** Languages with both OO and functional idioms (e.g., Common Lisp, OCaml, Racket) can produce both an object-oriented API and a functional/procedural API from the same enriched IR.
 - **Full API coverage.** Every framework in the macOS SDK, not just Foundation and AppKit. Both ObjC and Swift-only APIs.
-- **Auto-generated with human-quality results.** The enriched IR carries enough semantic information (ownership, threading, block lifecycle, error patterns) for emitters to make intelligent wrapping decisions without per-method human intervention.
+- **API pattern recognition.** Many APIs implement stereotypical patterns — builder sequences, open/use/close lifecycles, observer registration/removal pairs, begin/commit transactions. The analysis phase recognizes these cross-method behavioral contracts and encodes them in the IR, enabling emitters to produce idiomatic wrappers like `with-path` (Lisp/Scheme), `withCGContext` (Haskell), or RAII guards (Zig) automatically.
+- **Auto-generated with human-quality results.** The enriched IR carries enough semantic information (ownership, threading, block lifecycle, error patterns, API usage patterns) for emitters to make intelligent wrapping decisions without per-method human intervention.
 
 ## Architecture
 
@@ -23,7 +24,7 @@ Collection ──► Analysis ──► Generation
 
 **Collection** parses macOS SDK headers (libclang) and Swift modules (swift-api-digester) to produce raw API metadata with full provenance and documentation references.
 
-**Analysis** resolves inheritance via Datalog, adds semantic annotations (block invocation style, parameter ownership, threading constraints, error patterns) via heuristics and LLM analysis, then enriches with Datalog-derived relations for generation.
+**Analysis** resolves inheritance via Datalog, adds semantic annotations (block invocation style, parameter ownership, threading constraints, error patterns, API usage patterns) via heuristics and LLM analysis, then enriches with Datalog-derived relations for generation. API pattern recognition identifies stereotypical multi-method contracts (builder sequences, resource lifecycles, observer pairs) by analyzing Apple's guides and tutorials in addition to API reference documentation.
 
 **Generation** emits per-language bindings with runtime support libraries and Swift helper dylibs. Each emitter reads the same enriched IR but produces output shaped to the target language's idioms and conventions.
 
@@ -35,8 +36,8 @@ Each phase reads the previous checkpoint and writes the next. Intermediate check
 |---|---|---|---|
 | Collected | `collection/ir/collected/` | `apianyware-macos-collect` | Raw declarations, provenance, doc refs |
 | Resolved | `analysis/ir/resolved/` | `apianyware-macos-analyze resolve` | + inheritance, effective methods, ownership |
-| Annotated | `analysis/ir/annotated/` | `apianyware-macos-analyze annotate` + LLM | + block/threading/ownership annotations |
-| Enriched | `analysis/ir/enriched/` | `apianyware-macos-analyze enrich` | + derived relations, verification |
+| Annotated | `analysis/ir/annotated/` | `apianyware-macos-analyze annotate` + LLM | + block/threading/ownership/pattern annotations |
+| Enriched | `analysis/ir/enriched/` | `apianyware-macos-analyze enrich` | + derived relations, pattern instances, verification |
 
 ## Quick Start
 
