@@ -152,8 +152,10 @@ Languages with both OO and functional paradigms produce multiple binding styles 
 ## Documentation
 
 - [Design Spec](docs/specs/2026-03-26-macos-workspace-design.md) — full architecture and checkpoint format
-- `analysis/docs/memory-architecture.md` — ObjC/Swift memory model (planned)
-- `analysis/docs/annotation-workflow.md` — when and how to run the pipeline (planned)
+- [Memory Architecture](analysis/docs/memory-architecture.md) — ObjC/Swift ownership model, block/delegate lifecycles, GC prevention, verification rules
+- [Annotation Workflow](analysis/docs/annotation-workflow.md) — when and how to run each pipeline step, LLM annotation options, merge precedence
+- [Enrichment Rules](analysis/docs/enrich-rules.md) — what each Datalog-derived relation means and how emitters use it
+- [API Pattern Catalog](analysis/docs/api-pattern-catalog.md) — 10 stereotypical API patterns with detection rules and per-language translation templates
 
 ## License
 
