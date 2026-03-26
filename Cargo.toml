@@ -16,9 +16,9 @@ members = [
     # Generation phase
     "generation/crates/emit",
     "generation/crates/emit-racket",
+    "generation/crates/cli",
     # "generation/crates/emit-chez",
     # "generation/crates/emit-gerbil",
-    # "generation/crates/cli",
 ]
 
 [workspace.package]

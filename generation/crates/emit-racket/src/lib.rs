@@ -12,3 +12,5 @@ pub mod emit_protocol;
 pub mod method_filter;
 pub mod naming;
 pub mod shared_signatures;
+
+pub use emit_framework::RacketEmitter;

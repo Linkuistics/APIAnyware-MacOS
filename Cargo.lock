@@ -206,6 +206,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "apianyware-macos-generate"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "apianyware-macos-datalog",
+ "apianyware-macos-emit",
+ "apianyware-macos-emit-racket",
+ "apianyware-macos-types",
+ "clap",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "apianyware-macos-resolve"
 version = "0.1.0"
 dependencies = [

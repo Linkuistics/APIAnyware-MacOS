@@ -3,9 +3,12 @@
 //! Orchestrates generation of all files for a framework: class files,
 //! enums, constants, protocols, and the main re-export module.
 
+use std::io;
 use std::path::Path;
 
-use apianyware_macos_emit::binding_style::{BindingStyle, EmitResult, LanguageInfo};
+use apianyware_macos_emit::binding_style::{
+    BindingStyle, EmitResult, LanguageEmitter, LanguageInfo,
+};
 use apianyware_macos_emit::code_writer::{CodeWriter, FileEmitter};
 use apianyware_macos_emit::naming::class_name_to_lowercase;
 use apianyware_macos_emit::write_line;
@@ -23,6 +26,25 @@ pub const RACKET_LANGUAGE_INFO: LanguageInfo = LanguageInfo {
     supported_styles: &[BindingStyle::ObjectOriented, BindingStyle::Functional],
     default_style: BindingStyle::ObjectOriented,
 };
+
+/// Racket language emitter implementing the shared [`LanguageEmitter`] trait.
+pub struct RacketEmitter;
+
+impl LanguageEmitter for RacketEmitter {
+    fn language_info(&self) -> &LanguageInfo {
+        &RACKET_LANGUAGE_INFO
+    }
+
+    fn emit_framework(
+        &self,
+        framework: &Framework,
+        output_dir: &Path,
+        _style: BindingStyle,
+    ) -> io::Result<EmitResult> {
+        // TODO: differentiate OO vs Functional style when functional emitter is implemented
+        emit_framework(framework, output_dir)
+    }
+}
 
 /// Emit all Racket bindings for a framework to the given output directory.
 ///

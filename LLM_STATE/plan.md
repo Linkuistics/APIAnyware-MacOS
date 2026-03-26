@@ -301,12 +301,15 @@ Build the shared emitter framework, port the Racket emitter from POC, then add e
 
 Build the machinery that every language target uses. Must complete before any language target finishes.
 
-- [ ] 8.1 Generation CLI (`apianyware-macos-generate`)
-  - [ ] Binary crate at `generation/crates/cli/`
-  - [ ] `--lang` flag selects language (default: all registered)
-  - [ ] Reads enriched IR from `analysis/ir/enriched/`
-  - [ ] Invokes registered emitter, writes to `generation/targets/{lang}/generated/{style}/{framework}/`
-  - [ ] `--list-languages` shows available emitters and their binding styles
+- [x] 8.1 Generation CLI (`apianyware-macos-generate`)
+  - [x] Binary crate at `generation/crates/cli/` with `registry.rs` (emitter registry) and `generate.rs` (orchestration)
+  - [x] `--lang` flag selects language (default: all registered), generates all styles and all frameworks
+  - [x] Reads enriched IR from `analysis/ir/enriched/` (reuses `apianyware_macos_datalog::loading`)
+  - [x] Invokes registered emitter, writes to `generation/targets/{lang}/generated/{style}/{framework}/`
+  - [x] `--list-languages` shows available emitters and their binding styles
+  - [x] `LanguageEmitter` trait in shared emit crate, `RacketEmitter` implements it
+  - [x] Topological sort for framework dependency ordering during generation
+  - [x] 11 tests (4 registry + 7 generation orchestration), Foundation end-to-end verified (382 files, 308 classes)
 - [ ] 8.2 Snapshot test harness
   - [ ] Framework for golden-file regression tests
   - [ ] Per-language, per-binding-style golden sets
@@ -465,3 +468,5 @@ Blocked on The Great Explainer. Apply to all completed language targets.
 - **Racket emitter ports cleanly with type adaptations:** The emit-racket crate ports from POC with three IR type changes: `Enum.enum_type` is `TypeRef` (not `String`), `EnumValue.value` is `i64` (not `String`), and Method now has `source`/`provenance`/`doc_refs` optional fields. The `{}`-formatting of `i64` in Racket `(define name value)` works identically to the POC's string values.
 - **Racket runtime dylib name must match Swift package product:** The POC used `libanyware_racket` but the new project builds `libAPIAnywareRacket.dylib` (matching the Swift package product name `APIAnywareRacket`). Only `swift-helpers.rkt` references the dylib name — all other runtime files use `swift-helpers.rkt` indirectly.
 - **Framework header simplified from POC:** The POC had per-framework match arms for AppKit/Foundation in `emit_header`. The new version uses a single format string `"/System/Library/Frameworks/{0}.framework/{0}"` — all frameworks follow this path convention on macOS, so the special cases were unnecessary.
+- **LanguageEmitter trait enables CLI dispatch:** Added `LanguageEmitter` trait to the shared `emit` crate with `language_info()` and `emit_framework(fw, output_dir, style)` methods. Each language emitter implements this trait (e.g., `RacketEmitter`). The CLI's `EmitterRegistry` collects all implementations and dispatches by language ID. The style parameter is passed through so emitters can differentiate OO vs Functional output when ready.
+- **Generation CLI reuses datalog loading infrastructure:** The `apianyware_macos_datalog::loading` module (discover/load framework JSON) is reused by the generation CLI — no need to duplicate file discovery logic. The CLI adds topological sorting on top for dependency-ordered generation.

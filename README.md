@@ -38,6 +38,7 @@ Each phase reads the previous checkpoint and writes the next. Intermediate check
 | Resolved | `analysis/ir/resolved/` | `apianyware-macos-analyze resolve` | + inheritance, effective methods, ownership |
 | Annotated | `analysis/ir/annotated/` | `apianyware-macos-analyze annotate` + LLM | + block/threading/ownership/pattern annotations |
 | Enriched | `analysis/ir/enriched/` | `apianyware-macos-analyze enrich` | + derived relations, pattern instances, verification |
+| Generated | `generation/targets/{lang}/generated/` | `apianyware-macos-generate` | Per-language, per-style bindings |
 
 ## Quick Start
 
@@ -67,6 +68,21 @@ cargo run -p apianyware-macos-analyze -- resolve     # Datalog pass 1
 cargo run -p apianyware-macos-analyze -- annotate    # heuristics + LLM merge
 cargo run -p apianyware-macos-analyze -- enrich      # Datalog pass 2 + verification
 ```
+
+### Generate language bindings
+
+```sh
+cargo run -p apianyware-macos-generate
+```
+
+Generates bindings for all registered languages and all binding styles from the enriched IR. To generate for a specific language:
+
+```sh
+cargo run -p apianyware-macos-generate -- --lang racket
+cargo run -p apianyware-macos-generate -- --list-languages    # show available emitters
+```
+
+Output goes to `generation/targets/{lang}/generated/{style}/`.
 
 ### LLM annotation (Claude Code)
 
@@ -111,31 +127,21 @@ APIAnyware-MacOS/
     docs/                                            — memory model, workflow docs
     scripts/                                         — LLM annotation scripts
 
-  generation/         # (deferred — per-language emitters + runtimes)
+  generation/
     crates/
-      emit/           # shared emitter framework
-      emit-racket/    # one crate per target language
-      emit-chez/
-      emit-gerbil/
-      emit-cl/        # Common Lisp (SBCL, CCL)
-      emit-haskell/
-      emit-idris2/
-      emit-ocaml/
-      emit-prolog/    # Prolog + Mercury
-      emit-rhombus/
-      emit-smalltalk/ # Pharo Smalltalk
-      emit-zig/
-      cli/            # apianyware-macos-generate
-    targets/          # runtime support per language
+      emit/           # apianyware-macos-emit          — shared emitter framework
+      emit-racket/    # apianyware-macos-emit-racket   — Racket emitter (OO + functional)
+      cli/            # apianyware-macos-generate       — generation CLI
+    targets/          # runtime support + generated output per language
 
-  swift/              # (deferred — Swift helper dylibs)
+  swift/              # Swift helper dylibs (C-callable ObjC runtime interface)
 ```
 
 ### Target Languages
 
 | Language | Style(s) | Status |
 |---|---|---|
-| Racket | OO (classes) + functional | POC exists |
+| Racket | OO (classes) + functional | Emitter + runtime ported |
 | Chez Scheme | Functional | Planned |
 | Gerbil Scheme | OO + functional | Planned |
 | Common Lisp (SBCL, CCL) | CLOS + functional | Planned |

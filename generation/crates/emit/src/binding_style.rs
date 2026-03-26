@@ -8,6 +8,10 @@
 //! procedural API; OCaml gets both a module-based functional API and an OO API.
 
 use std::fmt;
+use std::io;
+use std::path::Path;
+
+use apianyware_macos_types::Framework;
 
 /// A binding style that an emitter can produce.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -74,6 +78,27 @@ pub struct EmitResult {
     pub functions_emitted: usize,
     /// Number of constants emitted.
     pub constants_emitted: usize,
+}
+
+/// Trait that all language-specific emitters implement.
+///
+/// The generation CLI uses this to dispatch framework emission to the
+/// appropriate language emitter based on the `--lang` flag.
+pub trait LanguageEmitter {
+    /// Metadata about this emitter (id, display name, supported styles).
+    fn language_info(&self) -> &LanguageInfo;
+
+    /// Emit bindings for a single framework in the given binding style.
+    ///
+    /// `output_dir` is the style-specific directory (e.g.,
+    /// `generation/targets/racket/generated/oo/`). The emitter creates
+    /// a framework subdirectory within it.
+    fn emit_framework(
+        &self,
+        framework: &Framework,
+        output_dir: &Path,
+        style: BindingStyle,
+    ) -> io::Result<EmitResult>;
 }
 
 #[cfg(test)]
