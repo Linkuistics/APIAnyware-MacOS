@@ -348,6 +348,16 @@ First language target — proves the template. See `LLM_STATE/plan-racket.md` fo
 - [ ] 9.10 Per-framework exercisers
 - [ ] 9.11 Documentation placeholder
 
+### Review 9 — Hardening & LLM Integration
+
+**Stop after Milestone 9 to review and harden before adding more languages.** Running all 283 frameworks already exposed a real enrichment bug. Comprehensive testing and cleanup will prevent issues from compounding across language targets.
+
+- [ ] 9.R.1 Framework ignore list — explicitly mark DriverKit, Tk, and any other inappropriate frameworks (C++ headers, Tcl/Tk, stub-only) as ignored with documented reasons, rather than silently failing or producing empty output
+- [ ] 9.R.2 Test coverage audit — identify gaps across collection, resolution, annotation, enrichment, and generation; target 100% coverage of all code paths
+- [ ] 9.R.3 Testing methodology improvements — evaluate test reliability, consider property-based tests, cross-framework integration tests, and end-to-end pipeline smoke tests that exercise all 283 frameworks
+- [ ] 9.R.4 LLM analysis integration — replace the external `llm-annotate.sh` script with a proper Rust command (`apianyware-macos-analyze llm-annotate`) that handles batching, provider configuration, prompt management, and merge — no manual steps required
+- [ ] 9.R.5 Code review and cleanup — address any accumulated tech debt, naming inconsistencies, or dead code discovered during review
+
 ### Milestone 10: Chez Scheme (Functional)
 
 See `LLM_STATE/plan-chez.md` (created when work begins).
