@@ -310,38 +310,40 @@ Build the machinery that every language target uses. Must complete before any la
   - [x] `LanguageEmitter` trait in shared emit crate, `RacketEmitter` implements it
   - [x] Topological sort for framework dependency ordering during generation
   - [x] 11 tests (4 registry + 7 generation orchestration), Foundation end-to-end verified (382 files, 308 classes)
-- [ ] 8.2 Snapshot test harness
-  - [ ] Framework for golden-file regression tests
-  - [ ] Per-language, per-binding-style golden sets
-  - [ ] Integrated into `cargo test`
-- [ ] 8.3 Sample app specifications
-  - [ ] `generation/apps/specs/hello-window.md`
-  - [ ] `generation/apps/specs/counter.md`
-  - [ ] `generation/apps/specs/ui-controls-gallery.md`
-  - [ ] `generation/apps/specs/file-lister.md`
-  - [ ] `generation/apps/specs/text-editor.md`
-  - [ ] `generation/apps/specs/mini-browser.md`
-  - [ ] `generation/apps/specs/menu-bar-tool.md`
-  - [ ] `generation/apps/tests/` — language-independent TestAnyware validation steps per app
-- [ ] 8.4 TestAnyware workflow documentation
-  - [ ] LLM-driven QA workflow: boot VM, build app, launch, screenshot-driven exploration
-  - [ ] Uses dev build from `../TestAnyware/` (can fix bugs in-place, see `TestAnyware/docs/driver-project-setup.md`)
-  - [ ] Conventions for test artifacts (screenshots, reports)
-- [ ] 8.5 New language guide
-  - [ ] `LLM_STATE/new-language-guide.md` — step-by-step instructions for adding a language target
+- [x] 8.2 Snapshot test harness
+  - [x] `snapshot_testing.rs` in shared emit crate: `GoldenTest` struct with `assert_matches()`, directory comparison, unified diff output, `UPDATE_GOLDEN=1` env var for refreshing golden files (10 unit tests)
+  - [x] `test_fixtures.rs` in shared emit crate: `build_snapshot_test_framework()` — deterministic synthetic `TestKit` framework with 5 classes, 2 protocols, 1 enum, 2 constants exercising all emitter code paths (constructors, properties, methods, blocks, dispatch strategies, inheritance, class methods) (5 unit tests)
+  - [x] Racket OO integration test: generates TestKit bindings, compares against 10 golden files (5 classes + 2 protocols + enums + constants + main.rkt)
+  - [x] Per-language, per-binding-style golden sets at `emit-{lang}/tests/golden/{style}/`
+  - [x] Integrated into `cargo test` — regression detected immediately with diff output and update instructions
+- [x] 8.3 Sample app specifications
+  - [x] `generation/apps/specs/hello-window.md` — object lifecycle, property setters, NSWindow
+  - [x] `generation/apps/specs/counter.md` — target-action, buttons, mutable state
+  - [x] `generation/apps/specs/ui-controls-gallery.md` — all standard AppKit controls, visual regression baseline
+  - [x] `generation/apps/specs/file-lister.md` — NSTableView, data source delegate, NSFileManager, NSOpenPanel
+  - [x] `generation/apps/specs/text-editor.md` — block callbacks, error-out, undo/redo, notifications, find
+  - [x] `generation/apps/specs/mini-browser.md` — cross-framework WebKit, WKNavigationDelegate, URL handling
+  - [x] `generation/apps/specs/menu-bar-tool.md` — NSStatusBar, NSMenu, no-window app, timers, clipboard
+  - [x] `generation/apps/tests/` — 7 TestAnyware validation scripts with step-by-step checklists per app
+- [x] 8.4 TestAnyware workflow documentation
+  - [x] `generation/apps/testanyware-workflow.md` — full LLM-driven QA workflow: VM setup, build, launch, screenshot-driven exploration loop, issue categorization, fix-and-retest cycle
+  - [x] Uses dev build from `../TestAnyware/` with in-place fix workflow documented
+  - [x] Test artifact conventions: `generation/targets/{lang}/test-results/{style}/{app}/` with screenshots and report.md template
+- [x] 8.5 New language guide
+  - [x] `LLM_STATE/new-language-guide.md` — step-by-step instructions for adding a language target (11 steps, checklist, reference implementations, snapshot test harness integration)
 
 ### Milestone 9: Racket (OO + Functional)
 
 First language target — proves the template. See `LLM_STATE/plan-racket.md` for full details.
 
 - [x] 9.1 Emitter crate (20 tests)
-- [x] 9.2 Runtime library (7 files)
-- [ ] 9.3 Swift dylib integration (FFI verification from Racket)
-- [ ] 9.4 Generation CLI wiring
-- [ ] 9.5 Snapshot tests
-- [ ] 9.6 Language-side smoke tests
-- [ ] 9.7 Sample apps — OO style (8 apps)
-- [ ] 9.8 Sample apps — Functional style (8 apps)
+- [x] 9.2 Runtime library (7 files, all load in Racket, dylib available)
+- [x] 9.3 Swift dylib integration (39 Racket tests: 7 load + 20 FFI round-trip + 5 block + 7 delegate)
+- [x] 9.4 Generation CLI wiring (already functional from 8.1; Foundation: 382 files × 2 styles)
+- [x] 9.5 Snapshot tests (TestKit full + Foundation 18-file curated subset, `assert_subset_matches` added)
+- [x] 9.6 Language-side smoke tests (15 OO smoke tests + 3 emitter bugs fixed: runtime paths, Swift selectors, coerce-arg cast)
+- [ ] 9.7 Sample apps — OO style (7 apps, each in its own session)
+- [ ] 9.8 Sample apps — Functional style (7 apps, blocked on functional emitter)
 - [ ] 9.9 TestAnyware validation
 - [ ] 9.10 Per-framework exercisers
 - [ ] 9.11 Documentation placeholder
@@ -470,3 +472,13 @@ Blocked on The Great Explainer. Apply to all completed language targets.
 - **Framework header simplified from POC:** The POC had per-framework match arms for AppKit/Foundation in `emit_header`. The new version uses a single format string `"/System/Library/Frameworks/{0}.framework/{0}"` — all frameworks follow this path convention on macOS, so the special cases were unnecessary.
 - **LanguageEmitter trait enables CLI dispatch:** Added `LanguageEmitter` trait to the shared `emit` crate with `language_info()` and `emit_framework(fw, output_dir, style)` methods. Each language emitter implements this trait (e.g., `RacketEmitter`). The CLI's `EmitterRegistry` collects all implementations and dispatches by language ID. The style parameter is passed through so emitters can differentiate OO vs Functional output when ready.
 - **Generation CLI reuses datalog loading infrastructure:** The `apianyware_macos_datalog::loading` module (discover/load framework JSON) is reused by the generation CLI — no need to duplicate file discovery logic. The CLI adds topological sorting on top for dependency-ordered generation.
+- **Snapshot tests use custom golden-file comparison, not `insta`:** The `insta` crate handles per-file snapshots well but doesn't naturally handle multi-file directory trees (10+ files per framework). A custom `GoldenTest` in the shared emit crate compares entire directory trees with unified diff output and `UPDATE_GOLDEN=1` env var for refreshing. Simpler, no new dependency, and matches the "diff against checked-in reference files" pattern exactly.
+- **Synthetic test framework keeps golden files small and reviewable:** Rather than golden-testing full Foundation (308+ classes), the snapshot harness uses a deterministic 5-class `TestKit` framework that exercises all emitter code paths (constructors, properties, methods, blocks, dispatch strategies, inheritance, class methods, protocols, enums, constants). Per-language X.5 steps add real Foundation/AppKit golden sets later.
+- **Dylib symlink required for Racket runtime:** `swift-helpers.rkt` looks for the dylib at `../lib/libAPIAnywareRacket` relative to `runtime/`. A symlink from `generation/targets/racket/lib/libAPIAnywareRacket.dylib` → the Swift build output makes this work without copying.
+- **Racket `with-autorelease-pool` forbids `define`:** The macro expands to `begin0` which doesn't support internal definitions. Use `let`/`let*` for bindings inside the pool scope.
+- **Racket FFI round-trip verified end-to-end:** All 16 Swift dylib exports successfully callable from Racket — class/selector lookup, string conversion (ASCII + Unicode), autorelease pool, retain/release, GC prevention, block creation, delegate registration. 39 Racket-side tests cover the full FFI surface.
+- **Generated runtime paths must account for `generated/{style}/` directory:** The output structure `generation/targets/{lang}/generated/{style}/{framework}/` is 3 levels deep from the language root where `runtime/` lives. Class files need `../../../runtime/`, protocol files need `../../../../runtime/`. The POC had a flatter structure without `generated/{style}/`.
+- **Swift-style selectors must be filtered from Racket emission:** Selectors like `init(string:)` contain parentheses which are invalid in Racket identifiers and `tell` macro message names. These are Swift-only methods stored with their Swift name by `swift_name_to_selector` — they can't be called via `objc_msgSend`. The ObjC equivalents (e.g., `initWithString:`) are already present from ObjC extraction. Fixed by filtering `method.selector.contains('(')` in `is_supported_method`.
+- **`coerce-arg` must cast to `_id` for `tell` compatibility:** Racket's `tell` macro requires `_id`-tagged pointers, not raw `_pointer`. When `coerce-arg` extracts from `objc-object`, it must `(cast ptr _pointer _id)` rather than returning the raw cpointer. Without this cast, `tell` fails with "argument is not `id` pointer".
+- **TypedMsgSend methods take raw pointers, not objc-objects:** Generated methods using the `_msg-N` typed dispatch (rather than `tell`) pass parameters directly to `objc_msgSend`. Callers must pass raw `_id`/`_pointer` values for id-type params, not wrapped `objc-object` structs. The `coerce-arg` function handles self, but additional id params in TypedMsgSend methods are passed raw.
+- **Foundation golden subset uses 18 curated files:** Rather than checking in all 312 Foundation files, the snapshot test compares a curated subset (nsobject, nsstring, nsarray, nsdata, nsurl, nsnotificationcenter, nserror, nsfilemanager, nsuserdefaults, nsdateformatter, nslock, nstimer, main, constants, enums, protocols/nscopying, protocols/nscoding, protocols/nslocking). Added `assert_subset_matches` to `GoldenTest` to support this pattern.

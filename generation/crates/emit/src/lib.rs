@@ -12,3 +12,5 @@ pub mod ffi_type_mapping;
 pub mod framework_ordering;
 pub mod naming;
 pub mod pattern_dispatch;
+pub mod snapshot_testing;
+pub mod test_fixtures;

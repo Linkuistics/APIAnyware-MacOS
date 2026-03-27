@@ -150,11 +150,50 @@ In `generation/crates/cli/`:
 2. Add the language to the `--lang` flag's accepted values
 3. Wire up: `--lang {lang}` → load enriched IR → call emitter → write output
 
-## Step 6: Create golden files
+## Step 6: Create snapshot tests and golden files
 
-1. Run the emitter against Foundation and AppKit
-2. Review the output for correctness
-3. Check in as golden files for snapshot regression testing
+Use the shared snapshot testing harness (`apianyware_macos_emit::snapshot_testing`):
+
+1. Create `generation/crates/emit-{lang}/tests/snapshot_test.rs`:
+
+```rust
+use std::path::PathBuf;
+use apianyware_macos_emit::binding_style::{BindingStyle, LanguageEmitter};
+use apianyware_macos_emit::snapshot_testing::GoldenTest;
+use apianyware_macos_emit::test_fixtures::build_snapshot_test_framework;
+
+#[test]
+fn snapshot_{lang}_{style}_testkit() {
+    let framework = build_snapshot_test_framework();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let emitter = {Lang}Emitter;
+    emitter.emit_framework(&framework, temp_dir.path(), BindingStyle::{Style})
+        .expect("emitter should succeed");
+
+    let generated_dir = temp_dir.path().join("testkit");
+    let golden_test = GoldenTest::new(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden"),
+        "{lang}",
+        BindingStyle::{Style},
+    );
+    if let Err(mismatch) = golden_test.assert_matches(&generated_dir) {
+        panic!("Snapshot mismatch. Run UPDATE_GOLDEN=1 to accept.\n\n{mismatch}");
+    }
+}
+```
+
+2. Generate initial golden files:
+```bash
+UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-{lang} --test snapshot_test
+```
+
+3. Review the generated golden files for correctness
+4. Add one test per binding style
+5. Golden files go to `generation/crates/emit-{lang}/tests/golden/{style}/`
+
+The shared `build_snapshot_test_framework()` provides a deterministic 5-class `TestKit` framework
+that exercises all emitter code paths. Optionally add Foundation/AppKit golden tests for
+comprehensive coverage.
 
 ## Step 7: Write smoke tests
 

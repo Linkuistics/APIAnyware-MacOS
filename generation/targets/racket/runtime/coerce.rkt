@@ -32,6 +32,6 @@
   (cond
     [(not v) #f]
     [(string? v) (string->nsstring v)]
-    [(objc-object? v) (objc-object-ptr v)]
+    [(objc-object? v) (cast (objc-object-ptr v) _pointer _id)]
     [(cpointer? v) (cast v _pointer _id)]
     [else (error 'coerce-arg "expected string, objc-object, cpointer, or #f, got ~a" v)]))

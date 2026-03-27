@@ -66,7 +66,7 @@ pub fn generate_protocol_file(proto: &Protocol, framework: &str) -> String {
     }
 
     w.blank_line();
-    w.line("(require \"../../../runtime/delegate.rkt\")");
+    w.line("(require \"../../../../runtime/delegate.rkt\")");
     w.blank_line();
     write_line!(w, "(provide {}", helper_name);
     write_line!(w, "         {}-selectors)", lower_name);

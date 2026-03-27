@@ -191,10 +191,10 @@ fn emit_header(w: &mut CodeWriter, class_name: &str, framework: &str, needs_bloc
     w.blank_line();
     w.line("(require ffi/unsafe");
     w.raw("         ffi/unsafe/objc\n");
-    w.raw("         \"../../runtime/objc-base.rkt\"\n");
-    w.raw("         \"../../runtime/coerce.rkt\"");
+    w.raw("         \"../../../runtime/objc-base.rkt\"\n");
+    w.raw("         \"../../../runtime/coerce.rkt\"");
     if needs_blocks {
-        w.raw("\n         \"../../runtime/block.rkt\"");
+        w.raw("\n         \"../../../runtime/block.rkt\"");
     }
     w.raw_line(")");
     w.blank_line();

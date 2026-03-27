@@ -9,9 +9,12 @@ use apianyware_macos_types::type_ref::TypeRefKind;
 
 /// Check if a method can be bound in Racket.
 ///
-/// Skips variadic and deprecated methods.
+/// Skips variadic, deprecated, and Swift-style methods whose selectors contain
+/// parentheses (e.g., `init(string:)`). Swift-style selectors cannot be called
+/// via `objc_msgSend` or Racket's `tell` macro — they require Swift interop.
+/// ObjC equivalents (e.g., `initWithString:`) are already present in the IR.
 pub fn is_supported_method(method: &Method) -> bool {
-    !method.variadic && !method.deprecated
+    !method.variadic && !method.deprecated && !method.selector.contains('(')
 }
 
 /// Check if all parameters of a method are object types (can use Racket's `tell`).

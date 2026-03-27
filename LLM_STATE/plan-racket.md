@@ -40,53 +40,70 @@ Template: `plan-template.md`
   - [x] `delegate.rkt` — delegate creation (Swift-backed + pure-Racket fallback)
   - [x] `type-mapping.rkt` — Foundation type conversions, geometry structs
   - [x] `variadic-helpers.rkt` — alternatives for variadic ObjC methods
-- [ ] Runtime loads and works in Racket (manual verification pending)
+- [x] Runtime loads and works in Racket (7 tests: all modules load, swift-available? is #t, all FFI bindings non-#f)
 
 ### 9.3 Swift dylib integration
 
 - [x] `libAPIAnywareRacket.dylib` builds successfully (from Milestone 7.2)
 - [x] 64 Swift tests pass (7 Common + 3 Racket test files)
-- [ ] FFI round-trip test from Racket → Swift helper → verify result
-- [ ] Block creation through dylib verified from Racket
-- [ ] Delegate creation through dylib verified from Racket
+- [x] Dylib symlinked at `generation/targets/racket/lib/libAPIAnywareRacket.dylib`
+- [x] FFI round-trip test from Racket → Swift helper → verify result (20 tests: class/selector lookup, string round-trip with ASCII/Unicode/empty, NSString length, autorelease pool push/pop, retain/release, GC prevention, wrap-objc-object, struct creation, array round-trip)
+- [x] Block creation through dylib verified from Racket (5 tests: block lifecycle, enumerateObjectsUsingBlock: with 3 elements, early stop via BOOL* parameter, sortedArrayUsingComparator: with NSNumbers, call-with-objc-block convenience)
+- [x] Delegate creation through dylib verified from Racket (7 tests: delegate creation + respondsToSelector:, void dispatch to 2 handlers, bool return #t, bool return #f, delegate-set! live update, free-delegate cleanup, multiple coexisting delegates)
 
 ### 9.4 Generation CLI wiring
 
-- [ ] Register Racket emitter in `apianyware-macos-generate`
-- [ ] Generate all enriched frameworks
-- [ ] Output to `generation/targets/racket/generated/oo/` and `generation/targets/racket/generated/functional/`
-- [ ] Both binding styles produce separate output
+- [x] Register Racket emitter in `apianyware-macos-generate` (already done in Milestone 8.1)
+- [x] Generate all enriched frameworks (Foundation: 382 files, 308 classes, 71 protocols, 182 enums)
+- [x] Output to `generation/targets/racket/generated/oo/` and `generation/targets/racket/generated/functional/` (312 files each, both directories populated)
+- [x] Both binding styles produce separate output (OO and Functional each get their own directory; CLI dispatches via `--lang racket`)
 
-**Note:** The current emitter produces OO-style output (tell macro + class wrappers). The functional style (plain procedures, no tell macro, explicit objc_msgSend everywhere) needs to be implemented as a second code path.
+**Note:** The current emitter produces OO-style output for both styles. The functional style (plain procedures, no tell macro, explicit objc_msgSend everywhere) needs to be implemented as a separate code path in emit-racket. The CLI infrastructure correctly routes to both directories.
 
 ### 9.5 Snapshot tests
 
-- [ ] Generate Foundation + AppKit golden files (OO style)
-- [ ] Generate Foundation + AppKit golden files (Functional style)
-- [ ] Regression test integrated into `cargo test`
+- [x] TestKit golden files (OO style, 10 files, full directory comparison — from 8.2)
+- [x] Foundation golden files (OO style, 18 curated files — nsobject, nsstring, nsarray, nsdata, nsurl, nsnotificationcenter, nserror, nsfilemanager, nsuserdefaults, nsdateformatter, nslock, nstimer, main, constants, enums, protocols/nscopying, protocols/nscoding, protocols/nslocking)
+- [x] Added `assert_subset_matches` to `GoldenTest` for curated golden sets (only checks files present in golden dir, ignores extras)
+- [x] Regression tests integrated into `cargo test` (2 snapshot tests: TestKit full + Foundation subset)
+- [ ] AppKit golden files (blocked on AppKit enriched IR — only Foundation is currently enriched)
+- [ ] Functional style golden files (blocked on functional emitter implementation — currently emits same as OO)
 
 ### 9.6 Language-side smoke tests
 
-- [ ] OO style: import Foundation, create NSObject, call description, verify
-- [ ] OO style: NSString round-trip, NSArray count, property get/set, block invoke
-- [ ] Functional style: same tests using functional bindings
-- [ ] Tests run with `raco test`
+- [x] OO style: 15 smoke tests using generated Foundation bindings (test-generated-smoke.rkt)
+  - [x] NSString: length, description, hash, integer-value, constructor procedure check
+  - [x] NSArray: count, first-object, last-object, description
+  - [x] NSMutableArray: add-object! + count, remove-last-object!
+  - [x] NSNumber: int-value, bool-value, double-value
+  - [x] NSData: length via dataUsingEncoding:
+  - [x] NSLock: try-lock, name property set/get
+- [x] Fixed 3 bugs discovered during smoke testing:
+  - [x] Runtime path: `../../runtime/` → `../../../runtime/` (class files) and `../../../runtime/` → `../../../../runtime/` (protocol files) — output structure is `generated/{style}/{framework}/`, one level deeper than assumed
+  - [x] Swift-style selectors: filter out methods with `(` in selector (e.g., `init(string:)`) — these can't be called via objc_msgSend; ObjC equivalents already present
+  - [x] `coerce-arg` for objc-object: cast to `_id` via `(cast ptr _pointer _id)` so `tell` macro accepts it
+- [ ] Functional style: same tests using functional bindings (blocked on functional emitter implementation)
+- [x] Tests run with `racket` directly (54 total Racket tests across 5 files)
 
 ### 9.7 Sample apps — OO style
 
-All 7 standard apps using `tell` macro and class wrappers:
+All 7 standard apps using `tell` macro and class wrappers.
 
-- [ ] Hello Window
-- [ ] Counter
-- [ ] UI Controls Gallery
-- [ ] File Lister
-- [ ] Text Editor
-- [ ] Mini Browser
-- [ ] Menu Bar Tool
+**Each app should be developed in its own session** — each involves writing the app, debugging emitter issues discovered during real use, and full TestAnyware validation. See `generation/apps/specs/` for detailed specs and `generation/apps/tests/` for validation checklists.
+
+- [ ] Hello Window — object lifecycle, property setters, NSWindow
+- [ ] Counter — target-action, buttons, mutable state
+- [ ] UI Controls Gallery — all standard AppKit controls, visual regression baseline
+- [ ] File Lister — NSTableView, data source delegate, NSFileManager, NSOpenPanel
+- [ ] Text Editor — block callbacks, error-out, undo/redo, notifications, find
+- [ ] Mini Browser — cross-framework WebKit, WKNavigationDelegate, URL handling
+- [ ] Menu Bar Tool — NSStatusBar, NSMenu, no-window app, timers, clipboard
 
 ### 9.8 Sample apps — Functional style
 
-All 7 standard apps using plain procedures and explicit typed message sends:
+All 7 standard apps using plain procedures and explicit typed message sends.
+
+**Each app should be developed in its own session.** Blocked on functional emitter implementation — currently emits same as OO.
 
 - [ ] Hello Window
 - [ ] Counter
@@ -127,3 +144,14 @@ All 7 standard apps using plain procedures and explicit typed message sends:
 - Racket emitter ports cleanly from POC with three IR type changes: `Enum.enum_type` is `TypeRef` (not `String`), `EnumValue.value` is `i64` (not `String`), Method has `source`/`provenance`/`doc_refs` fields.
 - Dylib name changed from `libanyware_racket` to `libAPIAnywareRacket` — only `swift-helpers.rkt` references it.
 - Framework header simplified from POC's per-framework match arms to a single format string.
+- Dylib must be symlinked at `generation/targets/racket/lib/libAPIAnywareRacket.dylib` for the runtime to find it (swift-helpers.rkt looks at `../lib/` relative to `runtime/`).
+- Racket's `with-autorelease-pool` macro uses `begin0` internally, so `define` forms inside it are invalid — use `let`/`let*` instead.
+- Racket's `_cprocedure` + `function-ptr` successfully creates C-callable function pointers that ObjC's block invoke and delegate IMP trampolines can call. The block self-pointer must be skipped in the wrapper (first arg).
+- Block early stop via `BOOL*` parameter works: `(ptr-set! stop-ptr _byte 1)` sets the pointed-to BOOL to YES, causing NSArray enumeration to halt.
+- `sortedArrayUsingComparator:` passes raw id pointers to the comparator block — these must be cast to `_id` before using `tell` on them.
+- Delegate `respondsToSelector:` works automatically — the Swift helper (or ObjC runtime fallback) registers the methods on the dynamic class, so the standard introspection API reports them correctly.
+- Multiple delegates can coexist independently — each gets its own ObjC class (Swift mode) or dispatch table entry (Racket fallback mode), with no cross-talk.
+- Generated runtime paths must be `../../../runtime/` for class files and `../../../../runtime/` for protocol files — the `generated/{style}/` directory adds one level beyond what the POC had.
+- Swift-style selectors (containing `(`) must be filtered from emission — `init(string:)` is not a valid Racket identifier and can't be called via `objc_msgSend`. The `is_supported_method` filter now checks `!method.selector.contains('(')`.
+- `coerce-arg` must cast `objc-object-ptr` to `_id` via `(cast ptr _pointer _id)` — Racket's `tell` macro only accepts `_id`-tagged pointers, not raw `_pointer` values.
+- TypedMsgSend methods (`_msg-N` bindings) expect raw pointers for id-type parameters, not wrapped `objc-object` structs. Callers should pass `_id` pointers directly. Only `self` goes through `coerce-arg`.
