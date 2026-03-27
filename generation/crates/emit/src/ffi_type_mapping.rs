@@ -33,7 +33,42 @@ pub trait FfiTypeMapper {
 
     /// Check if a type is a struct passed by value.
     fn is_struct_type(&self, type_ref: &TypeRef) -> bool {
-        matches!(type_ref.kind, TypeRefKind::Struct { .. })
+        match &type_ref.kind {
+            TypeRefKind::Struct { .. } => true,
+            TypeRefKind::Alias { name, .. } => is_known_geometry_struct(name),
+            _ => false,
+        }
+    }
+}
+
+/// Known geometry struct names that may appear as aliases (typedefs) in the IR.
+///
+/// libclang classifies `NSRect`, `CGRect`, etc. as typedefs (aliases) rather than
+/// struct types. The FFI mapper must recognize these and map them to their cstruct
+/// representations rather than falling through to the `_uint64` default.
+fn is_known_geometry_struct(name: &str) -> bool {
+    matches!(
+        name,
+        "NSRect"
+            | "CGRect"
+            | "NSPoint"
+            | "CGPoint"
+            | "NSSize"
+            | "CGSize"
+            | "NSRange"
+            | "NSEdgeInsets"
+            | "NSAffineTransformStruct"
+    )
+}
+
+/// Map a known geometry struct alias name to its Racket FFI cstruct type.
+fn map_geometry_struct_alias(name: &str) -> Option<&'static str> {
+    match name {
+        "NSRect" | "CGRect" => Some("_NSRect"),
+        "NSPoint" | "CGPoint" => Some("_NSPoint"),
+        "NSSize" | "CGSize" => Some("_NSSize"),
+        "NSRange" => Some("_NSRange"),
+        _ => None,
     }
 }
 
@@ -82,6 +117,10 @@ impl FfiTypeMapper for RacketFfiTypeMapper {
                 _ => "_pointer".to_string(),
             },
             TypeRefKind::Alias { name, .. } => {
+                // Geometry struct typedefs (NSRect, CGPoint, etc.) → cstruct types
+                if let Some(ffi_type) = map_geometry_struct_alias(name) {
+                    return ffi_type.to_string();
+                }
                 // Generic type params (ObjectType, KeyType) → _id
                 // Framework-prefixed aliases (NSStringEncoding) → _uint64
                 if name.ends_with("Type")
@@ -249,6 +288,66 @@ mod tests {
     }
 
     #[test]
+    fn test_racket_geometry_struct_aliases() {
+        let m = RacketFfiTypeMapper;
+        // NSRect alias → _NSRect (libclang emits these as Alias, not Struct)
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "NSRect".into(),
+                    framework: None,
+                }),
+                false,
+            ),
+            "_NSRect"
+        );
+        // CGRect alias → _NSRect
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "CGRect".into(),
+                    framework: None,
+                }),
+                false,
+            ),
+            "_NSRect"
+        );
+        // NSPoint alias → _NSPoint
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "NSPoint".into(),
+                    framework: None,
+                }),
+                false,
+            ),
+            "_NSPoint"
+        );
+        // NSSize alias → _NSSize
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "NSSize".into(),
+                    framework: None,
+                }),
+                false,
+            ),
+            "_NSSize"
+        );
+        // NSRange alias → _NSRange
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "NSRange".into(),
+                    framework: None,
+                }),
+                false,
+            ),
+            "_NSRange"
+        );
+    }
+
+    #[test]
     fn test_trait_helper_methods() {
         let m = RacketFfiTypeMapper;
         assert!(m.is_object_type(&make_type(TypeRefKind::Id)));
@@ -267,6 +366,19 @@ mod tests {
         assert!(m.is_void(&TypeRef::void()));
         assert!(m.is_struct_type(&make_type(TypeRefKind::Struct {
             name: "NSRect".into()
+        })));
+        // Alias struct types recognized as structs
+        assert!(m.is_struct_type(&make_type(TypeRefKind::Alias {
+            name: "NSRect".into(),
+            framework: None,
+        })));
+        assert!(m.is_struct_type(&make_type(TypeRefKind::Alias {
+            name: "CGPoint".into(),
+            framework: None,
+        })));
+        assert!(!m.is_struct_type(&make_type(TypeRefKind::Alias {
+            name: "NSStringEncoding".into(),
+            framework: None,
         })));
     }
 }

@@ -23,7 +23,8 @@ use crate::naming::{
     make_unique_constructor_name,
 };
 use crate::shared_signatures::{
-    block_ffi_types, class_has_blocks, collect_class_signatures, SignatureMap,
+    block_ffi_types, class_has_blocks, class_has_struct_types, collect_class_signatures,
+    SignatureMap,
 };
 
 /// Generate a complete Racket class binding file.
@@ -59,10 +60,11 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
         .collect();
 
     let needs_blocks = class_has_blocks(cls);
+    let needs_structs = class_has_struct_types(cls, &mapper);
     let sig_map = collect_class_signatures(cls, &mapper);
 
     // Header
-    emit_header(&mut w, &cls.name, framework, needs_blocks);
+    emit_header(&mut w, &cls.name, framework, needs_blocks, needs_structs);
 
     // Provide (excluding internal names)
     emit_provide(&mut w, &sig_map);
@@ -184,7 +186,13 @@ fn method_collides_with_property(
 
 // --- Header ---
 
-fn emit_header(w: &mut CodeWriter, class_name: &str, framework: &str, needs_blocks: bool) {
+fn emit_header(
+    w: &mut CodeWriter,
+    class_name: &str,
+    framework: &str,
+    needs_blocks: bool,
+    needs_structs: bool,
+) {
     w.line("#lang racket/base");
     write_line!(w, ";; Generated binding for {} ({})", class_name, framework);
     w.line(";; Do not edit — regenerate from enriched IR");
@@ -195,6 +203,9 @@ fn emit_header(w: &mut CodeWriter, class_name: &str, framework: &str, needs_bloc
     w.raw("         \"../../../runtime/coerce.rkt\"");
     if needs_blocks {
         w.raw("\n         \"../../../runtime/block.rkt\"");
+    }
+    if needs_structs {
+        w.raw("\n         \"../../../runtime/type-mapping.rkt\"");
     }
     w.raw_line(")");
     w.blank_line();

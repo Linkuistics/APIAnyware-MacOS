@@ -151,6 +151,31 @@ pub fn block_ffi_types(
     (real_params, ret)
 }
 
+/// Check if a class has any methods with struct parameters or struct return types.
+///
+/// When struct types are present in typed msgSend signatures, the generated file
+/// must require `type-mapping.rkt` which defines the cstruct types (`_NSRect`, etc.).
+pub fn class_has_struct_types(cls: &Class, mapper: &dyn FfiTypeMapper) -> bool {
+    let methods = if cls.all_methods.is_empty() {
+        &cls.methods
+    } else {
+        &cls.all_methods
+    };
+    let properties = if cls.all_properties.is_empty() {
+        &cls.properties
+    } else {
+        &cls.all_properties
+    };
+    methods.iter().any(|m| {
+        m.params
+            .iter()
+            .any(|p| mapper.is_struct_type(&p.param_type))
+            || mapper.is_struct_type(&m.return_type)
+    }) || properties
+        .iter()
+        .any(|p| mapper.is_struct_type(&p.property_type))
+}
+
 /// Check if a class has any methods with block parameters.
 pub fn class_has_blocks(cls: &Class) -> bool {
     let methods = if cls.all_methods.is_empty() {
