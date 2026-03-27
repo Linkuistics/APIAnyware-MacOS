@@ -1,0 +1,581 @@
+//! Shared test fixtures for emitter snapshot tests.
+//!
+//! Provides a deterministic synthetic framework that exercises all major
+//! emitter code paths: constructors, instance/class methods, properties,
+//! protocols, enums, constants, block parameters, and dispatch strategies.
+//!
+//! The fixtures are intentionally small (5 classes, 2 protocols, 1 enum, 2
+//! constants) to keep golden files reviewable while covering all generation
+//! branches.
+
+use apianyware_macos_types::ir::{
+    Class, Constant, Enum, EnumValue, Framework, Method, Param, Property, Protocol,
+};
+use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
+
+/// Build a deterministic synthetic framework for snapshot testing.
+///
+/// The framework name is `"TestKit"` and contains:
+/// - `TKObject` — root class with init, dealloc, description
+/// - `TKView` — subclass with properties, class methods, and a block-param method
+/// - `TKButton` — subclass of TKView with an action method
+/// - `TKManager` — class with a class method (factory) and an error-out-style method
+/// - `TKHelper` — class with only static methods (no constructors)
+/// - `TKCopying` protocol — required `copyWithZone:` method
+/// - `TKDelegate` protocol — optional callbacks with void/bool/id return types
+/// - `TKAlignment` enum — 3 values
+/// - 2 constants: `TKVersionString`, `TKDefaultTimeout`
+pub fn build_snapshot_test_framework() -> Framework {
+    Framework {
+        format_version: "1.0".to_string(),
+        checkpoint: "enriched".to_string(),
+        name: "TestKit".to_string(),
+        sdk_version: Some("15.4".to_string()),
+        collected_at: Some("2026-01-01T00:00:00Z".to_string()),
+        depends_on: vec![],
+        skipped_symbols: vec![],
+        classes: vec![
+            build_tkobject(),
+            build_tkview(),
+            build_tkbutton(),
+            build_tkmanager(),
+            build_tkhelper(),
+        ],
+        protocols: vec![build_tkcopying_protocol(), build_tkdelegate_protocol()],
+        enums: vec![build_tkalignment_enum()],
+        structs: vec![],
+        functions: vec![],
+        constants: vec![build_version_constant(), build_timeout_constant()],
+        class_annotations: vec![],
+        api_patterns: vec![],
+        enrichment: None,
+        verification: None,
+        ir_level: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Type helpers
+// ---------------------------------------------------------------------------
+
+fn type_id() -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Id,
+    }
+}
+
+fn type_id_nullable() -> TypeRef {
+    TypeRef {
+        nullable: true,
+        kind: TypeRefKind::Id,
+    }
+}
+
+fn type_instancetype() -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Instancetype,
+    }
+}
+
+fn type_void() -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Primitive {
+            name: "void".to_string(),
+        },
+    }
+}
+
+fn type_bool() -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Primitive {
+            name: "BOOL".to_string(),
+        },
+    }
+}
+
+fn type_int() -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Primitive {
+            name: "NSInteger".to_string(),
+        },
+    }
+}
+
+fn type_double() -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Primitive {
+            name: "double".to_string(),
+        },
+    }
+}
+
+fn type_class(name: &str) -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Class {
+            name: name.to_string(),
+            framework: None,
+            params: vec![],
+        },
+    }
+}
+
+fn type_class_nullable(name: &str) -> TypeRef {
+    TypeRef {
+        nullable: true,
+        kind: TypeRefKind::Class {
+            name: name.to_string(),
+            framework: None,
+            params: vec![],
+        },
+    }
+}
+
+fn type_pointer() -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Pointer,
+    }
+}
+
+fn type_selector() -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Selector,
+    }
+}
+
+fn type_block(params: Vec<TypeRef>, return_type: TypeRef) -> TypeRef {
+    TypeRef {
+        nullable: false,
+        kind: TypeRefKind::Block {
+            params,
+            return_type: Box::new(return_type),
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Method helper
+// ---------------------------------------------------------------------------
+
+fn method(
+    selector: &str,
+    class_method: bool,
+    init_method: bool,
+    params: Vec<Param>,
+    return_type: TypeRef,
+) -> Method {
+    Method {
+        selector: selector.to_string(),
+        class_method,
+        init_method,
+        params,
+        return_type,
+        deprecated: false,
+        variadic: false,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+        origin: None,
+        category: None,
+        overrides: None,
+        returns_retained: None,
+        satisfies_protocol: None,
+    }
+}
+
+fn param(name: &str, param_type: TypeRef) -> Param {
+    Param {
+        name: name.to_string(),
+        param_type,
+    }
+}
+
+fn property(name: &str, property_type: TypeRef, readonly: bool) -> Property {
+    Property {
+        name: name.to_string(),
+        property_type,
+        readonly,
+        class_property: false,
+        deprecated: false,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+        origin: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Classes
+// ---------------------------------------------------------------------------
+
+/// Root class: `TKObject` with init, dealloc, description.
+fn build_tkobject() -> Class {
+    Class {
+        name: "TKObject".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![
+            method("init", false, true, vec![], type_instancetype()),
+            method("dealloc", false, false, vec![], type_void()),
+            method("description", false, false, vec![], type_class("NSString")),
+        ],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }
+}
+
+/// `TKView` — subclass with properties and a block-param method.
+fn build_tkview() -> Class {
+    Class {
+        name: "TKView".to_string(),
+        superclass: "TKObject".to_string(),
+        protocols: vec![],
+        properties: vec![
+            property("title", type_class_nullable("NSString"), false),
+            property("hidden", type_bool(), false),
+            property("tag", type_int(), false),
+            property("frame", type_class("NSRect"), true),
+        ],
+        methods: vec![
+            method("init", false, true, vec![], type_instancetype()),
+            method(
+                "initWithFrame:",
+                false,
+                true,
+                vec![param("frame", type_class("NSRect"))],
+                type_instancetype(),
+            ),
+            // Instance method returning void — should use `tell` dispatch
+            method("setNeedsDisplay", false, false, vec![], type_void()),
+            // Method with block parameter — exercises block bridging path
+            method(
+                "animateWithDuration:animations:",
+                false,
+                false,
+                vec![
+                    param("duration", type_double()),
+                    param("animations", type_block(vec![], type_void())),
+                ],
+                type_void(),
+            ),
+            // Class method — exercises class method dispatch
+            method("appearance", true, false, vec![], type_id()),
+        ],
+        category_methods: vec![],
+        ancestors: vec!["TKObject".to_string()],
+        all_methods: vec![
+            // Inherited from TKObject
+            method("dealloc", false, false, vec![], type_void()),
+            method("description", false, false, vec![], type_class("NSString")),
+        ],
+        all_properties: vec![],
+    }
+}
+
+/// `TKButton` — subclass with target-action pattern method.
+fn build_tkbutton() -> Class {
+    Class {
+        name: "TKButton".to_string(),
+        superclass: "TKView".to_string(),
+        protocols: vec![],
+        properties: vec![
+            property("label", type_class("NSString"), false),
+            property("enabled", type_bool(), false),
+        ],
+        methods: vec![
+            method("init", false, true, vec![], type_instancetype()),
+            // Target-action: object + selector params — exercises typed msgSend
+            method(
+                "setTarget:action:",
+                false,
+                false,
+                vec![
+                    param("target", type_id_nullable()),
+                    param("action", type_selector()),
+                ],
+                type_void(),
+            ),
+            // Method returning BOOL — exercises non-void typed msgSend
+            method("isHighlighted", false, false, vec![], type_bool()),
+        ],
+        category_methods: vec![],
+        ancestors: vec!["TKView".to_string(), "TKObject".to_string()],
+        all_methods: vec![
+            method("dealloc", false, false, vec![], type_void()),
+            method("description", false, false, vec![], type_class("NSString")),
+            method("setNeedsDisplay", false, false, vec![], type_void()),
+            method(
+                "animateWithDuration:animations:",
+                false,
+                false,
+                vec![
+                    param("duration", type_double()),
+                    param("animations", type_block(vec![], type_void())),
+                ],
+                type_void(),
+            ),
+        ],
+        all_properties: vec![
+            property("title", type_class_nullable("NSString"), false),
+            property("hidden", type_bool(), false),
+            property("tag", type_int(), false),
+            property("frame", type_class("NSRect"), true),
+        ],
+    }
+}
+
+/// `TKManager` — factory + error-out pattern.
+fn build_tkmanager() -> Class {
+    Class {
+        name: "TKManager".to_string(),
+        superclass: "TKObject".to_string(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![
+            // Class factory method — exercises class method + instancetype
+            method("sharedManager", true, false, vec![], type_instancetype()),
+            // Method with pointer param (error out-param pattern)
+            method(
+                "loadResource:error:",
+                false,
+                false,
+                vec![
+                    param("name", type_class("NSString")),
+                    param("error", type_pointer()),
+                ],
+                type_bool(),
+            ),
+            // Method returning nullable object
+            method(
+                "resourceNamed:",
+                false,
+                false,
+                vec![param("name", type_class("NSString"))],
+                type_class_nullable("TKObject"),
+            ),
+        ],
+        category_methods: vec![],
+        ancestors: vec!["TKObject".to_string()],
+        all_methods: vec![
+            method("init", false, true, vec![], type_instancetype()),
+            method("dealloc", false, false, vec![], type_void()),
+            method("description", false, false, vec![], type_class("NSString")),
+        ],
+        all_properties: vec![],
+    }
+}
+
+/// `TKHelper` — only class methods, no constructors.
+fn build_tkhelper() -> Class {
+    Class {
+        name: "TKHelper".to_string(),
+        superclass: "TKObject".to_string(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![
+            method("versionString", true, false, vec![], type_class("NSString")),
+            method("maximumCount", true, false, vec![], type_int()),
+        ],
+        category_methods: vec![],
+        ancestors: vec!["TKObject".to_string()],
+        all_methods: vec![
+            method("init", false, true, vec![], type_instancetype()),
+            method("dealloc", false, false, vec![], type_void()),
+            method("description", false, false, vec![], type_class("NSString")),
+        ],
+        all_properties: vec![],
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Protocols
+// ---------------------------------------------------------------------------
+
+/// `TKCopying` — single required method returning id.
+fn build_tkcopying_protocol() -> Protocol {
+    Protocol {
+        name: "TKCopying".to_string(),
+        inherits: vec![],
+        required_methods: vec![method(
+            "copyWithZone:",
+            false,
+            false,
+            vec![param("zone", type_pointer())],
+            type_id(),
+        )],
+        optional_methods: vec![],
+        properties: vec![],
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+/// `TKDelegate` — optional callbacks with diverse return types (void/bool/id).
+fn build_tkdelegate_protocol() -> Protocol {
+    Protocol {
+        name: "TKDelegate".to_string(),
+        inherits: vec![],
+        required_methods: vec![],
+        optional_methods: vec![
+            method(
+                "managerDidFinish:",
+                false,
+                false,
+                vec![param("manager", type_class("TKManager"))],
+                type_void(),
+            ),
+            method(
+                "managerShouldContinue:",
+                false,
+                false,
+                vec![param("manager", type_class("TKManager"))],
+                type_bool(),
+            ),
+            method(
+                "managerWillReturnResult:",
+                false,
+                false,
+                vec![param("manager", type_class("TKManager"))],
+                type_id(),
+            ),
+        ],
+        properties: vec![],
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+fn build_tkalignment_enum() -> Enum {
+    Enum {
+        name: "TKAlignment".to_string(),
+        enum_type: TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Primitive {
+                name: "NSInteger".to_string(),
+            },
+        },
+        values: vec![
+            EnumValue {
+                name: "TKAlignmentLeft".to_string(),
+                value: 0,
+            },
+            EnumValue {
+                name: "TKAlignmentCenter".to_string(),
+                value: 1,
+            },
+            EnumValue {
+                name: "TKAlignmentRight".to_string(),
+                value: 2,
+            },
+        ],
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+fn build_version_constant() -> Constant {
+    Constant {
+        name: "TKVersionString".to_string(),
+        constant_type: type_class("NSString"),
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+fn build_timeout_constant() -> Constant {
+    Constant {
+        name: "TKDefaultTimeout".to_string(),
+        constant_type: type_double(),
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snapshot_framework_is_deterministic() {
+        let fw1 = build_snapshot_test_framework();
+        let fw2 = build_snapshot_test_framework();
+
+        let json1 = serde_json::to_string_pretty(&fw1).unwrap();
+        let json2 = serde_json::to_string_pretty(&fw2).unwrap();
+        assert_eq!(json1, json2, "Framework builder must be deterministic");
+    }
+
+    #[test]
+    fn test_snapshot_framework_structure() {
+        let fw = build_snapshot_test_framework();
+        assert_eq!(fw.name, "TestKit");
+        assert_eq!(fw.classes.len(), 5);
+        assert_eq!(fw.protocols.len(), 2);
+        assert_eq!(fw.enums.len(), 1);
+        assert_eq!(fw.constants.len(), 2);
+    }
+
+    #[test]
+    fn test_snapshot_framework_class_names() {
+        let fw = build_snapshot_test_framework();
+        let names: Vec<&str> = fw.classes.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["TKObject", "TKView", "TKButton", "TKManager", "TKHelper"]
+        );
+    }
+
+    #[test]
+    fn test_snapshot_framework_has_block_param_method() {
+        let fw = build_snapshot_test_framework();
+        let tkview = &fw.classes[1];
+        let block_method = tkview
+            .methods
+            .iter()
+            .find(|m| m.selector == "animateWithDuration:animations:")
+            .expect("TKView should have animateWithDuration:animations:");
+        assert_eq!(block_method.params.len(), 2);
+        matches!(
+            block_method.params[1].param_type.kind,
+            TypeRefKind::Block { .. }
+        );
+    }
+
+    #[test]
+    fn test_snapshot_framework_has_inherited_methods() {
+        let fw = build_snapshot_test_framework();
+        let tkbutton = &fw.classes[2];
+        assert!(
+            !tkbutton.all_methods.is_empty(),
+            "TKButton should have inherited methods"
+        );
+        assert!(
+            !tkbutton.all_properties.is_empty(),
+            "TKButton should have inherited properties"
+        );
+    }
+}

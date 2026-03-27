@@ -7,3 +7,6 @@ target/
 collection/ir/collected/
 analysis/ir/resolved/
 analysis/ir/enriched/
+
+# Generated language bindings (reproducible from enriched IR)
+generation/targets/*/generated/
