@@ -3,9 +3,10 @@ target/
 *.swp
 .DS_Store
 
-# Generated IR checkpoints (large JSON files)
+# Generated IR checkpoints (large JSON files, reproducible from pipeline)
 collection/ir/collected/
 analysis/ir/resolved/
+analysis/ir/annotated/
 analysis/ir/enriched/
 
 # Generated language bindings (reproducible from enriched IR)
