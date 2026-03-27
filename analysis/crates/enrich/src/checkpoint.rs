@@ -48,11 +48,30 @@ pub fn build_enriched_framework(annotated: &Framework, prog: &EnrichmentProgram)
 }
 
 /// Build EnrichmentData from Datalog results + api_patterns.
+///
+/// Filters global Datalog results to only include entries whose class
+/// belongs to this framework (by checking `class_decl` tuples).
 fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> EnrichmentData {
-    // Collect block method classifications
+    // Build the set of class names declared in this framework.
+    let framework_classes: std::collections::HashSet<&str> = prog
+        .class_decl
+        .iter()
+        .filter(|(_, _, fw)| fw == &framework.name)
+        .map(|(class, _, _)| class.as_str())
+        .collect();
+
+    // Also include protocol names from this framework for delegate_protocol filtering.
+    let framework_protocols: std::collections::HashSet<&str> = framework
+        .protocols
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+
+    // Collect block method classifications — filtered to this framework's classes
     let mut sync_block_methods: Vec<BlockMethodEntry> = prog
         .sync_block_method
         .iter()
+        .filter(|(class, _, _)| framework_classes.contains(class.as_str()))
         .map(|(class, sel, idx)| BlockMethodEntry {
             class: class.clone(),
             selector: sel.clone(),
@@ -64,6 +83,7 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
     let mut async_block_methods: Vec<BlockMethodEntry> = prog
         .async_block_method
         .iter()
+        .filter(|(class, _, _)| framework_classes.contains(class.as_str()))
         .map(|(class, sel, idx)| BlockMethodEntry {
             class: class.clone(),
             selector: sel.clone(),
@@ -75,6 +95,7 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
     let mut stored_block_methods: Vec<BlockMethodEntry> = prog
         .stored_block_method
         .iter()
+        .filter(|(class, _, _)| framework_classes.contains(class.as_str()))
         .map(|(class, sel, idx)| BlockMethodEntry {
             class: class.clone(),
             selector: sel.clone(),
@@ -83,10 +104,11 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
         .collect();
     stored_block_methods.sort_by(|a, b| a.class.cmp(&b.class).then(a.selector.cmp(&b.selector)));
 
-    // Collect delegate protocols from Datalog + api_patterns
+    // Collect delegate protocols — filtered to this framework's protocols
     let mut delegate_protocols: Vec<String> = prog
         .delegate_protocol
         .iter()
+        .filter(|(p,)| framework_protocols.contains(p.as_str()))
         .map(|(p,)| p.clone())
         .collect();
     // Also add delegate protocols from api_patterns (LLM-detected)
@@ -102,10 +124,11 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
     delegate_protocols.sort();
     delegate_protocols.dedup();
 
-    // Collect convenience error methods
+    // Collect convenience error methods — filtered to this framework's classes
     let mut convenience_error_methods: Vec<ClassSelectorEntry> = prog
         .convenience_error_method
         .iter()
+        .filter(|(class, _)| framework_classes.contains(class.as_str()))
         .map(|(class, sel)| ClassSelectorEntry {
             class: class.clone(),
             selector: sel.clone(),
@@ -114,16 +137,17 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
     convenience_error_methods
         .sort_by(|a, b| a.class.cmp(&b.class).then(a.selector.cmp(&b.selector)));
 
-    // Collect collection iterables
+    // Collect collection iterables — filtered to this framework's classes
     let mut collection_iterables: Vec<String> = prog
         .collection_iterable
         .iter()
+        .filter(|(class,)| framework_classes.contains(class.as_str()))
         .map(|(class,)| class.clone())
         .collect();
     collection_iterables.sort();
     collection_iterables.dedup();
 
-    // Collect scoped resources from api_patterns
+    // Collect scoped resources from api_patterns (already per-framework)
     let mut scoped_resources = extract_scoped_resources(framework);
     scoped_resources.sort_by(|a, b| {
         a.class
@@ -131,10 +155,11 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
             .then(a.open_selector.cmp(&b.open_selector))
     });
 
-    // Collect main thread classes
+    // Collect main thread classes — filtered to this framework's classes
     let mut main_thread_classes: Vec<String> = prog
         .main_thread_class
         .iter()
+        .filter(|(class,)| framework_classes.contains(class.as_str()))
         .map(|(class,)| class.clone())
         .collect();
     main_thread_classes.sort();

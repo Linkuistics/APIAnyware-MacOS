@@ -83,12 +83,37 @@ pub fn enrich_loaded_frameworks(frameworks: &[Framework]) -> Result<Vec<Framewor
         main_thread_classes = prog.main_thread_class.len(),
         unclassified_blocks = prog.violation_unclassified_block.len(),
         flag_mismatches = prog.violation_flag_mismatch.len(),
-        "enrichment complete"
+        "enrichment complete (global totals)"
     );
 
     let mut enriched = Vec::with_capacity(frameworks.len());
     for framework in frameworks {
         let result = checkpoint::build_enriched_framework(framework, &prog);
+        if let Some(ref e) = result.enrichment {
+            tracing::info!(
+                framework = %result.name,
+                sync_blocks = e.sync_block_methods.len(),
+                async_blocks = e.async_block_methods.len(),
+                stored_blocks = e.stored_block_methods.len(),
+                delegate_protocols = e.delegate_protocols.len(),
+                error_methods = e.convenience_error_methods.len(),
+                iterables = e.collection_iterables.len(),
+                scoped_resources = e.scoped_resources.len(),
+                main_thread_classes = e.main_thread_classes.len(),
+                "enriched"
+            );
+        }
+        if let Some(ref v) = result.verification {
+            if v.passed {
+                tracing::info!(framework = %result.name, "verification passed");
+            } else {
+                tracing::warn!(
+                    framework = %result.name,
+                    violations = v.violations.len(),
+                    "verification FAILED"
+                );
+            }
+        }
         enriched.push(result);
     }
 
