@@ -146,19 +146,33 @@ fn is_family_match(selector: &str, family: &str) -> bool {
 }
 
 fn effective_methods(cls: &Class) -> Vec<&Method> {
-    if cls.all_methods.is_empty() {
+    let methods: Vec<&Method> = if cls.all_methods.is_empty() {
         cls.methods.iter().collect()
     } else {
         cls.all_methods.iter().collect()
-    }
+    };
+    // Deduplicate by selector — category merging or inheritance flattening
+    // can produce duplicate entries for the same selector
+    let mut seen = std::collections::HashSet::new();
+    methods
+        .into_iter()
+        .filter(|m| seen.insert(m.selector.clone()))
+        .collect()
 }
 
 fn effective_properties(cls: &Class) -> Vec<&Property> {
-    if cls.all_properties.is_empty() {
+    let properties: Vec<&Property> = if cls.all_properties.is_empty() {
         cls.properties.iter().collect()
     } else {
         cls.all_properties.iter().collect()
-    }
+    };
+    // Deduplicate by property name — category merging or inheritance flattening
+    // can produce duplicate entries for the same property
+    let mut seen = std::collections::HashSet::new();
+    properties
+        .into_iter()
+        .filter(|p| seen.insert(p.name.clone()))
+        .collect()
 }
 
 fn build_property_name_set(

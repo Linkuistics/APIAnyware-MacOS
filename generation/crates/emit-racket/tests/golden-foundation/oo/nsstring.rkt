@@ -19,8 +19,8 @@
 ;; --- Shared typed objc_msgSend bindings ---
 (define _msg-0  ; (_fun _pointer _pointer -> _uint64)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer -> _uint64)))
-(define _msg-1  ; (_fun _pointer _pointer _uint64 -> _uint64)
-  (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _uint64 -> _uint64)))
+(define _msg-1  ; (_fun _pointer _pointer _uint64 -> _uint16)
+  (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _uint64 -> _uint16)))
 
 ;; --- Constructors ---
 (define (make-nsstring-init-with-coder coder)

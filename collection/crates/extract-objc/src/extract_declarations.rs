@@ -137,7 +137,13 @@ pub fn extract_from_translation_unit(
             class.category_methods = categories;
         }
         if let Some(props) = category_properties.remove(&class.name) {
-            class.properties.extend(props);
+            let existing_names: HashSet<String> =
+                class.properties.iter().map(|p| p.name.clone()).collect();
+            class.properties.extend(
+                props
+                    .into_iter()
+                    .filter(|p| !existing_names.contains(&p.name)),
+            );
         }
     }
 

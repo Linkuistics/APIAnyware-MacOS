@@ -253,15 +253,59 @@ fn map_typedef(clang_type: &Type<'_>) -> TypeRefKind {
         _ => {}
     }
 
-    // Check if the underlying type is a block
+    // Resolve the canonical (underlying) type to determine the true FFI type.
+    // This handles typedefs like NSImageName (typedef NSString *) which should
+    // map to _id, not _uint64.
     let canonical = clang_type.get_canonical_type();
-    if canonical.get_kind() == TypeKind::BlockPointer {
-        return map_block_type(&canonical);
-    }
+    match canonical.get_kind() {
+        TypeKind::BlockPointer => map_block_type(&canonical),
 
-    TypeRefKind::Alias {
-        name,
-        framework: None,
+        // Object pointer typedefs (NSImageName → NSString *, etc.) → resolve to id/class
+        TypeKind::ObjCObjectPointer => map_objc_object_pointer(&canonical),
+
+        // Pointer typedefs → resolve to pointer
+        TypeKind::Pointer => TypeRefKind::Pointer,
+
+        // Struct typedefs (NSRect → CGRect, etc.) → keep as Alias for geometry
+        // struct matching in the FFI mapper
+        TypeKind::Record => TypeRefKind::Alias {
+            name,
+            framework: None,
+        },
+
+        // Enum typedefs (NSBezelStyle, etc.) → keep as Alias so emitters can
+        // use _uint64 for bitmask/enum values
+        TypeKind::Enum => TypeRefKind::Alias {
+            name,
+            framework: None,
+        },
+
+        // Integer/float typedefs not caught by the well-known check above
+        // (e.g., int64_t, uint32_t, FourCharCode) → resolve to primitive
+        TypeKind::Bool
+        | TypeKind::CharS
+        | TypeKind::CharU
+        | TypeKind::SChar
+        | TypeKind::UChar
+        | TypeKind::Short
+        | TypeKind::UShort
+        | TypeKind::Int
+        | TypeKind::UInt
+        | TypeKind::Long
+        | TypeKind::ULong
+        | TypeKind::LongLong
+        | TypeKind::ULongLong
+        | TypeKind::Float
+        | TypeKind::Double
+        | TypeKind::LongDouble => TypeRefKind::Primitive {
+            name: map_primitive_name(&canonical),
+        },
+
+        // Everything else (uncommon typedefs) → keep as Alias
+        _ => TypeRefKind::Alias {
+            name,
+            framework: None,
+        },
     }
 }
 

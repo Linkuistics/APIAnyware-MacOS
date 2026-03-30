@@ -91,9 +91,9 @@ All 7 standard apps using `tell` macro and class wrappers.
 
 **Each app should be developed in its own session** — each involves writing the app, debugging emitter issues discovered during real use, and full TestAnyware validation. See `generation/apps/specs/` for detailed specs and `generation/apps/tests/` for validation checklists.
 
-- [ ] Hello Window — object lifecycle, property setters, NSWindow
-- [ ] Counter — target-action, buttons, mutable state
-- [ ] UI Controls Gallery — all standard AppKit controls, visual regression baseline
+- [x] Hello Window — object lifecycle, property setters, NSWindow (validated in TestAnyware VM: window + centered label render correctly)
+- [x] Counter — target-action, buttons, mutable state (validated: +/−/Reset all work, negatives, delegate bridge target-action pattern)
+- [x] UI Controls Gallery — all standard AppKit controls, visual regression baseline (validated: all 8 sections render, scrolling works, native appearance; fixed 2 emitter bugs: duplicate emission + typedef alias FFI type mapping)
 - [ ] File Lister — NSTableView, data source delegate, NSFileManager, NSOpenPanel
 - [ ] Text Editor — block callbacks, error-out, undo/redo, notifications, find
 - [ ] Mini Browser — cross-framework WebKit, WKNavigationDelegate, URL handling
@@ -155,3 +155,15 @@ All 7 standard apps using plain procedures and explicit typed message sends.
 - Swift-style selectors (containing `(`) must be filtered from emission — `init(string:)` is not a valid Racket identifier and can't be called via `objc_msgSend`. The `is_supported_method` filter now checks `!method.selector.contains('(')`.
 - `coerce-arg` must cast `objc-object-ptr` to `_id` via `(cast ptr _pointer _id)` — Racket's `tell` macro only accepts `_id`-tagged pointers, not raw `_pointer` values.
 - TypedMsgSend methods (`_msg-N` bindings) expect raw pointers for id-type parameters, not wrapped `objc-object` structs. Callers should pass `_id` pointers directly. Only `self` goes through `coerce-arg`.
+- **Always kill GUI app processes in the VM after TestAnyware validation.** `nohup racket app.rkt &` leaves the process running; use `testanyware exec "pkill -f app.rkt"` to clean up before moving on or stopping the VM. Failing to do this can leave orphan processes that interfere with subsequent tests.
+- Category property merging must deduplicate by name — `class.properties.extend(category_props)` creates duplicates when a property exists on both the class interface and a category. Fixed with HashSet filter in `extract_declarations.rs`.
+- Emitter must also deduplicate effective_methods by selector and effective_properties by name before emission — defensive layer against any remaining duplicate sources.
+- Typedef aliases (e.g., `NSImageName`) must be resolved to their canonical types at collection time. ObjC object pointer typedefs → `Id`/`Class`, primitive typedefs → `Primitive`, enum/struct typedefs → keep as `Alias`. Without this, the FFI mapper defaults to `_uint64` for unrecognized aliases, which crashes at runtime for object-type parameters.
+- `NSEdgeInsets` is not in the geometry struct alias list, so `nsstackview-set-edge-insets!` gets a `_uint64` typed msg-send that can't accept the struct. Omit edge insets from apps until this is fixed.
+- VirtioFS shared filesystem can serve stale files after host edits. Restart the VM or copy files to VM local storage to work around this.
+- Racket module compilation is very slow on first run (~5+ minutes for apps importing many generated modules). Compiled bytecode is cached in `compiled/` directories for subsequent runs.
+- Radio button mutual exclusion with standalone NSButton (not deprecated NSMatrix) requires manual target-action delegate that deselects all and selects the sender.
+- NSStepper requires `setContinuous: YES` to fire target-action on click. Without it, the stepper changes its own intValue but never sends the action message. This is a macOS behavior — other NSControl subclasses (NSButton, NSSlider) fire actions by default.
+- NSStepper (and likely other small controls) inside a plain NSView container added to NSStackView may not receive clicks. Adding the control directly to the stack view as an arranged subview fixes this.
+- When transferring files to the VM, use base64 encoding via `testanyware exec "echo '<b64>' | base64 -d > file"` instead of relying on VirtioFS shared filesystem, which can serve stale/truncated content after host edits.
+- Always `pkill -9 -f racket` before relaunching an app — failing to do so leaves the old process holding the NSApplication singleton, and the new process may silently fail or show the old window.

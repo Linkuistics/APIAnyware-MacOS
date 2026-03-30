@@ -34,8 +34,8 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer _id _pointer -> _bool)))
 (define _msg-7  ; (_fun _pointer _pointer _pointer _id _pointer _pointer -> _bool)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer _id _pointer _pointer -> _bool)))
-(define _msg-8  ; (_fun _pointer _pointer _pointer _uint64 _id _NSRange _pointer -> _bool)
-  (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer _uint64 _id _NSRange _pointer -> _bool)))
+(define _msg-8  ; (_fun _pointer _pointer _pointer _pointer _id _NSRange _pointer -> _bool)
+  (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer _pointer _id _NSRange _pointer -> _bool)))
 (define _msg-9  ; (_fun _pointer _pointer _uint64 -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _uint64 -> _void)))
 

@@ -66,4 +66,6 @@
   (wrap-objc-object
    (tell (coerce-arg self) makeIterator)))
 (define (nsarray-object-at-index self index)
-  (_msg-2 (coerce-arg self) (sel_registerName "objectAtIndex:") index))
+  (wrap-objc-object
+   (_msg-2 (coerce-arg self) (sel_registerName "objectAtIndex:") index)
+   ))
