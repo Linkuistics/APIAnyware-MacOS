@@ -21,9 +21,9 @@ use crate::emit_protocol::generate_protocol_file;
 
 /// Language metadata for the Racket emitter.
 pub const RACKET_LANGUAGE_INFO: LanguageInfo = LanguageInfo {
-    id: "racket",
-    display_name: "Racket",
-    supported_styles: &[BindingStyle::ObjectOriented, BindingStyle::Functional],
+    id: "racket-oo",
+    display_name: "Racket OO",
+    supported_styles: &[BindingStyle::ObjectOriented],
     default_style: BindingStyle::ObjectOriented,
 };
 
@@ -41,7 +41,6 @@ impl LanguageEmitter for RacketEmitter {
         output_dir: &Path,
         _style: BindingStyle,
     ) -> io::Result<EmitResult> {
-        // TODO: differentiate OO vs Functional style when functional emitter is implemented
         emit_framework(framework, output_dir)
     }
 }
@@ -322,8 +321,9 @@ mod tests {
 
     #[test]
     fn test_racket_language_info() {
-        assert_eq!(RACKET_LANGUAGE_INFO.id, "racket");
-        assert_eq!(RACKET_LANGUAGE_INFO.supported_styles.len(), 2);
+        assert_eq!(RACKET_LANGUAGE_INFO.id, "racket-oo");
+        assert_eq!(RACKET_LANGUAGE_INFO.display_name, "Racket OO");
+        assert_eq!(RACKET_LANGUAGE_INFO.supported_styles.len(), 1);
         assert_eq!(
             RACKET_LANGUAGE_INFO.default_style,
             BindingStyle::ObjectOriented

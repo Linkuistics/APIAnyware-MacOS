@@ -219,17 +219,17 @@ mod tests {
     #[test]
     fn output_dir_for_style_builds_correct_path() {
         let base = Path::new("/out/targets");
-        let path = output_dir_for_style(base, "racket", &BindingStyle::ObjectOriented);
-        assert_eq!(path, PathBuf::from("/out/targets/racket/generated/oo"));
+        let path = output_dir_for_style(base, "racket-oo", &BindingStyle::ObjectOriented);
+        assert_eq!(path, PathBuf::from("/out/targets/racket-oo/generated/oo"));
     }
 
     #[test]
     fn output_dir_for_functional_style() {
         let base = Path::new("/out/targets");
-        let path = output_dir_for_style(base, "racket", &BindingStyle::Functional);
+        let path = output_dir_for_style(base, "racket-oo", &BindingStyle::Functional);
         assert_eq!(
             path,
-            PathBuf::from("/out/targets/racket/generated/functional")
+            PathBuf::from("/out/targets/racket-oo/generated/functional")
         );
     }
 
@@ -243,21 +243,17 @@ mod tests {
         write_test_framework(&input_dir, &fw);
 
         let registry = EmitterRegistry::new();
-        let langs = vec!["racket".to_string()];
+        let langs = vec!["racket-oo".to_string()];
         let summaries = run_generation(&registry, &input_dir, &output_dir, Some(&langs)).unwrap();
 
         assert_eq!(summaries.len(), 1);
-        assert_eq!(summaries[0].language_id, "racket");
-        // Racket supports 2 styles: OO + Functional — both generated
-        assert_eq!(summaries[0].style_results.len(), 2);
+        assert_eq!(summaries[0].language_id, "racket-oo");
+        assert_eq!(summaries[0].style_results.len(), 1);
         assert!(summaries[0].style_results[0].total_files_written > 0);
 
-        // Verify output structure for both styles
+        // Verify output structure
         assert!(output_dir
-            .join("racket/generated/oo/testkit/main.rkt")
-            .exists());
-        assert!(output_dir
-            .join("racket/generated/functional/testkit/main.rkt")
+            .join("racket-oo/generated/oo/testkit/main.rkt")
             .exists());
     }
 
@@ -271,13 +267,15 @@ mod tests {
         write_test_framework(&input_dir, &make_test_framework("AppKit"));
 
         let registry = EmitterRegistry::new();
-        let langs = vec!["racket".to_string()];
+        let langs = vec!["racket-oo".to_string()];
         let summaries = run_generation(&registry, &input_dir, &output_dir, Some(&langs)).unwrap();
 
         // Both frameworks generated in each style
         assert_eq!(summaries[0].style_results[0].frameworks_generated, 2);
-        assert!(output_dir.join("racket/generated/oo/foundation").exists());
-        assert!(output_dir.join("racket/generated/oo/appkit").exists());
+        assert!(output_dir
+            .join("racket-oo/generated/oo/foundation")
+            .exists());
+        assert!(output_dir.join("racket-oo/generated/oo/appkit").exists());
     }
 
     #[test]
@@ -291,9 +289,9 @@ mod tests {
         let registry = EmitterRegistry::new();
         let summaries = run_generation(&registry, &input_dir, &output_dir, None).unwrap();
 
-        // Should generate for all registered languages (currently just racket)
+        // Should generate for all registered languages (currently just racket-oo)
         assert!(!summaries.is_empty());
-        assert_eq!(summaries[0].language_id, "racket");
+        assert_eq!(summaries[0].language_id, "racket-oo");
     }
 
     #[test]

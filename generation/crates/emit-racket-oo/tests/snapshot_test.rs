@@ -5,14 +5,14 @@
 //!   2. Foundation (real IR) — curated subset of ~18 representative files
 //!
 //! To update golden files after intentional changes:
-//!   UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket --test snapshot_test
+//!   UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket-oo --test snapshot_test
 
 use std::path::PathBuf;
 
 use apianyware_macos_emit::binding_style::{BindingStyle, LanguageEmitter};
 use apianyware_macos_emit::snapshot_testing::GoldenTest;
 use apianyware_macos_emit::test_fixtures::build_snapshot_test_framework;
-use apianyware_macos_emit_racket::emit_framework::RacketEmitter;
+use apianyware_macos_emit_racket_oo::emit_framework::RacketEmitter;
 
 /// Root of this crate (for locating golden files relative to source).
 fn crate_root() -> PathBuf {
@@ -83,11 +83,11 @@ fn snapshot_racket_oo_testkit() {
     );
 
     // Compare against golden files
-    let golden_test = GoldenTest::new(&golden_dir(), "racket", BindingStyle::ObjectOriented);
+    let golden_test = GoldenTest::new(&golden_dir(), "racket-oo", BindingStyle::ObjectOriented);
     if let Err(mismatch) = golden_test.assert_matches(&generated_framework_dir) {
         panic!(
             "Racket OO snapshot mismatch.\n\
-             Run `UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket --test snapshot_test` \
+             Run `UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket-oo --test snapshot_test` \
              to accept.\n\n{mismatch}"
         );
     }
@@ -96,7 +96,7 @@ fn snapshot_racket_oo_testkit() {
 /// Load the real Foundation enriched IR from the analysis pipeline output.
 fn load_foundation_framework() -> Option<apianyware_macos_types::ir::Framework> {
     let enriched_dir = crate_root()
-        .parent() // emit-racket → crates
+        .parent() // emit-racket-oo → crates
         .and_then(|p| p.parent()) // crates → generation
         .and_then(|p| p.parent()) // generation → project root
         .map(|p| p.join("analysis").join("ir").join("enriched"))?;
@@ -146,7 +146,7 @@ fn snapshot_racket_oo_foundation_subset() {
 
     let golden_test = GoldenTest::new(
         &golden_foundation_dir(),
-        "racket",
+        "racket-oo",
         BindingStyle::ObjectOriented,
     );
     if let Err(mismatch) =
@@ -154,7 +154,7 @@ fn snapshot_racket_oo_foundation_subset() {
     {
         panic!(
             "Racket OO Foundation snapshot mismatch.\n\
-             Run `UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket --test snapshot_test` \
+             Run `UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket-oo --test snapshot_test` \
              to accept.\n\n{mismatch}"
         );
     }
