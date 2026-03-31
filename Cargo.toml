@@ -16,6 +16,7 @@ members = [
     # Generation phase
     "generation/crates/emit",
     "generation/crates/emit-racket-oo",
+    "generation/crates/emit-racket-functional",
     "generation/crates/cli",
     # "generation/crates/emit-chez",
     # "generation/crates/emit-gerbil",
@@ -48,6 +49,7 @@ apianyware-macos-annotate = { path = "analysis/crates/annotate" }
 apianyware-macos-enrich = { path = "analysis/crates/enrich" }
 apianyware-macos-emit = { path = "generation/crates/emit" }
 apianyware-macos-emit-racket-oo = { path = "generation/crates/emit-racket-oo" }
+apianyware-macos-emit-racket-functional = { path = "generation/crates/emit-racket-functional" }
 
 [workspace.lints.rust]
 unsafe_code = "warn"
