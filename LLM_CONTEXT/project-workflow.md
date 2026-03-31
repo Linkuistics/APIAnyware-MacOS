@@ -57,6 +57,8 @@ Plans live at `LLM_STATE/plans/{target}/plan.md` (or `{target}/{app}.md`).
 - `/begin-work <target> [app]` — start or continue any implementation work
 - `/reflect` — promote observations to the knowledge base (during code review)
 - `/create-plan <name> [target] [app]` — create a new plan with observational memory
+- `/add-app <name>` — scaffold a new app across the matrix (project-level skill)
+- `/add-target <name>` — scaffold a new target across the matrix (project-level skill)
 
 ## Adding To The Matrix
 

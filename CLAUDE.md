@@ -24,6 +24,10 @@ the full workflow, skills, and knowledge system.
 - `/reflect` — promote observations to the knowledge base (during code review sessions)
 - `/create-plan <name> [target] [app]` — create a plan with observational memory
 
+**Project-level skills (APIAnyware-specific):**
+- `/add-app <name>` — scaffold a new app across the matrix
+- `/add-target <name>` — scaffold a new target across the matrix
+
 ## Build & Test Commands
 
 ```bash
