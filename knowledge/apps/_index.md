@@ -11,3 +11,4 @@ Sample apps progress from simple to complex. Each exercises specific macOS/bindi
 | 5 | text-editor | Block callbacks, error-out, undo/redo, notifications, find |
 | 6 | mini-browser | Cross-framework WebKit, WKNavigationDelegate, URL handling |
 | 7 | menu-bar-tool | NSStatusBar, NSMenu, no-window app, timers, clipboard |
+| 8 | modaliser | Keyboard capture, window management, overlays, config system (capstone) |
