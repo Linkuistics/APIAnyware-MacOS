@@ -5,7 +5,7 @@
 ;; Exercises: object lifecycle, property setters, NSWindow, NSApplication.
 ;;
 ;; Run with:
-;;   racket generation/targets/racket/apps/oo/hello-window.rkt
+;;   racket generation/targets/racket-oo/apps/hello-window.rkt
 
 (require ffi/unsafe
          ffi/unsafe/objc

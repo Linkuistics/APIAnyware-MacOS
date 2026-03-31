@@ -91,7 +91,7 @@ pub trait LanguageEmitter {
     /// Emit bindings for a single framework in the given binding style.
     ///
     /// `output_dir` is the style-specific directory (e.g.,
-    /// `generation/targets/racket/generated/oo/`). The emitter creates
+    /// `generation/targets/racket-oo/generated/oo/`). The emitter creates
     /// a framework subdirectory within it.
     fn emit_framework(
         &self,
