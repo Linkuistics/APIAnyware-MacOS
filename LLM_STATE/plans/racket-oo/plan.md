@@ -6,17 +6,24 @@ Implementations: Racket (BC or CS)
 Binding styles: OO (tell macro, class wrappers), Functional (plain procedures)
 Swift dylib: libAPIAnywareRacket.dylib
 Milestone: 9
-Emitter crate: emit-racket
-Runtime location: generation/targets/racket/runtime/
+Emitter crate: emit-racket-oo
+Runtime location: generation/targets/racket-oo/runtime/
 ```
 
-Template: `plan-template.md`
+Template: `plans/plan-template.md`
+
+## Session Continuation Prompt
+
+```
+Run /begin-work racket-oo to load context, then continue from the next
+incomplete step. Complete each step's Do → Verify → Observe cycle.
+```
 
 ## Progress
 
 ### 9.1 Emitter crate
 
-- [x] `generation/crates/emit-racket/` — 8 modules ported from POC
+- [x] `generation/crates/emit-racket-oo/` — 8 modules ported from POC
   - [x] `naming.rs` — kebab-case constructors, properties, methods with `!` suffix
   - [x] `method_filter.rs` — Tell vs TypedMsgSend dispatch, method support filtering
   - [x] `shared_signatures.rs` — `_msg-N` signature deduplication
@@ -32,7 +39,7 @@ Template: `plan-template.md`
 
 ### 9.2 Runtime library
 
-- [x] 7 runtime files ported to `generation/targets/racket/runtime/`
+- [x] 7 runtime files ported to `generation/targets/racket-oo/runtime/`
   - [x] `swift-helpers.rkt` — conditional loading of `libAPIAnywareRacket.dylib`
   - [x] `objc-base.rkt` — object wrapping with GC-attached release finalizers
   - [x] `coerce.rkt` — auto-coercion (string→NSString, objc-object→ptr)
@@ -46,7 +53,7 @@ Template: `plan-template.md`
 
 - [x] `libAPIAnywareRacket.dylib` builds successfully (from Milestone 7.2)
 - [x] 64 Swift tests pass (7 Common + 3 Racket test files)
-- [x] Dylib symlinked at `generation/targets/racket/lib/libAPIAnywareRacket.dylib`
+- [x] Dylib symlinked at `generation/targets/racket-oo/lib/libAPIAnywareRacket.dylib`
 - [x] FFI round-trip test from Racket → Swift helper → verify result (20 tests: class/selector lookup, string round-trip with ASCII/Unicode/empty, NSString length, autorelease pool push/pop, retain/release, GC prevention, wrap-objc-object, struct creation, array round-trip)
 - [x] Block creation through dylib verified from Racket (5 tests: block lifecycle, enumerateObjectsUsingBlock: with 3 elements, early stop via BOOL* parameter, sortedArrayUsingComparator: with NSNumbers, call-with-objc-block convenience)
 - [x] Delegate creation through dylib verified from Racket (7 tests: delegate creation + respondsToSelector:, void dispatch to 2 handlers, bool return #t, bool return #f, delegate-set! live update, free-delegate cleanup, multiple coexisting delegates)
@@ -55,10 +62,10 @@ Template: `plan-template.md`
 
 - [x] Register Racket emitter in `apianyware-macos-generate` (already done in Milestone 8.1)
 - [x] Generate all enriched frameworks (Foundation: 382 files, 308 classes, 71 protocols, 182 enums)
-- [x] Output to `generation/targets/racket/generated/oo/` and `generation/targets/racket/generated/functional/` (312 files each, both directories populated)
-- [x] Both binding styles produce separate output (OO and Functional each get their own directory; CLI dispatches via `--lang racket`)
+- [x] Output to `generation/targets/racket-oo/generated/oo/` and `generation/targets/racket-oo/generated/functional/` (312 files each, both directories populated)
+- [x] Both binding styles produce separate output (OO and Functional each get their own directory; CLI dispatches via `--lang racket-oo`)
 
-**Note:** The current emitter produces OO-style output for both styles. The functional style (plain procedures, no tell macro, explicit objc_msgSend everywhere) needs to be implemented as a separate code path in emit-racket. The CLI infrastructure correctly routes to both directories.
+**Note:** The current emitter produces OO-style output for both styles. The functional style (plain procedures, no tell macro, explicit objc_msgSend everywhere) needs to be implemented as a separate code path in emit-racket-oo. The CLI infrastructure correctly routes to both directories.
 
 ### 9.5 Snapshot tests
 
@@ -89,7 +96,7 @@ Template: `plan-template.md`
 
 All 7 standard apps using `tell` macro and class wrappers.
 
-**Each app should be developed in its own session** — each involves writing the app, debugging emitter issues discovered during real use, and full TestAnyware validation. See `generation/apps/specs/` for detailed specs and `generation/apps/tests/` for validation checklists.
+**Each app should be developed in its own session** — each involves writing the app, debugging emitter issues discovered during real use, and full TestAnyware validation. See `knowledge/apps/{app}/spec.md` for detailed specs and `knowledge/apps/{app}/test-strategy.md` for validation checklists.
 
 - [x] Hello Window — object lifecycle, property setters, NSWindow (validated in TestAnyware VM: window + centered label render correctly)
 - [x] Counter — target-action, buttons, mutable state (validated: +/−/Reset all work, negatives, delegate bridge target-action pattern)
@@ -128,7 +135,7 @@ All 7 standard apps using plain procedures and explicit typed message sends.
 
 ### 9.11 Documentation placeholder
 
-- [ ] `generation/targets/racket/docs/requirements.md`
+- [ ] `generation/targets/racket-oo/docs/requirements.md`
 - [ ] Racket-specific idiom notes (OO: `tell` macro, `import-class`; Functional: explicit `objc_msgSend`, no `tell`)
 - [ ] Notes on what Racket users would find surprising
 
@@ -144,7 +151,7 @@ All 7 standard apps using plain procedures and explicit typed message sends.
 - Racket emitter ports cleanly from POC with three IR type changes: `Enum.enum_type` is `TypeRef` (not `String`), `EnumValue.value` is `i64` (not `String`), Method has `source`/`provenance`/`doc_refs` fields.
 - Dylib name changed from `libanyware_racket` to `libAPIAnywareRacket` — only `swift-helpers.rkt` references it.
 - Framework header simplified from POC's per-framework match arms to a single format string.
-- Dylib must be symlinked at `generation/targets/racket/lib/libAPIAnywareRacket.dylib` for the runtime to find it (swift-helpers.rkt looks at `../lib/` relative to `runtime/`).
+- Dylib must be symlinked at `generation/targets/racket-oo/lib/libAPIAnywareRacket.dylib` for the runtime to find it (swift-helpers.rkt looks at `../lib/` relative to `runtime/`).
 - Racket's `with-autorelease-pool` macro uses `begin0` internally, so `define` forms inside it are invalid — use `let`/`let*` instead.
 - Racket's `_cprocedure` + `function-ptr` successfully creates C-callable function pointers that ObjC's block invoke and delegate IMP trampolines can call. The block self-pointer must be skipped in the wrapper (first arg).
 - Block early stop via `BOOL*` parameter works: `(ptr-set! stop-ptr _byte 1)` sets the pointed-to BOOL to YES, causing NSArray enumeration to halt.

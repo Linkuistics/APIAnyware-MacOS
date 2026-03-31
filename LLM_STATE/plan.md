@@ -15,11 +15,11 @@ You MUST first read `LLM_CONTEXT/index.md` and `LLM_CONTEXT/coding-style.md`.
 
 Then continue working on the task outlined in `LLM_STATE/plan.md`.
 Review the file to see current progress, then continue from the next incomplete step.
-For language-specific work, also read the sub-plan: `LLM_STATE/plan-{lang}.md`.
+For language-specific work, run /begin-work {target} to load the target plan.
 
 Design spec: `docs/specs/2026-03-26-macos-workspace-design.md`
 Restructure spec: `docs/specs/2026-03-27-plan-restructure-design.md`
-Language template: `LLM_STATE/plan-template.md`
+Language template: `LLM_STATE/plans/plan-template.md`
 POC to harvest from: `../APIAnyware/`
 
 After completing each step, update the relevant plan file with:
@@ -28,6 +28,17 @@ After completing each step, update the relevant plan file with:
 
 Use Mermaid for all diagrams — never ASCII art.
 ```
+
+## Knowledge System & Plans
+
+This project uses observational memory. See `LLM_CONTEXT/project-workflow.md` for full details.
+
+**Active plans:**
+- `LLM_STATE/plans/racket-oo/plan.md` — Racket OO target (Milestone 9)
+
+**Knowledge base:** `knowledge/` — learnings organised by axis (pipeline, testanyware, apps, targets, matrix)
+
+**Plan template:** `LLM_STATE/plans/plan-template.md`
 
 ## Progress
 

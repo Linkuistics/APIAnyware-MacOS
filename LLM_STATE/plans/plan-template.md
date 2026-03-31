@@ -1,12 +1,12 @@
 # Language Target Template
 
-Parameterized workflow for implementing a language target. Each language milestone instantiates this template in `plan-{lang}.md`.
+Parameterized workflow for implementing a language target. Each language milestone instantiates this template in `plans/{target}/plan.md`.
 
 Design spec: `docs/specs/2026-03-27-plan-restructure-design.md`
 
 ## Header Fields
 
-Every `plan-{lang}.md` starts with:
+Every `plans/{target}/plan.md` starts with:
 
 ```
 Language: {display name, e.g., "Haskell"}
