@@ -6,13 +6,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 APIAnyware-MacOS is a three-phase pipeline that extracts macOS platform API metadata, semantically analyzes it, and generates idiomatic language bindings for non-mainstream languages (Racket, Chez Scheme, Haskell, etc.). It produces complete, usable bindings — not thin C wrappers.
 
+## How This Project Is Organised
+
+This is a matrix project: N targets x M apps, with shared pipeline and testing infrastructure.
+
+**Before doing any implementation work**, read `LLM_CONTEXT/project-workflow.md` — it explains
+the full workflow, skills, and knowledge system.
+
+**Key directories:**
+- `knowledge/` — all learnings, app specs, testing strategies, organised by axis
+- `generation/targets/{target}/` — one per language+paradigm combination
+- `LLM_STATE/plans/` — active multi-session plans
+- `LLM_CONTEXT/` — project-wide instructions and coding standards
+
+**Skills (from observational-memory plugin):**
+- `/begin-work <target> [app]` — start or continue any implementation work
+- `/reflect` — promote observations to the knowledge base (during code review sessions)
+- `/create-plan <name> [target] [app]` — create a plan with observational memory
+
 ## Build & Test Commands
 
 ```bash
 # Rust workspace
 cargo build                          # Build all crates
 cargo test --workspace               # Run all tests (~248 tests)
-cargo test -p apianyware-macos-emit-racket  # Single crate
+cargo test -p apianyware-macos-emit-racket-oo  # Single crate
 cargo +nightly fmt                   # Format (requires nightly)
 cargo clippy --workspace             # Lint
 
@@ -24,7 +42,7 @@ cd swift && swift test               # Run Swift tests (~64 tests)
 cargo run --bin apianyware-macos-collect -- --only Foundation
 cargo run --bin apianyware-macos-analyze                        # Full: resolve → annotate → enrich
 cargo run --bin apianyware-macos-analyze -- resolve --only Foundation
-cargo run --bin apianyware-macos-generate -- --lang racket
+cargo run --bin apianyware-macos-generate -- --lang racket-oo
 cargo run --bin apianyware-macos-generate -- --list-languages
 
 # Snapshot tests: update golden files after emitter changes
@@ -42,10 +60,12 @@ Collection                    Analysis                        Generation
 apianyware-macos-collect      apianyware-macos-analyze         apianyware-macos-generate
         │                     resolve → annotate → enrich              │
         ▼                              ▼                               ▼
-collection/ir/collected/      analysis/ir/{resolved,          generation/targets/{lang}/
+collection/ir/collected/      analysis/ir/{resolved,          generation/targets/{target}/
   {Framework}.json              annotated,enriched}/            generated/{style}/
                                 {Framework}.json                  {framework}/*.rkt
 ```
+
+Where `{target}` is a language+paradigm combo like `racket-oo`.
 
 ### Crate Map
 
@@ -55,14 +75,14 @@ collection/ir/collected/      analysis/ir/{resolved,          generation/targets
 
 **Analysis** — `analysis/crates/datalog/` (shared Ascent-based relations), `resolve/` (inheritance flattening, ownership detection), `annotate/` (heuristic + LLM annotation merge), `enrich/` (derived relations, verification), `cli/`.
 
-**Generation** — `generation/crates/emit/` (shared framework: `FfiTypeMapper` trait, `CodeWriter`, naming utils, snapshot testing, pattern dispatch), `emit-racket/` (Racket-specific emission), `cli/` (emitter registry, orchestration).
+**Generation** — `generation/crates/emit/` (shared framework: `FfiTypeMapper` trait, `CodeWriter`, naming utils, snapshot testing, pattern dispatch), `emit-racket-oo/` (Racket OO emission), `cli/` (emitter registry, orchestration).
 
 **Swift dylibs** — `swift/` contains `APIAnywareCommon` (C-callable ObjC runtime: message sending, memory management, struct marshaling) and per-language bridges (`APIAnywareRacket` adds block/delegate bridging with GC prevention).
 
 ### Key Patterns
 
 - **`effective_methods()`/`effective_properties()`** in emitters: choose between direct and inherited method lists, with deduplication by selector/name.
-- **`DispatchStrategy`** in emit-racket: methods dispatch via either `tell` (Racket's ObjC FFI macro) or typed `_msg-N` bindings depending on parameter/return types.
+- **`DispatchStrategy`** in emit-racket-oo: methods dispatch via either `tell` (Racket's ObjC FFI macro) or typed `_msg-N` bindings depending on parameter/return types.
 - **`coerce-arg`** in Racket runtime: auto-converts strings→NSString, objc-object→_id pointer. All generated property setters use it.
 - **Snapshot tests**: golden files at `emit-{lang}/tests/golden/{style}/`. `GoldenTest::assert_matches()` does directory comparison with unified diffs. `assert_subset_matches()` checks only files present in the golden dir.
 - **`test_fixtures::build_snapshot_test_framework()`**: deterministic synthetic `TestKit` framework exercising all emitter code paths.
@@ -83,15 +103,15 @@ Read `LLM_CONTEXT/coding-style.md` before writing or refactoring code. Key point
 
 ## Plan & Progress Tracking
 
-`LLM_STATE/plan.md` tracks overall progress across all milestones. Language-specific sub-plans live at `LLM_STATE/plan-{lang}.md`. After completing each step, update the plan: mark `[x]`, add learnings.
+`LLM_STATE/plan.md` tracks overall progress. Target-specific plans live at `LLM_STATE/plans/{target}/plan.md`. App-specific plans at `LLM_STATE/plans/{target}/{app}.md`.
 
-The session continuation prompt at the top of `plan.md` should be used to resume work.
+After completing each step, update the plan: mark `[x]`, add learnings. The session continuation prompt at the top of each plan should be used to resume work.
 
 ## Language Targets
 
-Each language gets: an emitter crate, a runtime library, generated bindings, sample apps, and snapshot tests. See `LLM_STATE/new-language-guide.md` for the 11-step checklist and `LLM_STATE/plan-template.md` for the plan structure.
+Each target gets: an emitter crate, a runtime library, generated bindings, sample apps, and snapshot tests. See `LLM_STATE/new-language-guide.md` for the 11-step checklist and `LLM_STATE/plans/plan-template.md` for the plan structure.
 
-Generated output lands at `generation/targets/{lang}/generated/{style}/{framework}/`. Runtimes at `generation/targets/{lang}/runtime/`. Sample apps at `generation/targets/{lang}/apps/{style}/`.
+Generated output lands at `generation/targets/{target}/generated/{style}/{framework}/`. Runtimes at `generation/targets/{target}/runtime/`. Sample apps at `generation/targets/{target}/apps/`.
 
 ## GUI Testing with TestAnyware
 
@@ -99,7 +119,7 @@ Sample apps are tested in a macOS VM via `../TestAnyware/`. Never run GUI apps d
 
 Key workflow:
 ```bash
-../TestAnyware/.build/release/testanyware vm start --share ./generation/targets/racket:racket
+../TestAnyware/.build/release/testanyware vm start --share ./generation/targets/racket-oo:racket-oo
 ../TestAnyware/.build/release/testanyware exec "brew install minimal-racket"
 # Copy files to VM local storage (VirtioFS can serve stale content):
 # base64-encode on host, decode in VM via testanyware exec
@@ -107,4 +127,4 @@ Key workflow:
 ../TestAnyware/.build/release/testanyware vm stop
 ```
 
-Specs at `generation/apps/specs/`, validation checklists at `generation/apps/tests/`, workflow doc at `generation/apps/testanyware-workflow.md`.
+Workflow docs at `knowledge/testanyware/general.md`. App specs at `knowledge/apps/{app}/spec.md`, validation checklists at `knowledge/apps/{app}/test-strategy.md`.
