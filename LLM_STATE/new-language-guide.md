@@ -2,6 +2,14 @@
 
 Step-by-step guide for adding a language target to APIAnyware-MacOS.
 
+> **Note:** A *target* is a language+paradigm combination (e.g., `racket-oo`,
+> `racket-functional`, `haskell-monadic`). Each target is independent with its own
+> emitter crate, runtime, generated output, and apps. Use `/add-target <name>` to
+> scaffold a new target automatically.
+
+> **Knowledge system:** After creating a target, populate `knowledge/targets/{target}.md`
+> with learnings. Use `/begin-work {target}` at the start of each session.
+
 ## Prerequisites
 
 - Milestone 8 (Test Infrastructure & Workflow) is complete
@@ -9,26 +17,29 @@ Step-by-step guide for adding a language target to APIAnyware-MacOS.
 - At least one language target (Racket) has been completed as a reference
 - The target language has a working FFI mechanism for calling C functions
 
-## Step 1: Plan the language
+## Step 1: Plan the target
 
-Create `LLM_STATE/plan-{lang}.md` by instantiating `LLM_STATE/plan-template.md`:
+Create `LLM_STATE/plans/{target}/plan.md` by instantiating `LLM_STATE/plans/plan-template.md`:
 
 1. Copy the template structure
 2. Fill in the header fields:
    - **Language** — display name
+   - **Paradigm** — the binding style variant (e.g., "OO", "Functional", "Monadic")
+   - **Target** — `{lang}-{paradigm}` slug (e.g., `haskell-monadic`)
    - **Implementations** — which compilers/runtimes (e.g., "GHC" for Haskell, "SBCL, CCL" for Common Lisp)
    - **Binding styles** — what paradigm variants to generate (e.g., "Monadic, Lens-based")
    - **Swift dylib** — `libAPIAnyware{Lang}.dylib`
    - **Milestone** — next available milestone number in `plan.md`
-   - **Emitter crate** — `emit-{lang}`
-   - **Runtime location** — `generation/targets/{lang}/runtime/`
-3. Rename the style-specific steps (X.7, X.8) to match the binding styles
-4. Add any language-specific notes
+   - **Emitter crate** — `emit-{target}`
+   - **Runtime location** — `generation/targets/{target}/runtime/`
+3. Each step uses Do/Verify/Observe structure: what to do, how to verify it worked, and what to note as learnings
+4. Rename the style-specific steps (X.7, X.8) to match the binding styles
+5. Add any language-specific notes
 
 ## Step 2: Create the emitter crate
 
 ```
-generation/crates/emit-{lang}/
+generation/crates/emit-{target}/
   Cargo.toml
   src/
     lib.rs
@@ -45,11 +56,11 @@ generation/crates/emit-{lang}/
 
 ```toml
 [package]
-name = "apianyware-macos-emit-{lang}"
+name = "apianyware-macos-emit-{target}"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "{Language} code generation: ..."
+description = "{Language} ({Paradigm}) code generation: ..."
 
 [dependencies]
 apianyware-macos-types.workspace = true
@@ -67,8 +78,8 @@ workspace = true
 
 In the root `Cargo.toml`:
 
-1. Add `"generation/crates/emit-{lang}"` to `[workspace] members`
-2. Add `apianyware-macos-emit-{lang} = { path = "generation/crates/emit-{lang}" }` to `[workspace.dependencies]`
+1. Add `"generation/crates/emit-{target}"` to `[workspace] members`
+2. Add `apianyware-macos-emit-{target} = { path = "generation/crates/emit-{target}" }` to `[workspace.dependencies]`
 
 ### Implement FfiTypeMapper
 
@@ -115,7 +126,7 @@ Use the Racket emitter (`generation/crates/emit-racket/`) as a reference impleme
 
 ## Step 3: Create the runtime library
 
-Create `generation/targets/{lang}/runtime/` with source files in the target language.
+Create `generation/targets/{target}/runtime/` with source files in the target language.
 
 Every runtime must provide:
 
@@ -147,14 +158,14 @@ If the language needs a Swift dylib:
 In `generation/crates/cli/`:
 
 1. Add the emitter crate as a dependency
-2. Add the language to the `--lang` flag's accepted values
-3. Wire up: `--lang {lang}` → load enriched IR → call emitter → write output
+2. Add the target to the `--lang` flag's accepted values
+3. Wire up: `--lang {target}` → load enriched IR → call emitter → write output
 
 ## Step 6: Create snapshot tests and golden files
 
 Use the shared snapshot testing harness (`apianyware_macos_emit::snapshot_testing`):
 
-1. Create `generation/crates/emit-{lang}/tests/snapshot_test.rs`:
+1. Create `generation/crates/emit-{target}/tests/snapshot_test.rs`:
 
 ```rust
 use std::path::PathBuf;
@@ -184,12 +195,12 @@ fn snapshot_{lang}_{style}_testkit() {
 
 2. Generate initial golden files:
 ```bash
-UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-{lang} --test snapshot_test
+UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-{target} --test snapshot_test
 ```
 
 3. Review the generated golden files for correctness
 4. Add one test per binding style
-5. Golden files go to `generation/crates/emit-{lang}/tests/golden/{style}/`
+5. Golden files go to `generation/crates/emit-{target}/tests/golden/{style}/`
 
 The shared `build_snapshot_test_framework()` provides a deterministic 5-class `TestKit` framework
 that exercises all emitter code paths. Optionally add Foundation/AppKit golden tests for
@@ -210,7 +221,7 @@ Create non-GUI tests in the target language that verify basic binding functional
 Implement the 7 standard sample apps (one set per binding style):
 
 1. Read the spec in `generation/apps/specs/{app}.md`
-2. Implement in `generation/targets/{lang}/apps/{style}/{app}/`
+2. Implement in `generation/targets/{target}/apps/{style}/{app}/`
 3. Verify it builds and runs
 4. Run TestAnyware validation against it
 
@@ -225,15 +236,15 @@ Implement the 7 standard sample apps (one set per binding style):
 
 ## Reference implementations
 
-- **Racket** — `generation/crates/emit-racket/` and `generation/targets/racket/` — the most complete reference
+- **Racket** — `generation/crates/emit-racket/` and `generation/targets/racket-oo/` — the most complete reference
 - **Shared framework** — `generation/crates/emit/` — common utilities available to all emitters
 - **Swift helpers** — `swift/Sources/APIAnywareCommon/` — shared C-callable ObjC runtime interface
 
 ## Checklist
 
 ```
-[ ] plan-{lang}.md created from template
-[ ] emit-{lang} crate created, compiles, tests pass
+[ ] LLM_STATE/plans/{target}/plan.md created from template
+[ ] emit-{target} crate created, compiles, tests pass
 [ ] Runtime library written, loads in target language
 [ ] Swift dylib builds and FFI verified
 [ ] Registered in generation CLI
@@ -243,7 +254,7 @@ Implement the 7 standard sample apps (one set per binding style):
 [ ] Sample apps — Style 2 (all 7, if applicable)
 [ ] TestAnyware validation complete
 [ ] Per-framework exercisers pass
-[ ] Documentation requirements recorded
+[ ] knowledge/targets/{target}.md populated with learnings
 [ ] Review gate passed
 [ ] Main plan.md updated with completion status
 ```
