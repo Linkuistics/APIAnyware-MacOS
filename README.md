@@ -12,11 +12,11 @@ The full three-phase pipeline (Collection, Analysis, Generation) is implemented 
 
 - **Collection** extracts 218 ObjC frameworks and 151 Swift modules from the macOS SDK, merging ObjC and Swift declarations into a unified IR.
 - **Analysis** runs Datalog-based inheritance resolution, heuristic + LLM semantic annotation (block lifecycle, ownership, threading, error patterns), API pattern recognition (10 stereotype categories, 36+ pattern instances in Foundation alone), and enrichment with verification.
-- **Generation** produces Racket OO bindings for all 283 discovered frameworks (312 files for Foundation alone), with a 7-file Racket runtime library and a Swift helper dylib providing C-callable ObjC runtime access.
+- **Generation** produces Racket OO bindings for all 283 discovered frameworks (312 files for Foundation alone, ~7,500 total), with a 7-file Racket runtime library and a Swift helper dylib providing C-callable ObjC runtime access.
 - **3 of 7 sample apps** are implemented for Racket OO: hello-window, counter, and ui-controls-gallery.
 - **Racket Functional** emitter crate exists as a registered stub; not yet implemented.
 - **Snapshot tests** use a synthetic TestKit framework plus a curated Foundation subset for regression testing.
-- **248+ Rust tests** and **64 Swift tests** cover the pipeline.
+- **249 Rust tests** and **64 Swift tests** cover the pipeline.
 
 All other language targets (Chez Scheme, Gerbil, Common Lisp, Haskell, Idris2, OCaml, Prolog/Mercury, Rhombus, Pharo Smalltalk, Zig) are planned but not yet started.
 

@@ -78,17 +78,18 @@ APIAnyware-MacOS/
   generation/
     crates/
       emit/                               # apianyware-macos-emit (shared emitter framework)
-      emit-racket/                        # one emitter crate per target language
-      emit-chez/
-      emit-gerbil/
-      emit-cl/                            # Common Lisp (SBCL, CCL)
-      emit-haskell/
-      emit-idris2/
-      emit-ocaml/
-      emit-prolog/                        # Prolog + Mercury
-      emit-rhombus/
-      emit-smalltalk/                     # Pharo Smalltalk
-      emit-zig/
+      emit-racket-oo/                     # apianyware-macos-emit-racket-oo (complete)
+      emit-racket-functional/             # apianyware-macos-emit-racket-functional (stub)
+      emit-chez/                          # planned
+      emit-gerbil/                        # planned
+      emit-cl/                            # Common Lisp (SBCL, CCL) — planned
+      emit-haskell/                       # planned
+      emit-idris2/                        # planned
+      emit-ocaml/                         # planned
+      emit-prolog/                        # Prolog + Mercury — planned
+      emit-rhombus/                       # planned
+      emit-smalltalk/                     # Pharo Smalltalk — planned
+      emit-zig/                           # planned
       cli/                                # apianyware-macos-generate (binary)
     targets/
       {lang}/runtime/                     # per-language runtime support library
@@ -336,9 +337,9 @@ These relations enable emitters to query "give me all resource-lifecycle pattern
 
 ---
 
-## Phase 3: Generation (Outline)
+## Phase 3: Generation
 
-Not the current focus. The Racket emitter moves from the existing POC; all other emitters are new.
+**Status:** The Racket OO emitter is complete and generates bindings for all 283 frameworks. The shared emitter framework, Swift helper dylibs, and generation CLI are working. Other emitters are planned.
 
 **Core principle: idiomatic, not mechanical.** Each emitter produces bindings shaped to its target language's conventions. A Haskell emitter produces monadic APIs with lens-based property access. A Smalltalk emitter produces message-passing objects. A Zig emitter produces explicit allocation with errdefer patterns. The enriched IR carries enough semantic information for emitters to make these decisions automatically.
 
@@ -346,10 +347,10 @@ Not the current focus. The Racket emitter moves from the existing POC; all other
 
 **Architecture:**
 - Reads `analysis/ir/enriched/{Framework}.json`
-- Shared emitter framework (`emit` crate) provides common utilities: name mapping, type resolution, documentation rendering, framework dependency ordering
-- Per-language emitter crates (`emit-racket`, `emit-haskell`, etc.) implement language-specific code generation
+- Shared emitter framework (`emit` crate) provides common utilities: name mapping, type resolution, documentation rendering, framework dependency ordering, snapshot testing, pattern dispatch
+- Per-language emitter crates (`emit-racket-oo`, `emit-racket-functional`, etc.) implement language-specific code generation
 - Each emitter uses enrichment relations (ownership, threading, block lifecycle, error patterns) and API pattern instances to decide wrapping strategies
-- API pattern stereotypes drive high-level idiomatic constructs: resource lifecycles → `with-*` / bracket / RAII; builder sequences → DSLs or `let`-chains; observer pairs → scoped auto-unregister; transaction brackets → `atomically` / `with-transaction`
+- API pattern stereotypes drive high-level idiomatic constructs: resource lifecycles -> `with-*` / bracket / RAII; builder sequences -> DSLs or `let`-chains; observer pairs -> scoped auto-unregister; transaction brackets -> `atomically` / `with-transaction`
 - Runtime support libraries (per-language) provide ObjC object lifecycle management, block/delegate bridging, memory safety guarantees appropriate to the target language
 - Swift helper dylibs provide the C-callable ObjC runtime interface shared across all target languages
 - Generated documentation cross-references Apple docs using `doc_refs` from collected IR
@@ -358,9 +359,10 @@ Not the current focus. The Racket emitter moves from the existing POC; all other
 
 | Language | Binding style(s) | Notes |
 |---|---|---|
-| Racket | OO (classes) + functional | POC exists; port first |
-| Chez Scheme | Functional | |
-| Gerbil Scheme | OO + functional | |
+| Racket | OO (classes) | Complete: emitter, runtime, 283 frameworks, sample apps, tests |
+| Racket | Functional | Stub emitter registered |
+| Chez Scheme | Functional | Planned (Swift dylib stub exists) |
+| Gerbil Scheme | OO + functional | Planned (Swift dylib stub exists) |
 | Common Lisp (SBCL, CCL) | CLOS + functional | Two implementations, one emitter |
 | Haskell | Monadic + lens-based | |
 | Idris2 | Dependently-typed wrappers | |

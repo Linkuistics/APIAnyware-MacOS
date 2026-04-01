@@ -1,7 +1,7 @@
 # Plan Restructure: Language Targets, Testing & Documentation
 
 **Date:** 2026-03-27
-**Status:** Approved and active -- Milestones 1-8 complete, Milestone 9 (Racket) in progress (9.1-9.6 done, 9.7-9.11 remaining)
+**Status:** Approved and active -- Milestones 1-8 complete, Milestone 9 (Racket OO) in progress (9.1-9.6 done, 9.7 partially done with 3/7 sample apps, 9.8-9.11 remaining)
 **Supersedes:** Milestone 7.3-7.14 of the original plan (single milestone for all languages)
 
 ## Purpose
