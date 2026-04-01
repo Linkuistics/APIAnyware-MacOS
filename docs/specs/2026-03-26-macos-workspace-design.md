@@ -1,8 +1,10 @@
 # APIAnyware-MacOS Workspace Design
 
 **Date:** 2026-03-26
-**Status:** Draft
+**Status:** Implemented (Collection, Analysis, and Generation phases all working; Racket OO is the first completed emitter)
 **Supersedes:** 2026-03-23-project-restructure-design.md (which covered a single monorepo approach)
+
+> **Implementation note (2026-04-01):** The workspace structure described here is largely realized. Key divergences from the original plan: (1) Racket emitter was split into `emit-racket-oo/` and `emit-racket-functional/` (separate crates per binding style, rather than one `emit-racket/` crate); (2) pattern-derived Datalog relations (`pattern_instance`, `pattern_participant`, `pattern_constraint`) were not materialized as flat tuples -- patterns are carried as structured JSON directly in the enriched checkpoint; (3) the `violation_unwrapped` verification rule was deferred to the emitter stage; (4) the Generation CLI uses `--lang racket-oo` (not `--lang racket`) since each binding style is a separate emitter.
 
 ## Purpose
 
