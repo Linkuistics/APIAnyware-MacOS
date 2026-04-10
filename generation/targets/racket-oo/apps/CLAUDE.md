@@ -9,7 +9,7 @@ culminating in Modaliser as the capstone.
 2. Read app-universal learnings: `knowledge/apps/{app}/learnings.md`
 3. Read the test strategy: `knowledge/apps/{app}/test-strategy.md`
 4. Read matrix learnings: `knowledge/matrix/{app}/racket-oo.md` (if it exists)
-5. Check the plan: `LLM_STATE/plans/racket-oo/{app}.md` (if it exists)
+5. Check the target plan: `LLM_STATE/targets/racket-oo/plan.md`
 
 ## All GUI testing uses TestAnyware
 

@@ -7,7 +7,7 @@ object-oriented interaction with macOS APIs.
 
 1. Read `knowledge/targets/racket-oo.md` for target-wide learnings
 2. Read `LLM_CONTEXT/coding-style.md` for coding conventions
-3. Check `LLM_STATE/plans/racket-oo/plan.md` for current progress
+3. Check `LLM_STATE/targets/racket-oo/plan.md` for current progress
 
 ## Target structure
 

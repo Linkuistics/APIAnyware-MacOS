@@ -8,4 +8,4 @@ Racket functional bindings using plain procedures and explicit objc_msgSend call
 
 1. Read `knowledge/targets/racket-functional.md` for target-wide learnings
 2. Read `LLM_CONTEXT/coding-style.md` for coding conventions
-3. Check `LLM_STATE/plans/racket-functional/plan.md` for current progress
+3. Check `LLM_STATE/targets/racket-functional/plan.md` for current progress (if it exists)

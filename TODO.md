@@ -54,8 +54,8 @@ These should be completed before starting additional language targets:
 
 ## Next Language Target: Chez Scheme (Milestone 10)
 
-- Begin the Chez Scheme target by following the 11-step template in `LLM_STATE/plans/plan-template.md`. Create `LLM_STATE/plans/chez/plan.md` from the template. The Swift dylib `APIAnywareChez` already exists as a stub in `swift/Sources/APIAnywareChez/`. The emitter crate directory exists at `generation/crates/emit-chez/` (currently commented out of workspace). Chez Scheme uses a functional binding style with its native FFI (`foreign-procedure`). Uncomment the crate in the root `Cargo.toml` and implement the emitter.
+- Begin the Chez Scheme target by following the 11-step guide in `LLM_STATE/new-language-guide.md`. Create `LLM_STATE/targets/chez/plan.md` from `LLM_STATE/targets/template.md`. The Swift dylib `APIAnywareChez` already exists as a stub in `swift/Sources/APIAnywareChez/`. The emitter crate directory exists at `generation/crates/emit-chez/` (currently commented out of workspace). Chez Scheme uses a functional binding style with its native FFI (`foreign-procedure`). Uncomment the crate in the root `Cargo.toml` and implement the emitter.
 
 ## Infrastructure Improvements
 
-- Migrate from observational-memory plugin to Mnemosyne (`../Mnemosyne`). Update `.observational-memory.yml`, `LLM_CONTEXT/project-workflow.md`, `CLAUDE.md`, and skill references. Read `../Mnemosyne/README.md` for full docs. Install the Mnemosyne Claude Code adapter, initialize `~/.mnemosyne/` global knowledge store, and verify `/begin-work racket-oo` still works end-to-end.
+- (Done) Migrated from observational-memory plugin to backlog-plan workflow. Skills removed, plans restructured into `LLM_STATE/core/` and `LLM_STATE/targets/`. See `../LLM_CONTEXT/backlog-plan.md` for the methodology.

@@ -4,11 +4,10 @@ Step-by-step guide for adding a language target to APIAnyware-MacOS.
 
 > **Note:** A *target* is a language+paradigm combination (e.g., `racket-oo`,
 > `racket-functional`, `haskell-monadic`). Each target is independent with its own
-> emitter crate, runtime, generated output, and apps. Use `/add-target <name>` to
-> scaffold a new target automatically.
+> emitter crate, runtime, generated output, and apps.
 
 > **Knowledge system:** After creating a target, populate `knowledge/targets/{target}.md`
-> with learnings. Use `/begin-work {target}` at the start of each session.
+> with learnings. Copy the continuation prompt from the target plan to start each session.
 
 ## Prerequisites
 

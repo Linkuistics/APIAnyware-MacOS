@@ -1,8 +1,6 @@
 # Coding Style Guidelines
 
-> **Note:** The observational-memory plugin provides universal coding conventions at
-> `references/coding-conventions.md`. This file contains project-specific additions
-> and overrides. Both apply.
+> **Note:** This file contains project-specific coding conventions.
 
 When writing or refactoring code in this project, follow these principles:
 
