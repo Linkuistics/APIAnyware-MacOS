@@ -19,7 +19,7 @@ Step-by-step guide for adding a language target to APIAnyware-MacOS.
 
 ## Step 1: Plan the target
 
-Create `LLM_STATE/plans/{target}/plan.md` by instantiating `LLM_STATE/plans/plan-template.md`:
+Create `LLM_STATE/targets/{target}/plan.md` by instantiating `LLM_STATE/targets/template.md`:
 
 1. Copy the template structure
 2. Fill in the header fields:
@@ -29,7 +29,7 @@ Create `LLM_STATE/plans/{target}/plan.md` by instantiating `LLM_STATE/plans/plan
    - **Implementations** — which compilers/runtimes (e.g., "GHC" for Haskell, "SBCL, CCL" for Common Lisp)
    - **Binding styles** — what paradigm variants to generate (e.g., "Monadic, Lens-based")
    - **Swift dylib** — `libAPIAnyware{Lang}.dylib`
-   - **Milestone** — next available milestone number in `plan.md`
+   - **Status** — initial status (usually "not started")
    - **Emitter crate** — `emit-{target}`
    - **Runtime location** — `generation/targets/{target}/runtime/`
 3. Each step uses Do/Verify/Observe structure: what to do, how to verify it worked, and what to note as learnings
@@ -243,7 +243,7 @@ Implement the 7 standard sample apps (one set per binding style):
 ## Checklist
 
 ```
-[ ] LLM_STATE/plans/{target}/plan.md created from template
+[ ] LLM_STATE/targets/{target}/plan.md created from template
 [ ] emit-{target} crate created, compiles, tests pass
 [ ] Runtime library written, loads in target language
 [ ] Swift dylib builds and FFI verified
@@ -256,5 +256,5 @@ Implement the 7 standard sample apps (one set per binding style):
 [ ] Per-framework exercisers pass
 [ ] knowledge/targets/{target}.md populated with learnings
 [ ] Review gate passed
-[ ] Main plan.md updated with completion status
+[ ] LLM_STATE/overview.md updated with target status
 ```
