@@ -11,22 +11,20 @@ APIAnyware-MacOS is a three-phase pipeline that extracts macOS platform API meta
 This is a matrix project: N targets x M apps, with shared pipeline and testing infrastructure.
 
 **Before doing any implementation work**, read `LLM_CONTEXT/project-workflow.md` — it explains
-the full workflow, skills, and knowledge system.
+the full workflow and knowledge system.
 
 **Key directories:**
 - `knowledge/` — all learnings, app specs, testing strategies, organised by axis
 - `generation/targets/{target}/` — one per language+paradigm combination
-- `LLM_STATE/plans/` — active multi-session plans
+- `LLM_STATE/` — plans and status tracking
 - `LLM_CONTEXT/` — project-wide instructions and coding standards
 
-**Skills (from observational-memory plugin):**
-- `/begin-work <target> [app]` — start or continue any implementation work
-- `/reflect` — promote observations to the knowledge base (during code review sessions)
-- `/create-plan <name> [target] [app]` — create a plan with observational memory
+**Plans (backlog format — see `../LLM_CONTEXT/backlog-plan.md`):**
+- `LLM_STATE/overview.md` — at-a-glance status dashboard
+- `LLM_STATE/core/plan.md` — core pipeline backlog
+- `LLM_STATE/targets/{target}/plan.md` — per-target backlogs
 
-**Project-level skills (APIAnyware-specific):**
-- `/add-app <name>` — scaffold a new app across the matrix
-- `/add-target <name>` — scaffold a new target across the matrix
+To start a session, copy the continuation prompt from the relevant plan file.
 
 ## Build & Test Commands
 
@@ -107,13 +105,19 @@ Read `LLM_CONTEXT/coding-style.md` before writing or refactoring code. Key point
 
 ## Plan & Progress Tracking
 
-`LLM_STATE/plan.md` tracks overall progress. Target-specific plans live at `LLM_STATE/plans/{target}/plan.md`. App-specific plans at `LLM_STATE/plans/{target}/{app}.md`.
+Plans use the backlog format described in `../LLM_CONTEXT/backlog-plan.md`. Each session
+starts by triaging the task backlog and picking the best next task.
 
-After completing each step, update the plan: mark `[x]`, add learnings. The session continuation prompt at the top of each plan should be used to resume work.
+- `LLM_STATE/overview.md` — status dashboard
+- `LLM_STATE/core/plan.md` — core pipeline (collection, analysis, enrichment)
+- `LLM_STATE/targets/{target}/plan.md` — per-target plans
+
+Core and target plans are independent. Copy the continuation prompt from a plan file to
+start a session.
 
 ## Language Targets
 
-Each target gets: an emitter crate, a runtime library, generated bindings, sample apps, and snapshot tests. See `LLM_STATE/new-language-guide.md` for the 11-step checklist and `LLM_STATE/plans/plan-template.md` for the plan structure.
+Each target gets: an emitter crate, a runtime library, generated bindings, sample apps, and snapshot tests. See `LLM_STATE/new-language-guide.md` for the 11-step checklist and `LLM_STATE/targets/template.md` for the plan template.
 
 Generated output lands at `generation/targets/{target}/generated/{style}/{framework}/`. Runtimes at `generation/targets/{target}/runtime/`. Sample apps at `generation/targets/{target}/apps/`.
 
