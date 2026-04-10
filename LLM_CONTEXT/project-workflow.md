@@ -12,8 +12,19 @@ emitter crate, runtime, apps, tests, and generated output. `racket-oo` and
 Apps progress from simple (hello-window) to complex (menu-bar-tool), culminating in
 Modaliser as the capstone proving a target's bindings are production-ready.
 
-The POC Modaliser (`../Modaliser`) is the reference implementation — a working Swift app
-with LispKit scripting.
+## Plans and Progress
+
+Plans use the backlog format described in `../LLM_CONTEXT/backlog-plan.md`. Each plan
+has a continuation prompt you copy to start a session.
+
+- `LLM_STATE/overview.md` — at-a-glance status dashboard
+- `LLM_STATE/core/plan.md` — core pipeline (collection, analysis, enrichment)
+- `LLM_STATE/targets/{target}/plan.md` — per-target plans
+
+Core pipeline and target plans are independent. If a target needs a pipeline feature,
+it marks a task as `blocked` with a dependency on the core plan.
+
+To create a new plan, follow `../LLM_CONTEXT/create-a-multi-session-plan.md`.
 
 ## The Knowledge System
 
@@ -32,49 +43,16 @@ See `knowledge/CLAUDE.md` for the full rules.
 CLAUDE.md files in target and app directories route to the relevant knowledge files
 automatically. This is the only mechanism that guarantees context loading.
 
-### Observational Memory
-
-The observational-memory plugin provides the workflow:
-
-1. **Observe** — after every plan step, record what was *learned* (not what was done)
-2. **Accumulate** — observations collect in the plan's Observations section
-3. **Reflect** — during code review sessions, promote observations to the knowledge base
-4. **Promote eagerly** — start narrow, promote upward when applicable more broadly
-
-Priority codes: 🔴 (critical), 🟡 (useful), 🟢 (informational)
-
-## Working On Implementation
-
-1. Always start with `/begin-work <target> [app]`
-2. Follow the Do → Verify → Observe cycle for each plan step
-3. Every 3-5 steps, conduct a code review session using `/reflect`
-4. When the plan requires updating, update it directly
-
-Plans live at `LLM_STATE/plans/{target}/plan.md` (or `{target}/{app}.md`).
-
-## Skills Reference
-
-- `/begin-work <target> [app]` — start or continue any implementation work
-- `/reflect` — promote observations to the knowledge base (during code review)
-- `/create-plan <name> [target] [app]` — create a new plan with observational memory
-- `/add-app <name>` — scaffold a new app across the matrix (project-level skill)
-- `/add-target <name>` — scaffold a new target across the matrix (project-level skill)
-
 ## Adding To The Matrix
+
+### Adding a new target
+See `LLM_STATE/new-language-guide.md` for the 11-step checklist. Use
+`LLM_STATE/targets/template.md` to create the target's plan.
 
 ### Adding a new app
 1. Create `knowledge/apps/{name}/` with spec.md, learnings.md, test-strategy.md
 2. Update `knowledge/apps/_index.md`
 3. For each existing target: create app directory with CLAUDE.md, create matrix knowledge file
-4. Use `/add-app <name>` to scaffold automatically
-
-### Adding a new target
-1. Create `generation/targets/{name}/` with CLAUDE.md, runtime/, generated/, apps/, tests/
-2. Create `knowledge/targets/{name}.md`
-3. For each existing app: create app dir with CLAUDE.md, create matrix file
-4. Create `LLM_STATE/plans/{name}/plan.md` from template
-5. Create emitter crate stub, register in Cargo workspace and CLI
-6. Use `/add-target <name>` to scaffold automatically
 
 ## GUI Testing With TestAnyware
 
@@ -93,21 +71,20 @@ Always `pkill -9 -f racket` (or equivalent) before relaunching apps.
 ## Pipeline Changes
 
 When app/generation work reveals pipeline bugs:
-1. Record as 🔴 observation in the plan
-2. Fix the pipeline code
-3. Re-generate affected targets: `cargo run --bin apianyware-macos-generate -- --lang {target}`
-4. Re-test
-5. During `/reflect`, promote to `knowledge/pipeline/{area}.md`
+1. Note the issue in the target plan (mark task blocked if necessary)
+2. Add a task to `LLM_STATE/core/plan.md`
+3. Fix in a core pipeline session
+4. Re-generate affected targets
+5. Capture the learning in `knowledge/pipeline/{area}.md`
 
 ## Coding Standards
 
-See `LLM_CONTEXT/coding-style.md` for project-specific conventions. The observational-memory
-plugin provides universal conventions at `references/coding-conventions.md`.
+See `LLM_CONTEXT/coding-style.md` for project-specific conventions.
 
 Key points: TDD, descriptive names, small files, `thiserror`/`anyhow`, `tracing`,
 bounded channels, no `unwrap`/`expect`, `cargo +nightly fmt`.
 
 ## App Progression
 
-See `knowledge/apps/_index.md` for the full catalogue. Simple → complex → Modaliser capstone.
+See `knowledge/apps/_index.md` for the full catalogue. Simple -> complex -> Modaliser capstone.
 Each app exercises specific macOS/binding capabilities.
