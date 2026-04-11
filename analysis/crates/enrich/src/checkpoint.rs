@@ -4,6 +4,7 @@
 //! populating the `enrichment` and `verification` fields. Also extracts
 //! scoped resources and delegate protocols from `api_patterns`.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -16,58 +17,41 @@ use apianyware_macos_types::ir::Framework;
 
 use crate::program::EnrichmentProgram;
 
-/// Write an enriched framework checkpoint to `{output_dir}/{framework.name}.json`.
-pub fn write_enriched_checkpoint(framework: &Framework, output_dir: &Path) -> Result<()> {
-    let path = output_dir.join(format!("{}.json", framework.name));
-    let json = serde_json::to_string_pretty(framework)
-        .with_context(|| format!("failed to serialize {}", framework.name))?;
-    std::fs::write(&path, json).with_context(|| format!("failed to write {}", path.display()))?;
-    tracing::info!(
-        framework = %framework.name,
-        path = %path.display(),
-        "wrote enriched checkpoint"
-    );
-    Ok(())
+/// All Datalog-derived results filtered to a single framework.
+///
+/// Built once per framework from the global `EnrichmentProgram`, so that
+/// downstream builders never need to filter by framework themselves.
+struct FrameworkDerivedResults {
+    sync_block_methods: Vec<BlockMethodEntry>,
+    async_block_methods: Vec<BlockMethodEntry>,
+    stored_block_methods: Vec<BlockMethodEntry>,
+    delegate_protocols: Vec<String>,
+    convenience_error_methods: Vec<ClassSelectorEntry>,
+    collection_iterables: Vec<String>,
+    main_thread_classes: Vec<String>,
+    violations: Vec<Violation>,
 }
 
-/// Build an enriched framework from annotated IR + Datalog results.
-///
-/// Clones the annotated framework and populates enrichment-phase fields:
-/// - `checkpoint` → `"enriched"`
-/// - `enrichment` — all annotation-derived relations
-/// - `verification` — pass/fail + violations
-pub fn build_enriched_framework(annotated: &Framework, prog: &EnrichmentProgram) -> Framework {
-    let enrichment = build_enrichment_data(annotated, prog);
-    let verification = build_verification_report(prog);
-
-    let mut enriched = annotated.clone();
-    enriched.checkpoint = "enriched".to_string();
-    enriched.enrichment = Some(enrichment);
-    enriched.verification = Some(verification);
-    enriched
-}
-
-/// Build EnrichmentData from Datalog results + api_patterns.
-///
-/// Filters global Datalog results to only include entries whose class
-/// belongs to this framework (by checking `class_decl` tuples).
-fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> EnrichmentData {
-    // Build the set of class names declared in this framework.
-    let framework_classes: std::collections::HashSet<&str> = prog
+/// Filter all Datalog results to a single framework's classes and protocols.
+fn filter_results_for_framework(
+    framework: &Framework,
+    prog: &EnrichmentProgram,
+) -> FrameworkDerivedResults {
+    let framework_classes: HashSet<&str> = prog
         .class_decl
         .iter()
         .filter(|(_, _, fw)| fw == &framework.name)
         .map(|(class, _, _)| class.as_str())
         .collect();
 
-    // Also include protocol names from this framework for delegate_protocol filtering.
-    let framework_protocols: std::collections::HashSet<&str> = framework
+    let framework_protocols: HashSet<&str> = framework
         .protocols
         .iter()
         .map(|p| p.name.as_str())
         .collect();
 
-    // Collect block method classifications — filtered to this framework's classes
+    // --- Enrichment relations ---
+
     let mut sync_block_methods: Vec<BlockMethodEntry> = prog
         .sync_block_method
         .iter()
@@ -104,27 +88,15 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
         .collect();
     stored_block_methods.sort_by(|a, b| a.class.cmp(&b.class).then(a.selector.cmp(&b.selector)));
 
-    // Collect delegate protocols — filtered to this framework's protocols
     let mut delegate_protocols: Vec<String> = prog
         .delegate_protocol
         .iter()
         .filter(|(p,)| framework_protocols.contains(p.as_str()))
         .map(|(p,)| p.clone())
         .collect();
-    // Also add delegate protocols from api_patterns (LLM-detected)
-    for pattern in &framework.api_patterns {
-        if pattern.stereotype == PatternStereotype::DelegateProtocol {
-            if let Some(proto_name) = extract_delegate_protocol_name(&pattern.name) {
-                if !delegate_protocols.contains(&proto_name) {
-                    delegate_protocols.push(proto_name);
-                }
-            }
-        }
-    }
     delegate_protocols.sort();
     delegate_protocols.dedup();
 
-    // Collect convenience error methods — filtered to this framework's classes
     let mut convenience_error_methods: Vec<ClassSelectorEntry> = prog
         .convenience_error_method
         .iter()
@@ -137,7 +109,6 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
     convenience_error_methods
         .sort_by(|a, b| a.class.cmp(&b.class).then(a.selector.cmp(&b.selector)));
 
-    // Collect collection iterables — filtered to this framework's classes
     let mut collection_iterables: Vec<String> = prog
         .collection_iterable
         .iter()
@@ -147,15 +118,6 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
     collection_iterables.sort();
     collection_iterables.dedup();
 
-    // Collect scoped resources from api_patterns (already per-framework)
-    let mut scoped_resources = extract_scoped_resources(framework);
-    scoped_resources.sort_by(|a, b| {
-        a.class
-            .cmp(&b.class)
-            .then(a.open_selector.cmp(&b.open_selector))
-    });
-
-    // Collect main thread classes — filtered to this framework's classes
     let mut main_thread_classes: Vec<String> = prog
         .main_thread_class
         .iter()
@@ -165,44 +127,36 @@ fn build_enrichment_data(framework: &Framework, prog: &EnrichmentProgram) -> Enr
     main_thread_classes.sort();
     main_thread_classes.dedup();
 
-    EnrichmentData {
-        sync_block_methods,
-        async_block_methods,
-        stored_block_methods,
-        delegate_protocols,
-        convenience_error_methods,
-        collection_iterables,
-        scoped_resources,
-        main_thread_classes,
-    }
-}
+    // --- Violations ---
 
-/// Build verification report from Datalog violation results.
-fn build_verification_report(prog: &EnrichmentProgram) -> VerificationReport {
     let mut violations = Vec::new();
 
     for (class, sel, idx) in &prog.violation_unclassified_block {
-        violations.push(Violation {
-            rule: "unclassified_block".to_string(),
-            class: class.clone(),
-            selector: sel.clone(),
-            param_index: Some(*idx as usize),
-            description: format!(
-                "block parameter {idx} of {class}.{sel} has no sync/async/stored classification"
-            ),
-        });
+        if framework_classes.contains(class.as_str()) {
+            violations.push(Violation {
+                rule: "unclassified_block".to_string(),
+                class: class.clone(),
+                selector: sel.clone(),
+                param_index: Some(*idx as usize),
+                description: format!(
+                    "block parameter {idx} of {class}.{sel} has no sync/async/stored classification"
+                ),
+            });
+        }
     }
 
     for (class, sel) in &prog.violation_flag_mismatch {
-        violations.push(Violation {
-            rule: "flag_mismatch".to_string(),
-            class: class.clone(),
-            selector: sel.clone(),
-            param_index: None,
-            description: format!(
-                "returns_retained flag on {class}.{sel} disagrees with ownership naming convention"
-            ),
-        });
+        if framework_classes.contains(class.as_str()) {
+            violations.push(Violation {
+                rule: "flag_mismatch".to_string(),
+                class: class.clone(),
+                selector: sel.clone(),
+                param_index: None,
+                description: format!(
+                    "returns_retained flag on {class}.{sel} disagrees with ownership naming convention"
+                ),
+            });
+        }
     }
 
     violations.sort_by(|a, b| {
@@ -212,8 +166,90 @@ fn build_verification_report(prog: &EnrichmentProgram) -> VerificationReport {
             .then(a.selector.cmp(&b.selector))
     });
 
-    let passed = violations.is_empty();
-    VerificationReport { passed, violations }
+    FrameworkDerivedResults {
+        sync_block_methods,
+        async_block_methods,
+        stored_block_methods,
+        delegate_protocols,
+        convenience_error_methods,
+        collection_iterables,
+        main_thread_classes,
+        violations,
+    }
+}
+
+/// Write an enriched framework checkpoint to `{output_dir}/{framework.name}.json`.
+pub fn write_enriched_checkpoint(framework: &Framework, output_dir: &Path) -> Result<()> {
+    let path = output_dir.join(format!("{}.json", framework.name));
+    let json = serde_json::to_string_pretty(framework)
+        .with_context(|| format!("failed to serialize {}", framework.name))?;
+    std::fs::write(&path, json).with_context(|| format!("failed to write {}", path.display()))?;
+    tracing::info!(
+        framework = %framework.name,
+        path = %path.display(),
+        "wrote enriched checkpoint"
+    );
+    Ok(())
+}
+
+/// Build an enriched framework from annotated IR + Datalog results.
+///
+/// Clones the annotated framework and populates enrichment-phase fields:
+/// - `checkpoint` → `"enriched"`
+/// - `enrichment` — all annotation-derived relations
+/// - `verification` — pass/fail + violations
+pub fn build_enriched_framework(annotated: &Framework, prog: &EnrichmentProgram) -> Framework {
+    let filtered = filter_results_for_framework(annotated, prog);
+    let enrichment = build_enrichment_data(annotated, &filtered);
+    let verification = VerificationReport {
+        passed: filtered.violations.is_empty(),
+        violations: filtered.violations,
+    };
+
+    let mut enriched = annotated.clone();
+    enriched.checkpoint = "enriched".to_string();
+    enriched.enrichment = Some(enrichment);
+    enriched.verification = Some(verification);
+    enriched
+}
+
+/// Build EnrichmentData from pre-filtered Datalog results + framework api_patterns.
+fn build_enrichment_data(
+    framework: &Framework,
+    filtered: &FrameworkDerivedResults,
+) -> EnrichmentData {
+    // Merge delegate protocols from api_patterns (LLM-detected)
+    let mut delegate_protocols = filtered.delegate_protocols.clone();
+    for pattern in &framework.api_patterns {
+        if pattern.stereotype == PatternStereotype::DelegateProtocol {
+            if let Some(proto_name) = extract_delegate_protocol_name(&pattern.name) {
+                if !delegate_protocols.contains(&proto_name) {
+                    delegate_protocols.push(proto_name);
+                }
+            }
+        }
+    }
+    delegate_protocols.sort();
+    delegate_protocols.dedup();
+
+    // Collect scoped resources from api_patterns (already per-framework)
+    let mut scoped_resources = extract_scoped_resources(framework);
+    scoped_resources.sort_by(|a, b| {
+        a.class
+            .cmp(&b.class)
+            .then(a.open_selector.cmp(&b.open_selector))
+    });
+
+    EnrichmentData {
+        sync_block_methods: filtered.sync_block_methods.clone(),
+        async_block_methods: filtered.async_block_methods.clone(),
+        stored_block_methods: filtered.stored_block_methods.clone(),
+        delegate_protocols,
+        convenience_error_methods: filtered.convenience_error_methods.clone(),
+        collection_iterables: filtered.collection_iterables.clone(),
+        scoped_resources,
+        main_thread_classes: filtered.main_thread_classes.clone(),
+    }
 }
 
 /// Extract scoped resources from api_patterns with PairedState or ResourceLifecycle stereotypes.

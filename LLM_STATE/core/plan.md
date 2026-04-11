@@ -57,6 +57,22 @@ Constraints:
   (e.g., Racket's `_cprocedure` + `function-ptr`).
 - **Results:** _pending_
 
+### App bundler for all language targets `[tooling]`
+- **Status:** not_started
+- **Dependencies:** at least one language target with a working app (racket-oo qualifies)
+- **Description:** Create a cross-target app bundler that produces proper macOS `.app`
+  bundles from apps written in any APIAnyware-supported language. The goal: apps built
+  with APIAnyware bindings should produce `.app` bundles indistinguishable from native
+  Swift apps — real Mach-O binaries, proper entitlements, icons, bundle IDs, usage
+  descriptions, and code signing. Each language target needs a target-specific binary
+  strategy (e.g., Racket uses `raco exe --gui --launcher` for a GRacket launcher binary;
+  Python might use `py2app`; etc.) but the surrounding bundle structure (Info.plist,
+  .icns generation, code signing, entitlements) is shared infrastructure. Reference
+  implementation: `../Modaliser-Racket/bundle/build.sh`. Key learning from Racket:
+  `raco exe` without `--launcher` fails with module instantiation errors for FFI-heavy
+  binding code; the launcher mode avoids this by loading at runtime.
+- **Results:** _pending_
+
 ### LLM annotation integration `[analysis]`
 - **Status:** not_started
 - **Dependencies:** none
@@ -75,15 +91,16 @@ Constraints:
   testing will catch similar issues before they compound across language targets.
 - **Results:** _pending_
 
-### Enrichment verification `[enrichment]`
-- **Status:** not_started
-- **Dependencies:** none
-- **Description:** Add verification that enrichment results are per-framework, not
-  global. The bug where global totals were written to every framework's enriched IR
-  was caught by running all frameworks — add targeted tests to prevent regression.
-- **Results:** _pending_
-
 ## Session Log
+
+### 2026-04-11: Enrichment verification fix
+- Bug: `build_verification_report()` didn't filter violations by framework — every
+  framework got all violations from all frameworks when enriched together
+- Root cause: `build_enrichment_data()` already computed `framework_classes` and filtered
+  correctly, but `build_verification_report()` was never given the class set
+- Fix: lifted `framework_classes` computation to `build_enriched_framework()`, passed to
+  both `build_enrichment_data()` and `build_verification_report()`
+- 2 new tests: violation isolation and enrichment data isolation across frameworks
 
 ### 2026-04-11: Framework ignore list
 - Added `IGNORED_FRAMEWORKS` constant in `sdk.rs` with DriverKit and Tk

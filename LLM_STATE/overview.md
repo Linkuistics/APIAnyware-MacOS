@@ -14,7 +14,7 @@ At-a-glance view of the project. Updated at session boundaries.
 | C callback type collection | not started | CGEventTapCallBack, etc. |
 | Resolution (inheritance) | done | |
 | Annotation (heuristic + LLM) | done | LLM step needs integration into CLI |
-| Enrichment | done | needs hardening (global totals bug) |
+| Enrichment | done | per-framework verification fix applied, isolation tests added |
 
 ## Targets
 

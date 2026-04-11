@@ -556,3 +556,149 @@ fn foundation_enrichment_integration() {
     // Checkpoint should be enriched
     assert_eq!(enriched[0].checkpoint, "enriched");
 }
+
+// -----------------------------------------------------------------------
+// Multi-framework isolation tests
+// -----------------------------------------------------------------------
+
+#[test]
+fn verification_violations_are_per_framework_not_global() {
+    // FW_A has an unclassified block → should have a violation
+    let mut fw_a = empty_framework();
+    fw_a.name = "FrameworkA".to_string();
+    fw_a.classes = vec![Class {
+        name: "ClassA".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![make_method(
+            "doWork:",
+            vec![block_param("handler")],
+            TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        )],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+    // No annotations — block param is unclassified
+
+    // FW_B has no blocks → should pass verification
+    let mut fw_b = empty_framework();
+    fw_b.name = "FrameworkB".to_string();
+    fw_b.classes = vec![Class {
+        name: "ClassB".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![make_method(
+            "simpleMethod",
+            vec![],
+            TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        )],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+
+    let enriched =
+        apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
+    assert_eq!(enriched.len(), 2);
+
+    let v_a = enriched[0].verification.as_ref().unwrap();
+    let v_b = enriched[1].verification.as_ref().unwrap();
+
+    // FW_A should have the violation
+    assert!(!v_a.passed, "FrameworkA should have violations");
+    assert_eq!(v_a.violations.len(), 1);
+    assert_eq!(v_a.violations[0].class, "ClassA");
+
+    // FW_B should NOT have FW_A's violation
+    assert!(
+        v_b.passed,
+        "FrameworkB should pass verification, but got violations: {:?}",
+        v_b.violations
+    );
+    assert!(
+        v_b.violations.is_empty(),
+        "FrameworkB should have no violations"
+    );
+}
+
+#[test]
+fn enrichment_data_is_per_framework_not_global() {
+    // FW_A has a main-thread class
+    let mut fw_a = empty_framework();
+    fw_a.name = "FrameworkA".to_string();
+    fw_a.classes = vec![Class {
+        name: "ViewA".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![make_method(
+            "draw",
+            vec![],
+            TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        )],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+    fw_a.class_annotations = vec![ClassAnnotations {
+        class_name: "ViewA".to_string(),
+        methods: vec![MethodAnnotation {
+            selector: "draw".to_string(),
+            is_instance: true,
+            parameter_ownership: vec![],
+            block_parameters: vec![],
+            threading: Some(ThreadingConstraint::MainThreadOnly),
+            error_pattern: None,
+            source: AnnotationSource::Heuristic,
+        }],
+    }];
+
+    // FW_B has no threading constraints
+    let mut fw_b = empty_framework();
+    fw_b.name = "FrameworkB".to_string();
+    fw_b.classes = vec![Class {
+        name: "UtilB".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![make_method(
+            "compute",
+            vec![],
+            TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        )],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+
+    let enriched =
+        apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
+
+    let e_a = enriched[0].enrichment.as_ref().unwrap();
+    let e_b = enriched[1].enrichment.as_ref().unwrap();
+
+    // FW_A should have its main-thread class
+    assert_eq!(e_a.main_thread_classes, vec!["ViewA".to_string()]);
+
+    // FW_B should NOT have FW_A's main-thread class
+    assert!(
+        e_b.main_thread_classes.is_empty(),
+        "FrameworkB should have no main-thread classes, but got: {:?}",
+        e_b.main_thread_classes
+    );
+}
