@@ -5,11 +5,12 @@
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT="$(cd "$DIR/../.." && pwd)"
+SESSION="$(basename "$PROJECT")"
 
 while true; do
   # Phase 1: WORK
   echo "\n=== WORK PHASE ==="
-  (cd "$PROJECT" && claude "Read LLM_CONTEXT/index.md for project context, then read
+  (cd "$PROJECT" && claude --allow-dangerously-skip-permissions -n "$SESSION" "Read LLM_CONTEXT/index.md for project context, then read
 LLM_CONTEXT/backlog-plan.md for the phase cycle spec (focus on Phase 1: WORK).
 
 Read LLM_STATE/core/plan.md for the task backlog.
@@ -31,7 +32,7 @@ Constraints:
 
   # Phase 2: REFLECT
   echo "\n=== REFLECT PHASE ==="
-  (cd "$PROJECT" && claude "Read LLM_CONTEXT/backlog-plan.md for the phase cycle spec
+  (cd "$PROJECT" && claude --allow-dangerously-skip-permissions -n "$SESSION" "Read LLM_CONTEXT/backlog-plan.md for the phase cycle spec
 (focus on Phase 2: REFLECT).
 
 Read LLM_STATE/core/session-log.md — focus on the latest entry.
@@ -42,7 +43,7 @@ sharpen existing ones, remove redundant or outdated ones. Then stop.")
 
   # Phase 3: TRIAGE
   echo "\n=== TRIAGE PHASE ==="
-  (cd "$PROJECT" && claude "Read LLM_CONTEXT/backlog-plan.md for the phase cycle spec
+  (cd "$PROJECT" && claude --allow-dangerously-skip-permissions -n "$SESSION" "Read LLM_CONTEXT/backlog-plan.md for the phase cycle spec
 (focus on Phase 3: TRIAGE).
 
 Read LLM_STATE/core/plan.md for the task backlog.
