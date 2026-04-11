@@ -57,17 +57,6 @@ Constraints:
   (e.g., Racket's `_cprocedure` + `function-ptr`).
 - **Results:** _pending_
 
-### Framework ignore list `[collection]`
-- **Status:** done
-- **Dependencies:** none
-- **Description:** Explicitly mark inappropriate frameworks as ignored rather than
-  silently failing. Known bad frameworks: DriverKit (C++ headers), Tk (Tcl/Tk, not
-  native macOS). Running all 283 frameworks already exposed real bugs — this prevents
-  known-bad frameworks from wasting processing time or producing confusing errors.
-- **Results:** `IGNORED_FRAMEWORKS` constant and `is_framework_ignored()` in `sdk.rs`.
-  Filtering happens inside `discover_frameworks()` with `tracing::info!` log. 3 new
-  integration tests in `sdk_discovery.rs`.
-
 ### LLM annotation integration `[analysis]`
 - **Status:** not_started
 - **Dependencies:** none

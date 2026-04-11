@@ -136,58 +136,6 @@ Constraints:
   appropriate examples for both OO and functional styles.
 - **Results:** _pending_
 
-### Done tasks (completed in milestone 9)
-
-### Emitter crate `[foundation]`
-- **Status:** done
-- **Description:** 8 modules, 20 Rust unit tests, `RacketFfiTypeMapper`.
-- **Results:** Complete. Ported from POC with three IR type changes.
-
-### Runtime library `[foundation]`
-- **Status:** done
-- **Description:** 7 runtime modules.
-- **Results:** Complete. All modules load, swift-available? is #t.
-
-### Swift dylib integration `[foundation]`
-- **Status:** done
-- **Description:** 64 Swift tests, FFI round-trip, blocks, delegates.
-- **Results:** Complete. 20 FFI tests, 5 block tests, 7 delegate tests.
-
-### Generation CLI wiring `[foundation]`
-- **Status:** done
-- **Description:** --lang racket-oo registered, generates Foundation (382 files).
-- **Results:** Complete. Both OO and functional directories populated.
-
-### TestKit snapshot tests `[testing]`
-- **Status:** done
-- **Description:** 10 golden files, full directory comparison.
-- **Results:** Complete.
-
-### Foundation snapshot tests `[testing]`
-- **Status:** done
-- **Description:** 18 curated golden files with subset matching.
-- **Results:** Complete.
-
-### OO smoke tests `[testing]`
-- **Status:** done
-- **Description:** 54 Racket tests across 5 files.
-- **Results:** Complete. Fixed 3 bugs: runtime paths, Swift selectors, coerce-arg.
-
-### Hello Window app `[apps]`
-- **Status:** done
-- **Description:** Object lifecycle, property setters, NSWindow.
-- **Results:** Validated in TestAnyware VM.
-
-### Counter app `[apps]`
-- **Status:** done
-- **Description:** Target-action, buttons, mutable state.
-- **Results:** Validated. Delegate bridge target-action pattern works.
-
-### UI Controls Gallery app `[apps]`
-- **Status:** done
-- **Description:** All standard AppKit controls.
-- **Results:** Validated. Fixed 2 emitter bugs: duplicate emission + typedef alias mapping.
-
 ## Session Log
 
 ### Pre-history (migrated from milestone 9 learnings)
