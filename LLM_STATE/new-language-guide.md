@@ -7,7 +7,8 @@ Step-by-step guide for adding a language target to APIAnyware-MacOS.
 > emitter crate, runtime, generated output, and apps.
 
 > **Knowledge system:** After creating a target, populate `knowledge/targets/{target}.md`
-> with learnings. Copy the continuation prompt from the target plan to start each session.
+> with learnings. Run `./LLM_STATE/targets/{target}/run.sh` to start the three-phase
+> work cycle (see `LLM_CONTEXT/backlog-plan.md`).
 
 ## Prerequisites
 
@@ -18,9 +19,11 @@ Step-by-step guide for adding a language target to APIAnyware-MacOS.
 
 ## Step 1: Plan the target
 
-Create `LLM_STATE/targets/{target}/plan.md` by instantiating `LLM_STATE/targets/template.md`:
+Create the plan directory `LLM_STATE/targets/{target}/` with four files by following
+`LLM_CONTEXT/create-a-multi-session-plan.md`. Start with `plan.md` by instantiating
+`LLM_STATE/targets/template.md`:
 
-1. Copy the template structure
+1. Copy the template structure into `plan.md`
 2. Fill in the header fields:
    - **Language** — display name
    - **Paradigm** — the binding style variant (e.g., "OO", "Functional", "Monadic")
@@ -242,7 +245,7 @@ Implement the 7 standard sample apps (one set per binding style):
 ## Checklist
 
 ```
-[ ] LLM_STATE/targets/{target}/plan.md created from template
+[ ] LLM_STATE/targets/{target}/ directory created (plan.md, session-log.md, memory.md, run.sh)
 [ ] emit-{target} crate created, compiles, tests pass
 [ ] Runtime library written, loads in target language
 [ ] Swift dylib builds and FFI verified

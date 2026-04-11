@@ -105,15 +105,16 @@ Read `LLM_CONTEXT/coding-style.md` before writing or refactoring code. Key point
 
 ## Plan & Progress Tracking
 
-Plans use the backlog format described in `../LLM_CONTEXT/backlog-plan.md`. Each session
-starts by triaging the task backlog and picking the best next task.
+Plans use the backlog format described in `../LLM_CONTEXT/backlog-plan.md`, with a
+three-phase cycle (WORK → REFLECT → TRIAGE) driven by a shell script.
 
 - `LLM_STATE/overview.md` — status dashboard
-- `LLM_STATE/core/plan.md` — core pipeline (collection, analysis, enrichment)
-- `LLM_STATE/targets/{target}/plan.md` — per-target plans
+- `LLM_STATE/core/` — core pipeline plan (collection, analysis, enrichment)
+- `LLM_STATE/targets/{target}/` — per-target plans
 
-Core and target plans are independent. Copy the continuation prompt from a plan file to
-start a session.
+Each plan directory contains `plan.md`, `session-log.md`, `memory.md`, and `run.sh`.
+Core and target plans are independent. Run `./LLM_STATE/{plan}/run.sh` to start a
+work cycle.
 
 ## Language Targets
 

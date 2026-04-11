@@ -1,76 +1,68 @@
 # Core Pipeline
 
 The shared pipeline that feeds all language targets: collection, analysis, and enrichment
-of macOS API metadata. Currently supports ObjC class extraction; needs extension to C
-functions, enums, constants, and callback types.
-
-## Session Continuation Prompt
-
-```
-You MUST first read `LLM_CONTEXT/index.md`, then read
-`LLM_CONTEXT/backlog-plan.md` for the work cycle.
-
-# Continue: Core Pipeline
-
-Read `LLM_STATE/core/plan.md`.
-
-Key commands:
-- `cargo test --workspace` — run all tests
-- `cargo test -p apianyware-macos-types` — types crate tests
-- `cargo test -p apianyware-macos-extract-objc` — ObjC extractor tests
-- `cargo clippy --workspace` — lint
-- `cargo +nightly fmt` — format
-
-Constraints:
-- TDD: write tests first
-- `thiserror` for library errors, `anyhow` for CLI
-- No `unwrap`/`expect` in production code
-- See `LLM_CONTEXT/coding-style.md` for full conventions
-```
+of macOS API metadata. Supports ObjC class/protocol/enum extraction and C function/enum/
+constant extraction including function pointer typedefs.
 
 ## Task Backlog
 
 ### C function extraction `[collection]`
-- **Status:** not_started
+- **Status:** done
 - **Dependencies:** none
-- **Description:** Extend the collector to extract C functions from framework headers.
-  Currently only ObjC classes/protocols/enums are extracted. Real apps (e.g.,
-  Modaliser-Racket) need C functions like CGEventTapCreate, CFRunLoopAddSource,
-  AXIsProcessTrusted, CFDictionaryCreate. The extractor uses libclang, which already
-  parses C declarations — they're just not being collected.
-- **Results:** _pending_
+- **Description:** Extract C functions from framework headers via libclang.
+- **Results:** Fully implemented. `FunctionDecl` handler in `extract_declarations.rs`,
+  `Function` IR type, dedup, sorting, CLI wiring all in place. Verified output:
+  CoreFoundation 858 functions, CoreGraphics 777, Foundation 186, Security 676.
+  Specific functions confirmed: CGEventTapCreate (6 params), CFRunLoopAddSource,
+  CFDictionaryCreate.
 
 ### C enum and constant extraction `[collection]`
-- **Status:** not_started
-- **Dependencies:** may share infrastructure with C function extraction
-- **Description:** Extract C enums, bit flag constants, and opaque pointer constants
-  (e.g., kCFRunLoopCommonModes, kAXTrustedCheckOptionPrompt, kCFBooleanTrue).
-  These are `extern const` globals and `#define` constants, distinct from ObjC enums
-  which are already extracted.
-- **Results:** _pending_
+- **Status:** done
+- **Dependencies:** none
+- **Description:** Extract C enums (via `EnumDecl` — same handler as ObjC enums) and
+  extern const globals (via `VarDecl` handler). `#define` constants are not captured
+  (preprocessor, not AST) but are rarely needed for FFI bindings.
+- **Results:** Fully implemented. Verified: CoreFoundation 382 constants (kCFBooleanTrue,
+  kCFRunLoopCommonModes confirmed), Security 1141 constants. C enums extracted via
+  existing `EnumDecl` handler.
 
 ### C callback type extraction `[collection]`
-- **Status:** not_started
-- **Dependencies:** C function extraction (callbacks appear as function parameter types)
-- **Description:** Extract function pointer typedefs like CGEventTapCallBack. These
-  define the signature for C callbacks that must be wrapped in each target language
-  (e.g., Racket's `_cprocedure` + `function-ptr`).
-- **Results:** _pending_
+- **Status:** done
+- **Dependencies:** none
+- **Description:** Function pointer typedefs like `CGEventTapCallBack` are now resolved
+  to `FunctionPointer` TypeRefKind with full parameter and return type signatures.
+- **Results:** Added `FunctionPointer` variant to `TypeRefKind` with `name`, `params`,
+  and `return_type`. Updated `map_typedef` and `map_type_kind` to detect function
+  pointer types via `FunctionPrototype` pointee. Verified: CoreGraphics 15 callback
+  params (CGEventTapCallBack, CGBitmapContextReleaseDataCallback, etc.),
+  CoreFoundation 28, Security 7. Exhaustive match updates in `ffi_type_mapping.rs`
+  and `emit_protocol.rs`. 7 new tests (4 serde roundtrip + 3 integration).
 
-### App bundler for all language targets `[tooling]`
+### Swift stub launcher for TCC-compatible app bundles `[tooling]`
 - **Status:** not_started
-- **Dependencies:** at least one language target with a working app (racket-oo qualifies)
-- **Description:** Create a cross-target app bundler that produces proper macOS `.app`
-  bundles from apps written in any APIAnyware-supported language. The goal: apps built
-  with APIAnyware bindings should produce `.app` bundles indistinguishable from native
-  Swift apps — real Mach-O binaries, proper entitlements, icons, bundle IDs, usage
-  descriptions, and code signing. Each language target needs a target-specific binary
-  strategy (e.g., Racket uses `raco exe --gui --launcher` for a GRacket launcher binary;
-  Python might use `py2app`; etc.) but the surrounding bundle structure (Info.plist,
-  .icns generation, code signing, entitlements) is shared infrastructure. Reference
-  implementation: `../Modaliser-Racket/bundle/build.sh`. Key learning from Racket:
-  `raco exe` without `--launcher` fails with module instantiation errors for FFI-heavy
-  binding code; the launcher mode avoids this by loading at runtime.
+- **Dependencies:** app bundler (above) — this is a sub-component
+- **Description:** macOS TCC (Transparency, Consent, Control) identifies processes by
+  code directory hash (CDHash). Language runtime binaries like `racket`/GRacket share
+  their CDHash across all apps — so granting Accessibility to one Racket app silently
+  grants it to ALL Racket processes, and `AXIsProcessTrustedWithOptions` never prompts
+  because the binary is already trusted. This makes per-app permission management
+  impossible and causes confusing UX (no prompt appears, or permissions leak between
+  unrelated apps). The fix: a tiny compiled Swift stub binary (~50KB) per app that
+  `exec`s into the language runtime. Each stub has its own unique CDHash, so TCC treats
+  each app independently — just like Electron apps each have their own binary wrapper.
+  The stub is ~5 lines of Swift:
+  ```swift
+  import Foundation
+  let racket = "/opt/homebrew/bin/racket"  // resolved at build time
+  let main = Bundle.main.path(forResource: "main", ofType: "rkt", inDirectory: "racket-app")!
+  execv(racket, [racket, main].map { strdup($0) })
+  ```
+  This must be compiled per-app (so each gets a unique CDHash) and placed at
+  `Contents/MacOS/<AppName>` in the .app bundle. The `execv` replaces the stub process
+  with the runtime, so the runtime inherits the stub's TCC grants. Proven by the
+  Modaliser-Racket experience: without the stub, `raco exe --launcher` produced a
+  GRacket binary that shared permissions with all Racket processes, caused phantom
+  permission grants, and prevented the accessibility prompt from appearing.
 - **Results:** _pending_
 
 ### LLM annotation integration `[analysis]`
@@ -91,31 +83,3 @@ Constraints:
   testing will catch similar issues before they compound across language targets.
 - **Results:** _pending_
 
-## Session Log
-
-### 2026-04-11: Enrichment verification fix
-- Bug: `build_verification_report()` didn't filter violations by framework — every
-  framework got all violations from all frameworks when enriched together
-- Root cause: `build_enrichment_data()` already computed `framework_classes` and filtered
-  correctly, but `build_verification_report()` was never given the class set
-- Fix: lifted `framework_classes` computation to `build_enriched_framework()`, passed to
-  both `build_enrichment_data()` and `build_verification_report()`
-- 2 new tests: violation isolation and enrichment data isolation across frameworks
-
-### 2026-04-11: Framework ignore list
-- Added `IGNORED_FRAMEWORKS` constant in `sdk.rs` with DriverKit and Tk
-- `is_framework_ignored()` public helper for callers that need to check
-- Filtering built into `discover_frameworks()` — all consumers benefit automatically
-- 3 integration tests: exclusion from results, list non-empty guard, helper consistency
-
-### Pre-history (migrated from old plan.md)
-- Milestones 1-8 complete: shared types, ObjC/C collection, Swift extraction,
-  analysis pipeline (resolve/annotate/enrich), shared emitter framework, test
-  infrastructure
-- ObjC extractor's `type_mapping.rs` resolves typedefs to canonical types at
-  extraction time — critical for correct FFI signatures downstream
-- Category property deduplication by name required (HashSet filter in
-  `extract_declarations.rs`)
-- Typedef aliases (e.g., NSImageName) must resolve to canonical types at collection
-  time: ObjC object pointer typedefs -> Id/Class, primitive typedefs -> Primitive,
-  enum/struct typedefs -> keep as Alias

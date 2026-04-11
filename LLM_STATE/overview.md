@@ -2,6 +2,17 @@
 
 At-a-glance view of the project. Updated at session boundaries.
 
+## Plans
+
+| Plan | Location | Run |
+|------|----------|-----|
+| Core Pipeline | `LLM_STATE/core/` | `./LLM_STATE/core/run.sh` |
+| Racket OO Target | `LLM_STATE/targets/racket-oo/` | `./LLM_STATE/targets/racket-oo/run.sh` |
+
+Each plan directory contains `plan.md` (backlog), `session-log.md` (history),
+`memory.md` (distilled learnings), and `run.sh` (three-phase cycle driver).
+See `LLM_CONTEXT/backlog-plan.md` for the phase cycle spec.
+
 ## Core Pipeline
 
 | Area | Status | Notes |
@@ -9,9 +20,9 @@ At-a-glance view of the project. Updated at session boundaries.
 | ObjC class collection | done | libclang-based, typedef resolution at extraction time |
 | ObjC protocol collection | done | |
 | ObjC enum collection | done | |
-| C function collection | not started | needed for C-API style bindings |
-| C enum/constant collection | not started | kCFRunLoopCommonModes, etc. |
-| C callback type collection | not started | CGEventTapCallBack, etc. |
+| C function collection | done | 858 CF, 777 CG, 186 Foundation, 676 Security |
+| C enum/constant collection | done | VarDecl + EnumDecl; #define constants not captured |
+| C callback type collection | done | FunctionPointer TypeRefKind with full signatures |
 | Resolution (inheritance) | done | |
 | Annotation (heuristic + LLM) | done | LLM step needs integration into CLI |
 | Enrichment | done | per-framework verification fix applied, isolation tests added |
@@ -25,6 +36,6 @@ At-a-glance view of the project. Updated at session boundaries.
 
 ## Cross-Cutting Blockers
 
-- C-API style for all targets blocked on core C function/enum/constant/callback extraction
+- C-API style for all targets: core extraction done, needs C-API emitter implementation
 - racket-functional style blocked on functional emitter implementation
 - AppKit snapshot tests blocked on AppKit enriched IR

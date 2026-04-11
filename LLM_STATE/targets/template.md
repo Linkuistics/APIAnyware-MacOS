@@ -3,6 +3,13 @@
 {Language} ({paradigm}) bindings for macOS APIs. See `LLM_STATE/new-language-guide.md`
 for the step-by-step guide to adding a new target.
 
+This template is for `plan.md` only. Each target plan directory also needs:
+- `session-log.md` — append-only session records (start with `# Session Log` header)
+- `memory.md` — distilled learnings (start with `# Memory` header)
+- `run.sh` — three-phase cycle driver (see `LLM_CONTEXT/create-a-multi-session-plan.md`)
+
+See `LLM_CONTEXT/backlog-plan.md` for the full plan directory structure and phase cycle.
+
 ```
 Language: {display name}
 Implementations: {runtime/compiler list}
@@ -10,35 +17,6 @@ Binding styles: {list, e.g., "OO, Functional, C-API"}
 Swift dylib: libAPIAnyware{Lang}.dylib
 Emitter crate: emit-{target}
 Runtime location: generation/targets/{target}/runtime/
-```
-
-## Session Continuation Prompt
-
-```
-You MUST first read `LLM_CONTEXT/index.md`, then read
-`LLM_CONTEXT/backlog-plan.md` for the work cycle.
-
-# Continue: {target}
-
-Read `LLM_STATE/targets/{target}/plan.md`.
-
-Target-specific context:
-- Emitter crate: `generation/crates/emit-{target}/`
-- Runtime: `generation/targets/{target}/runtime/`
-- Generated output: `generation/targets/{target}/generated/`
-- Apps: `generation/targets/{target}/apps/`
-- Target learnings: `knowledge/targets/{target}.md`
-
-Key commands:
-- `cargo test -p apianyware-macos-emit-{target}` — emitter tests
-- `cargo run --bin apianyware-macos-generate -- --lang {target}` — regenerate
-- `UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-{target}` — update golden files
-- `cargo +nightly fmt` — format
-
-Constraints:
-- TDD: write tests first
-- If blocked on a core pipeline feature, note the dependency and pick a different task
-- See `LLM_CONTEXT/coding-style.md` for Rust conventions
 ```
 
 ## Task Backlog
@@ -106,6 +84,3 @@ for this target. Not all targets start from zero.}
   with TestAnyware (see `knowledge/testanyware/general.md`).
 - **Results:** _pending_
 
-## Session Log
-
-{Empty — sessions append here.}
