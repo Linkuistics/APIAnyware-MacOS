@@ -54,8 +54,8 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 ### C-API style emission `[coverage]`
-- **Status:** blocked
-- **Dependencies:** core pipeline C function/enum/constant/callback extraction
+- **Status:** not_started
+- **Dependencies:** none (core C function/enum/constant/callback extraction is done)
 - **Description:** Emit Racket bindings for C functions, enums, constants, and callback
   types using `get-ffi-obj`, `_cprocedure`, `_enum`. The hand-written FFI in
   `../Modaliser-Racket/ffi/` (cgevent.rkt, permissions.rkt) is the reference for

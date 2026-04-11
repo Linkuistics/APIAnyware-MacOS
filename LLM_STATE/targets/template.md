@@ -3,12 +3,14 @@
 {Language} ({paradigm}) bindings for macOS APIs. See `LLM_STATE/new-language-guide.md`
 for the step-by-step guide to adding a new target.
 
-This template is for `plan.md` only. Each target plan directory also needs:
+This template is for `backlog.md` only. Each target plan directory also needs:
 - `session-log.md` — append-only session records (start with `# Session Log` header)
 - `memory.md` — distilled learnings (start with `# Memory` header)
-- `run.sh` — three-phase cycle driver (see `LLM_CONTEXT/create-a-multi-session-plan.md`)
+- `phase.md` — current phase (`work`, `reflect`, or `triage`)
+- `prompt-work.md`, `prompt-reflect.md`, `prompt-triage.md` — phase prompts
+- `run.sh` — generic cycle driver (identical across all plans)
 
-See `LLM_CONTEXT/backlog-plan.md` for the full plan directory structure and phase cycle.
+See `../LLM_CONTEXT/backlog-plan.md` for the full plan directory structure and phase cycle.
 
 ```
 Language: {display name}

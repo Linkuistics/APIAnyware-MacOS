@@ -8,7 +8,7 @@ Step-by-step guide for adding a language target to APIAnyware-MacOS.
 
 > **Knowledge system:** After creating a target, populate `knowledge/targets/{target}.md`
 > with learnings. Run `./LLM_STATE/targets/{target}/run.sh` to start the three-phase
-> work cycle (see `LLM_CONTEXT/backlog-plan.md`).
+> work cycle (see `../LLM_CONTEXT/backlog-plan.md`).
 
 ## Prerequisites
 
@@ -20,10 +20,10 @@ Step-by-step guide for adding a language target to APIAnyware-MacOS.
 ## Step 1: Plan the target
 
 Create the plan directory `LLM_STATE/targets/{target}/` with four files by following
-`LLM_CONTEXT/create-a-multi-session-plan.md`. Start with `plan.md` by instantiating
+`../LLM_CONTEXT/create-a-multi-session-plan.md`. Start with `backlog.md` by instantiating
 `LLM_STATE/targets/template.md`:
 
-1. Copy the template structure into `plan.md`
+1. Copy the template structure into `backlog.md`
 2. Fill in the header fields:
    - **Language** — display name
    - **Paradigm** — the binding style variant (e.g., "OO", "Functional", "Monadic")
@@ -227,6 +227,31 @@ Implement the 7 standard sample apps (one set per binding style):
 3. Verify it builds and runs
 4. Run TestAnyware validation against it
 
+### App bundling for TCC permissions
+
+Apps that require macOS permissions (Accessibility, Camera, etc.) must be packaged as
+`.app` bundles with unique Swift stub launchers. Use `apianyware-macos-stub-launcher`:
+
+```rust
+use apianyware_macos_stub_launcher::{StubConfig, create_app_bundle};
+
+let config = StubConfig {
+    app_name: "MyApp".into(),
+    runtime_path: "/opt/homebrew/bin/{runtime}".into(),
+    runtime_args: vec![],
+    script_resource_name: "main".into(),
+    script_resource_type: "{ext}".into(),
+    script_resource_dir: "{target}-app".into(),
+    bundle_identifier: "com.apianyware.{target}.MyApp".into(),
+};
+let app_path = create_app_bundle(&config, output_dir)?;
+// Populate app_path/Contents/Resources/{target}-app/ with scripts and runtime files
+```
+
+Without the stub, all apps sharing the same runtime binary (e.g., `/opt/homebrew/bin/racket`)
+get the same CDHash, causing TCC to share permission grants across unrelated apps. Each
+compiled stub has a unique CDHash, giving per-app permission isolation.
+
 ## Step 9: Validate and review
 
 - All Rust tests pass
@@ -245,7 +270,7 @@ Implement the 7 standard sample apps (one set per binding style):
 ## Checklist
 
 ```
-[ ] LLM_STATE/targets/{target}/ directory created (plan.md, session-log.md, memory.md, run.sh)
+[ ] LLM_STATE/targets/{target}/ directory created (backlog.md, session-log.md, memory.md, phase.md, prompt-*.md, run.sh)
 [ ] emit-{target} crate created, compiles, tests pass
 [ ] Runtime library written, loads in target language
 [ ] Swift dylib builds and FFI verified
@@ -254,6 +279,7 @@ Implement the 7 standard sample apps (one set per binding style):
 [ ] Smoke tests pass
 [ ] Sample apps — Style 1 (all 7)
 [ ] Sample apps — Style 2 (all 7, if applicable)
+[ ] App bundles created for TCC-dependent apps (stub-launcher)
 [ ] TestAnyware validation complete
 [ ] Per-framework exercisers pass
 [ ] knowledge/targets/{target}.md populated with learnings

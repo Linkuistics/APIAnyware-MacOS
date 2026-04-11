@@ -9,9 +9,10 @@ At-a-glance view of the project. Updated at session boundaries.
 | Core Pipeline | `LLM_STATE/core/` | `./LLM_STATE/core/run.sh` |
 | Racket OO Target | `LLM_STATE/targets/racket-oo/` | `./LLM_STATE/targets/racket-oo/run.sh` |
 
-Each plan directory contains `plan.md` (backlog), `session-log.md` (history),
-`memory.md` (distilled learnings), and `run.sh` (three-phase cycle driver).
-See `LLM_CONTEXT/backlog-plan.md` for the phase cycle spec.
+Each plan directory contains `backlog.md` (task backlog), `session-log.md` (history),
+`memory.md` (distilled learnings), `phase.md` (current phase), `prompt-{work,reflect,triage}.md`
+(phase prompts), and `run.sh` (generic cycle driver).
+See `../LLM_CONTEXT/backlog-plan.md` for the phase cycle spec.
 
 ## Core Pipeline
 
@@ -26,6 +27,7 @@ See `LLM_CONTEXT/backlog-plan.md` for the phase cycle spec.
 | Resolution (inheritance) | done | |
 | Annotation (heuristic + LLM) | done | LLM step needs integration into CLI |
 | Enrichment | done | per-framework verification fix applied, isolation tests added |
+| Stub launcher | done | `apianyware-macos-stub-launcher` — per-app Swift stubs for TCC |
 
 ## Targets
 
