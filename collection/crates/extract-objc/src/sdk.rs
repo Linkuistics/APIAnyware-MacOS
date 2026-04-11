@@ -68,10 +68,22 @@ fn sdk_version() -> Result<String> {
     Ok(version)
 }
 
+/// Frameworks that are structurally incompatible with ObjC/C extraction.
+///
+/// - `DriverKit`: C++ headers, not ObjC — libclang parsing fails
+/// - `Tk`: Tcl/Tk toolkit, not a native macOS framework
+pub const IGNORED_FRAMEWORKS: &[&str] = &["DriverKit", "Tk"];
+
+/// Returns `true` if the given framework name is in the ignore list.
+pub fn is_framework_ignored(name: &str) -> bool {
+    IGNORED_FRAMEWORKS.contains(&name)
+}
+
 /// Discover available frameworks by scanning `{SDK}/System/Library/Frameworks/`.
 ///
 /// Returns framework names (e.g., `"Foundation"`, `"AppKit"`) for directories
-/// that contain an umbrella header matching the framework name.
+/// that contain an umbrella header matching the framework name. Frameworks in
+/// [`IGNORED_FRAMEWORKS`] are excluded with an informational log message.
 pub fn discover_frameworks(sdk_path: &Path) -> Result<Vec<FrameworkInfo>> {
     let frameworks_dir = sdk_path.join("System/Library/Frameworks");
     if !frameworks_dir.exists() {
@@ -103,6 +115,15 @@ pub fn discover_frameworks(sdk_path: &Path) -> Result<Vec<FrameworkInfo>> {
             Some(name) => name.to_string(),
             None => continue,
         };
+
+        // Skip ignored frameworks
+        if is_framework_ignored(&framework_name) {
+            tracing::info!(
+                framework = %framework_name,
+                "skipping ignored framework"
+            );
+            continue;
+        }
 
         // Check for umbrella header
         let umbrella_header = path.join("Headers").join(format!("{framework_name}.h"));

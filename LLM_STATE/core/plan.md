@@ -58,13 +58,15 @@ Constraints:
 - **Results:** _pending_
 
 ### Framework ignore list `[collection]`
-- **Status:** not_started
+- **Status:** done
 - **Dependencies:** none
 - **Description:** Explicitly mark inappropriate frameworks as ignored rather than
   silently failing. Known bad frameworks: DriverKit (C++ headers), Tk (Tcl/Tk, not
   native macOS). Running all 283 frameworks already exposed real bugs — this prevents
   known-bad frameworks from wasting processing time or producing confusing errors.
-- **Results:** _pending_
+- **Results:** `IGNORED_FRAMEWORKS` constant and `is_framework_ignored()` in `sdk.rs`.
+  Filtering happens inside `discover_frameworks()` with `tracing::info!` log. 3 new
+  integration tests in `sdk_discovery.rs`.
 
 ### LLM annotation integration `[analysis]`
 - **Status:** not_started
@@ -93,6 +95,12 @@ Constraints:
 - **Results:** _pending_
 
 ## Session Log
+
+### 2026-04-11: Framework ignore list
+- Added `IGNORED_FRAMEWORKS` constant in `sdk.rs` with DriverKit and Tk
+- `is_framework_ignored()` public helper for callers that need to check
+- Filtering built into `discover_frameworks()` — all consumers benefit automatically
+- 3 integration tests: exclusion from results, list non-empty guard, helper consistency
 
 ### Pre-history (migrated from old plan.md)
 - Milestones 1-8 complete: shared types, ObjC/C collection, Swift extraction,

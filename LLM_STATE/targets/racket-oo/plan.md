@@ -47,6 +47,16 @@ Constraints:
 
 ## Task Backlog
 
+### Analyse OO style class system usage `[architecture]`
+- **Status:** not_started
+- **Dependencies:** none
+- **Description:** Analyse the current racket-oo emitter output and runtime to determine
+  whether it truly models macOS APIs using Racket's class system (`racket/class`) as much
+  as possible — e.g., using `class*`, `define/public`, `inherit`, `super-new`, interfaces
+  for protocols, mixins for categories. Identify where the current approach falls short of
+  idiomatic Racket OO and propose concrete changes to make better use of the class system.
+- **Results:** _pending_
+
 ### File Lister app `[apps]`
 - **Status:** not_started
 - **Dependencies:** none
