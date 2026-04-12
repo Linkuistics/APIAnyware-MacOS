@@ -2,11 +2,9 @@
 
 ## Required reading
 
-> Paths below are project-root-relative.
-
-- Spec: `knowledge/apps/ui-controls-gallery/spec.md`
-- App learnings: `knowledge/apps/ui-controls-gallery/learnings.md`
-- Test strategy: `knowledge/apps/ui-controls-gallery/test-strategy.md`
-- Matrix learnings: `knowledge/matrix/ui-controls-gallery/racket-oo.md`
-- Target learnings: `knowledge/targets/racket-oo.md`
-- Target plan: `LLM_STATE/targets/racket-oo/backlog.md`
+- Spec: `{{PROJECT}}/knowledge/apps/ui-controls-gallery/spec.md`
+- App learnings: `{{PROJECT}}/knowledge/apps/ui-controls-gallery/learnings.md`
+- Test strategy: `{{PROJECT}}/knowledge/apps/ui-controls-gallery/test-strategy.md`
+- Matrix learnings: `{{PROJECT}}/knowledge/matrix/ui-controls-gallery/racket-oo.md`
+- Target learnings: `{{PROJECT}}/knowledge/targets/racket-oo.md`
+- Target plan: `{{PROJECT}}/LLM_STATE/targets/racket-oo/backlog.md`

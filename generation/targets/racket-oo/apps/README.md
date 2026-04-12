@@ -5,14 +5,12 @@ complex, culminating in Modaliser as the capstone.
 
 ## Before working on any app here
 
-> Paths below are project-root-relative.
-
-1. Read the app spec: `knowledge/apps/{app}/spec.md`
-2. Read app-universal learnings: `knowledge/apps/{app}/learnings.md`
-3. Read the test strategy: `knowledge/apps/{app}/test-strategy.md`
-4. Read matrix learnings: `knowledge/matrix/{app}/racket-oo.md` (if it exists)
-5. Check the target plan: `LLM_STATE/targets/racket-oo/backlog.md`
+1. Read the app spec: `{{PROJECT}}/knowledge/apps/{app}/spec.md`
+2. Read app-universal learnings: `{{PROJECT}}/knowledge/apps/{app}/learnings.md`
+3. Read the test strategy: `{{PROJECT}}/knowledge/apps/{app}/test-strategy.md`
+4. Read matrix learnings: `{{PROJECT}}/knowledge/matrix/{app}/racket-oo.md` (if it exists)
+5. Check the target plan: `{{PROJECT}}/LLM_STATE/targets/racket-oo/backlog.md`
 
 ## All GUI testing uses TestAnyware
 
-Never run apps directly. See `knowledge/testanyware/general.md` for workflow.
+Never run apps directly. See `{{PROJECT}}/knowledge/testanyware/general.md` for workflow.

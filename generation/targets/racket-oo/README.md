@@ -5,10 +5,8 @@ Racket object-oriented interaction with macOS APIs.
 
 ## Before working here
 
-> Paths below are project-root-relative.
-
-1. Read `knowledge/targets/racket-oo.md` for target-wide learnings
-2. Check `LLM_STATE/targets/racket-oo/backlog.md` for current progress
+1. Read `{{PROJECT}}/knowledge/targets/racket-oo.md` for target-wide learnings
+2. Check `{{PROJECT}}/LLM_STATE/targets/racket-oo/backlog.md` for current progress
 
 ## Target structure
 

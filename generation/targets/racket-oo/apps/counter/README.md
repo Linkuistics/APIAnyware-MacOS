@@ -2,11 +2,9 @@
 
 ## Required reading
 
-> Paths below are project-root-relative.
-
-- Spec: `knowledge/apps/counter/spec.md`
-- App learnings: `knowledge/apps/counter/learnings.md`
-- Test strategy: `knowledge/apps/counter/test-strategy.md`
-- Matrix learnings: `knowledge/matrix/counter/racket-oo.md`
-- Target learnings: `knowledge/targets/racket-oo.md`
-- Target plan: `LLM_STATE/targets/racket-oo/backlog.md`
+- Spec: `{{PROJECT}}/knowledge/apps/counter/spec.md`
+- App learnings: `{{PROJECT}}/knowledge/apps/counter/learnings.md`
+- Test strategy: `{{PROJECT}}/knowledge/apps/counter/test-strategy.md`
+- Matrix learnings: `{{PROJECT}}/knowledge/matrix/counter/racket-oo.md`
+- Target learnings: `{{PROJECT}}/knowledge/targets/racket-oo.md`
+- Target plan: `{{PROJECT}}/LLM_STATE/targets/racket-oo/backlog.md`

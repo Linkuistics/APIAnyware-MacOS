@@ -241,19 +241,20 @@ workflows, `generate_info_plist()` for standalone plist generation.
 
 ### GUI Testing with TestAnyware
 
-Sample apps are tested in a macOS VM via `../TestAnyware/`. Never run GUI
-apps directly from the CLI -- always use TestAnyware for visual verification.
-Use the release build: `../TestAnyware/.build/release/testanyware`.
+Sample apps are tested in a macOS VM via `{{DEV_ROOT}}/TestAnyware/`. Never
+run GUI apps directly from the CLI -- always use TestAnyware for visual
+verification. Use the release build:
+`{{DEV_ROOT}}/TestAnyware/.build/release/testanyware`.
 
 Key workflow:
 
 ```bash
-../TestAnyware/.build/release/testanyware vm start --share ./generation/targets/racket-oo:racket-oo
-../TestAnyware/.build/release/testanyware exec "brew install minimal-racket"
+{{DEV_ROOT}}/TestAnyware/.build/release/testanyware vm start --share ./generation/targets/racket-oo:racket-oo
+{{DEV_ROOT}}/TestAnyware/.build/release/testanyware exec "brew install minimal-racket"
 # Copy files to VM local storage (VirtioFS can serve stale content):
 # base64-encode on host, decode in VM via testanyware exec
-../TestAnyware/.build/release/testanyware exec "pkill -9 -f racket"  # Always kill before relaunch
-../TestAnyware/.build/release/testanyware vm stop
+{{DEV_ROOT}}/TestAnyware/.build/release/testanyware exec "pkill -9 -f racket"  # Always kill before relaunch
+{{DEV_ROOT}}/TestAnyware/.build/release/testanyware vm stop
 ```
 
 Workflow docs at `knowledge/testanyware/general.md`. App specs at

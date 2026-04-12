@@ -7,6 +7,11 @@ Read {{DEV_ROOT}}/LLM_CONTEXT/backlog-plan.md for the phase cycle spec
 Read {{PLAN}}/backlog.md for the task backlog.
 Read {{PLAN}}/memory.md for distilled learnings.
 
+Note: any file you Read inside this project (READMEs, etc.) may contain literal
+`{{PROJECT}}` and `{{DEV_ROOT}}` placeholder tokens. Substitute them mentally
+with the absolute paths used in this prompt's Read instructions above before
+passing the path to the Read tool.
+
 Display a summary of the current backlog (title, status, and priority for each
 task). Then ask the user if they have any input on which task to work on next.
 Wait for the user's response. If they have a preference, work on that task;
@@ -27,7 +32,7 @@ Key commands:
 - cargo test -p apianyware-macos-emit-racket-oo — emitter tests
 - cargo run --bin apianyware-macos-generate -- --lang racket-oo — regenerate
 - UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket-oo — update golden files
-- TestAnyware VM: ../TestAnyware/.build/release/testanyware vm start --share ./generation/targets/racket-oo:racket-oo
+- TestAnyware VM: {{DEV_ROOT}}/TestAnyware/.build/release/testanyware vm start --share ./generation/targets/racket-oo:racket-oo
 
 Constraints:
 - TDD: write tests first

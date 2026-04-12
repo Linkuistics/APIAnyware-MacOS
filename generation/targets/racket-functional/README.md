@@ -8,8 +8,6 @@ target.
 
 ## Before working here
 
-> Paths below are project-root-relative.
-
-1. Read `knowledge/targets/racket-functional.md` for target-wide learnings
-2. Check `LLM_STATE/targets/racket-functional/backlog.md` for current progress
+1. Read `{{PROJECT}}/knowledge/targets/racket-functional.md` for target-wide learnings
+2. Check `{{PROJECT}}/LLM_STATE/targets/racket-functional/backlog.md` for current progress
    (if it exists)
