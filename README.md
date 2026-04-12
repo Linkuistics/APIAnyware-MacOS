@@ -114,6 +114,152 @@ Alternatively, use any OpenAI-compatible API:
 ./analysis/scripts/llm-annotate.sh
 ```
 
+## Development
+
+### Build & Test Commands
+
+```bash
+# Rust workspace
+cargo build                                    # Build all crates
+cargo test --workspace                         # Run all tests (~248 tests)
+cargo test -p apianyware-macos-emit-racket-oo  # Single crate
+cargo +nightly fmt                             # Format (requires nightly)
+cargo clippy --workspace                       # Lint
+
+# Swift dylibs (from repo root)
+cd swift && swift build                        # Build all dylibs
+cd swift && swift test                         # Run Swift tests (~64 tests)
+
+# Snapshot tests: update golden files after emitter changes
+UPDATE_GOLDEN=1 cargo test --workspace
+```
+
+### Coding Conventions
+
+- **TDD** -- write tests first
+- **Descriptive names** -- long is fine; consistency matters (don't mix
+  `get_thing`/`fetch_thing`)
+- **Small files** -- each file handles one concern
+- **`thiserror`** for library errors, **`anyhow`** for CLI/application errors
+- **`tracing`** macros only (not `log` crate)
+- **Bounded channels only** -- `unbounded_channel` is banned
+- **No `unwrap`/`expect`** in production code
+- **Import grouping**: stdlib -> external -> local (enforced by rustfmt)
+- **`cargo +nightly fmt`** before committing
+
+### Crate Map
+
+**Shared types** -- `collection/crates/types/` (`apianyware-macos-types`):
+IR structs (Framework, Class, Method, Property, Protocol, Enum, TypeRef),
+annotation schema, checkpoint format. Depended on by everything.
+
+**Collection** -- `collection/crates/extract-objc/` (libclang parsing),
+`extract-swift/` (swift-api-digester), `cli/` (orchestration). The ObjC
+extractor's `type_mapping.rs` resolves typedefs to canonical types at
+extraction time -- this is critical for correct FFI signatures downstream.
+
+**Analysis** -- `analysis/crates/datalog/` (shared Ascent-based relations),
+`resolve/` (inheritance flattening, ownership detection), `annotate/`
+(heuristic + LLM annotation merge), `enrich/` (derived relations,
+verification), `cli/`.
+
+**Generation** -- `generation/crates/emit/` (shared framework: `FfiTypeMapper`
+trait, `CodeWriter`, naming utils, snapshot testing, pattern dispatch),
+`emit-racket-oo/` (Racket OO emission), `cli/` (emitter registry,
+orchestration).
+
+**Tooling** -- `generation/crates/stub-launcher/`
+(`apianyware-macos-stub-launcher`): generates per-app Swift stub binaries
+for TCC-compatible `.app` bundles. Each stub `execv`s into the language
+runtime, giving it a unique CDHash so macOS TCC grants permissions per-app
+rather than per-runtime. See [App Bundling](#app-bundling) below.
+
+**Swift dylibs** -- `swift/` contains `APIAnywareCommon` (C-callable ObjC
+runtime: message sending, memory management, struct marshaling) and
+per-language bridges (`APIAnywareRacket` adds block/delegate bridging with
+GC prevention).
+
+### Key Patterns
+
+- **`effective_methods()`/`effective_properties()`** in emitters: choose
+  between direct and inherited method lists, with deduplication by
+  selector/name.
+- **`DispatchStrategy`** in emit-racket-oo: methods dispatch via either
+  `tell` (Racket's ObjC FFI macro) or typed `_msg-N` bindings depending on
+  parameter/return types.
+- **`coerce-arg`** in Racket runtime: auto-converts strings -> NSString,
+  objc-object -> _id pointer. All generated property setters use it.
+- **Snapshot tests**: golden files at `emit-{lang}/tests/golden/{style}/`.
+  `GoldenTest::assert_matches()` does directory comparison with unified
+  diffs. `assert_subset_matches()` checks only files present in the golden
+  dir.
+- **`test_fixtures::build_snapshot_test_framework()`**: deterministic
+  synthetic `TestKit` framework exercising all emitter code paths.
+
+### App Bundling
+
+Sample apps can be packaged as macOS `.app` bundles using
+`apianyware-macos-stub-launcher`. This is required for apps that need
+per-app TCC permissions (Accessibility, Camera, etc.) -- without a unique
+binary per app, macOS TCC shares permission grants across all processes
+using the same runtime binary.
+
+```rust
+use apianyware_macos_stub_launcher::{StubConfig, create_app_bundle};
+
+let config = StubConfig {
+    app_name: "Counter".into(),                     // Bundle and binary name
+    runtime_path: "/opt/homebrew/bin/racket".into(), // Baked in at compile time
+    runtime_args: vec![],                            // Extra args before script path
+    script_resource_name: "main".into(),             // Script filename (no ext)
+    script_resource_type: "rkt".into(),              // Script extension
+    script_resource_dir: "racket-app".into(),        // Subdir in Resources/
+    bundle_identifier: "com.example.Counter".into(), // CFBundleIdentifier
+};
+let app_path = create_app_bundle(&config, Path::new("output/"))?;
+// Now populate: output/Counter.app/Contents/Resources/racket-app/
+//   with main.rkt, runtime/*.rkt, lib/*.dylib, generated/**/*.rkt
+```
+
+The resulting `.app` bundle structure:
+
+```
+Counter.app/
+  Contents/
+    MacOS/Counter          <- compiled Swift stub (~50KB, unique CDHash)
+    Info.plist             <- generated from StubConfig
+    Resources/
+      racket-app/          <- caller populates this
+        main.rkt
+        runtime/
+        lib/
+        generated/
+```
+
+Lower-level API: `generate_stub_source()` and `compile_stub()` for custom
+workflows, `generate_info_plist()` for standalone plist generation.
+
+### GUI Testing with TestAnyware
+
+Sample apps are tested in a macOS VM via `../TestAnyware/`. Never run GUI
+apps directly from the CLI -- always use TestAnyware for visual verification.
+Use the release build: `../TestAnyware/.build/release/testanyware`.
+
+Key workflow:
+
+```bash
+../TestAnyware/.build/release/testanyware vm start --share ./generation/targets/racket-oo:racket-oo
+../TestAnyware/.build/release/testanyware exec "brew install minimal-racket"
+# Copy files to VM local storage (VirtioFS can serve stale content):
+# base64-encode on host, decode in VM via testanyware exec
+../TestAnyware/.build/release/testanyware exec "pkill -9 -f racket"  # Always kill before relaunch
+../TestAnyware/.build/release/testanyware vm stop
+```
+
+Workflow docs at `knowledge/testanyware/general.md`. App specs at
+`knowledge/apps/{app}/spec.md`, validation checklists at
+`knowledge/apps/{app}/test-strategy.md`.
+
 ## Workspace Structure
 
 ```

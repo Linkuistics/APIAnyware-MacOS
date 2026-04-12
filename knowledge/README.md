@@ -1,7 +1,7 @@
 # Knowledge Base
 
-This directory contains all project learnings organised by axis. It is the single source of
-truth for discoveries made during implementation.
+This directory contains all project learnings organised by axis. It is the
+single source of truth for discoveries made during implementation.
 
 ## Axes
 
@@ -15,9 +15,10 @@ truth for discoveries made during implementation.
 
 ## Rules
 
-- **Never duplicate** — if a learning applies to a broader axis, put it there, not in a
-  narrower file
+- **Never duplicate** — if a learning applies to a broader axis, put it there,
+  not in a narrower file
 - **Date entries** — prefix with `**YYYY-MM-DD:**` so staleness is visible
-- **Link don't copy** — CLAUDE.md files point here; knowledge is not inlined into CLAUDE.md
-- **Promote eagerly** — if a matrix learning turns out to be target-universal, move it up
-- **Priority codes** — use 🔴 (critical), 🟡 (useful), 🟢 (informational) on all entries
+- **Promote eagerly** — if a matrix learning turns out to be target-universal,
+  move it up
+- **Priority codes** — use 🔴 (critical), 🟡 (useful), 🟢 (informational) on
+  all entries

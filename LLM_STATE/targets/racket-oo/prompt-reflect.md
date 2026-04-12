@@ -1,4 +1,4 @@
-Read {{LLM_CONTEXT}}/backlog-plan.md for the phase cycle spec
+Read {{DEV_ROOT}}/LLM_CONTEXT/backlog-plan.md for the phase cycle spec
 (focus on Phase 2: REFLECT).
 
 Read {{PLAN}}/session-log.md — focus on the latest entry.
