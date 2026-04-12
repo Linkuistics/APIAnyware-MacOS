@@ -1,8 +1,8 @@
-Read ../LLM_CONTEXT/backlog-plan.md for the phase cycle spec
+Read {{LLM_CONTEXT}}/backlog-plan.md for the phase cycle spec
 (focus on Phase 1: WORK).
 
-Read LLM_STATE/targets/racket-oo/backlog.md for the task backlog.
-Read LLM_STATE/targets/racket-oo/memory.md for distilled learnings.
+Read {{PLAN}}/backlog.md for the task backlog.
+Read {{PLAN}}/memory.md for distilled learnings.
 
 Display a summary of the current backlog (title, status, and priority for each
 task). Then ask the user if they have any input on which task to work on next.
@@ -10,8 +10,8 @@ Wait for the user's response. If they have a preference, work on that task;
 otherwise pick the best next task.
 
 Implement it, record results in backlog.md, append a session log entry to
-LLM_STATE/targets/racket-oo/session-log.md.
-Write reflect to LLM_STATE/targets/racket-oo/phase.md, then stop.
+{{PLAN}}/session-log.md.
+Write reflect to {{PLAN}}/phase.md, then stop.
 
 Target-specific context:
 - Emitter crate: generation/crates/emit-racket-oo/

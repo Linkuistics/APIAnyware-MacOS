@@ -1,10 +1,10 @@
-Read ../LLM_CONTEXT/backlog-plan.md for the phase cycle spec
+Read {{LLM_CONTEXT}}/backlog-plan.md for the phase cycle spec
 (focus on Phase 3: TRIAGE).
 
-Read LLM_STATE/core/backlog.md for the task backlog.
-Read LLM_STATE/core/memory.md for distilled learnings.
+Read {{PLAN}}/backlog.md for the task backlog.
+Read {{PLAN}}/memory.md for distilled learnings.
 
 Review the backlog: reprioritize, split, add, or remove tasks based on current
 learnings. If learnings affect sibling plans (e.g. LLM_STATE/targets/), add
 backlog entries there rather than duplicating memories.
-Write work to LLM_STATE/core/phase.md. Then stop.
+Write work to {{PLAN}}/phase.md. Then stop.
