@@ -1,3 +1,4 @@
+Read {{PROJECT}}/CLAUDE.md for project conventions, architecture, and commands.
 Read {{LLM_CONTEXT}}/backlog-plan.md for the phase cycle spec
 (focus on Phase 1: WORK).
 
