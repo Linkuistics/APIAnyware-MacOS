@@ -30,3 +30,9 @@ Constraints:
 - TDD: write tests first
 - thiserror for library errors, anyhow for CLI
 - No unwrap/expect in production code
+
+# --- Session recording (dual-write, added by migrate-plan.sh) ---
+When recording the session entry: write it to {{PLAN}}/latest-session.md
+(overwriting any prior content), AND append the same entry to
+{{PLAN}}/session-log.md. Both writes are required — latest-session.md is
+what the reflect phase reads; session-log.md is the human-facing audit trail.

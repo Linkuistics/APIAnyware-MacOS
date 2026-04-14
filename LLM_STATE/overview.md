@@ -25,7 +25,7 @@ See `../LLM_CONTEXT/backlog-plan.md` for the phase cycle spec.
 | C enum/constant collection | done | VarDecl + EnumDecl; #define constants not captured |
 | C callback type collection | done | FunctionPointer TypeRefKind with full signatures |
 | Resolution (inheritance) | done | |
-| Annotation (heuristic + LLM) | done | LLM step needs integration into CLI |
+| Annotation (heuristic + LLM) | done | Three-step subagent workflow: llm-extract → subagent → annotate --llm-dir |
 | Enrichment | done | per-framework verification fix applied, isolation tests added |
 | Stub launcher | done | `apianyware-macos-stub-launcher` — per-app Swift stubs for TCC |
 
@@ -33,11 +33,9 @@ See `../LLM_CONTEXT/backlog-plan.md` for the phase cycle spec.
 
 | Target | Status | Styles | Apps Done | Notes |
 |--------|--------|--------|-----------|--------|
-| racket-oo | active | oo (done), functional (not started), c-api (blocked) | 3/7 | Next: remaining apps |
+| racket-oo | active | oo (done), c-api (done), functional (not started) | 3/7 | Next: remaining apps |
 | racket-functional | not started | functional | 0/7 | Needs functional emitter |
 
 ## Cross-Cutting Blockers
 
-- C-API style for all targets: core extraction done, needs C-API emitter implementation
 - racket-functional style blocked on functional emitter implementation
-- AppKit snapshot tests blocked on AppKit enriched IR
