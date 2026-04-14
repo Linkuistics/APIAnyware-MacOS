@@ -1,6 +1,3 @@
-Read {{DEV_ROOT}}/LLM_CONTEXT/fixed-memory/coding-style.md and {{DEV_ROOT}}/LLM_CONTEXT/fixed-memory/coding-style-rust.md
-for coding style guidelines.
-
 Key commands:
 - cargo test --workspace — run all tests
 - cargo clippy --workspace — lint

@@ -1,7 +1,3 @@
-Read {{DEV_ROOT}}/LLM_CONTEXT/fixed-memory/coding-style.md and
-{{DEV_ROOT}}/LLM_CONTEXT/fixed-memory/coding-style-rust.md for coding style
-guidelines.
-
 Target-specific context:
 - Emitter crate: generation/crates/emit-racket-oo/
 - Runtime: generation/targets/racket-oo/runtime/
