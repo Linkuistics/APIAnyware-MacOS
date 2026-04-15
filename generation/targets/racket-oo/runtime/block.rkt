@@ -65,38 +65,42 @@
 ;; the block is auto-managed via copy/dispose helpers. For synchronous
 ;; APIs (enumerateObjectsUsingBlock:, etc.), call free-objc-block after.
 (define (make-objc-block proc param-types return-type)
-  ;; The block invoke signature: (block_ptr, param1, param2, ...) -> return
-  (define all-param-types (cons _pointer param-types))
+  ;; nil proc → NULL block pointer (ObjC nil — "no callback")
+  (if (not proc)
+      (values #f #f)
+      (let ()
+        ;; The block invoke signature: (block_ptr, param1, param2, ...) -> return
+        (define all-param-types (cons _pointer param-types))
 
-  ;; Wrapper that skips the block-self pointer
-  (define wrapper-proc
-    (lambda args (apply proc (cdr args))))
+        ;; Wrapper that skips the block-self pointer
+        (define wrapper-proc
+          (lambda args (apply proc (cdr args))))
 
-  ;; Create C function pointer from Racket procedure
-  (define invoke-ctype (_cprocedure all-param-types return-type))
-  (define callback (function-ptr wrapper-proc invoke-ctype))
+        ;; Create C function pointer from Racket procedure
+        (define invoke-ctype (_cprocedure all-param-types return-type))
+        (define callback (function-ptr wrapper-proc invoke-ctype))
 
-  ;; Create the block struct
-  (define block
-    (if swift-available?
-        ;; Swift helper: _NSConcreteGlobalBlock + BLOCK_HAS_COPY_DISPOSE
-        (swift:create-block callback)
-        ;; Pure Racket fallback: manual block ABI construction
-        (make-BlockLiteral _NSConcreteStackBlock
-                           0         ; flags
-                           0         ; reserved
-                           callback
-                           shared-descriptor)))
+        ;; Create the block struct
+        (define block
+          (if swift-available?
+              ;; Swift helper: _NSConcreteGlobalBlock + BLOCK_HAS_COPY_DISPOSE
+              (swift:create-block callback)
+              ;; Pure Racket fallback: manual block ABI construction
+              (make-BlockLiteral _NSConcreteStackBlock
+                                 0         ; flags
+                                 0         ; reserved
+                                 callback
+                                 shared-descriptor)))
 
-  ;; Store references to prevent GC
-  (define id next-id)
-  (set! next-id (add1 next-id))
+        ;; Store references to prevent GC
+        (define id next-id)
+        (set! next-id (add1 next-id))
 
-  ;; Note: with Swift dylib, create-block calls prevent_gc internally.
-  ;; We still store the Racket-side reference to prevent Racket GC.
-  (hash-set! active-blocks id (list callback block proc))
+        ;; Note: with Swift dylib, create-block calls prevent_gc internally.
+        ;; We still store the Racket-side reference to prevent Racket GC.
+        (hash-set! active-blocks id (list callback block proc))
 
-  (values block id))
+        (values block id))))
 
 ;; Release a block's GC-preventing references.
 ;;

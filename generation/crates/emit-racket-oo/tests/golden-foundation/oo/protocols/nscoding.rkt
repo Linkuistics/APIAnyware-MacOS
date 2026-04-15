@@ -8,10 +8,12 @@
 ;;   id-returning (1):
 ;;     initWithCoder:  (coder:NSCoder)
 
-(require "../../../../runtime/delegate.rkt")
+(require racket/contract
+         "../../../../runtime/delegate.rkt")
 
-(provide make-nscoding
-         nscoding-selectors)
+(provide/contract
+  [make-nscoding (->* () () #:rest (listof (or/c string? procedure?)) any/c)]
+  [nscoding-selectors (listof string?)])
 
 ;; All selectors in this protocol
 (define nscoding-selectors

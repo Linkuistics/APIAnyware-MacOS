@@ -9,6 +9,7 @@ pub mod enrichment;
 pub mod ir;
 pub mod provenance;
 pub mod serde_helpers;
+pub mod skipped_symbol_reason;
 pub mod type_ref;
 
 // Re-export the most commonly used types at crate root for convenience.

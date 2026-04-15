@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt"
          "../../../runtime/block.rkt")
@@ -12,7 +13,23 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1 _msg-2 _msg-3))
+(provide NSError)
+(provide/contract
+  [make-nserror-init-with-domain-code-user-info (c-> any/c exact-integer? any/c any/c)]
+  [nserror-code (c-> objc-object? exact-integer?)]
+  [nserror-domain (c-> objc-object? any/c)]
+  [nserror-help-anchor (c-> objc-object? any/c)]
+  [nserror-localized-description (c-> objc-object? any/c)]
+  [nserror-localized-failure-reason (c-> objc-object? any/c)]
+  [nserror-localized-recovery-options (c-> objc-object? any/c)]
+  [nserror-localized-recovery-suggestion (c-> objc-object? any/c)]
+  [nserror-recovery-attempter (c-> objc-object? any/c)]
+  [nserror-underlying-errors (c-> objc-object? any/c)]
+  [nserror-user-info (c-> objc-object? any/c)]
+  [nserror-error-with-domain-code-user-info (c-> any/c exact-integer? any/c any/c)]
+  [nserror-set-user-info-value-provider-for-domain-provider! (c-> any/c (or/c procedure? #f) void?)]
+  [nserror-user-info-value-provider-for-domain (c-> any/c any/c any/c (or/c cpointer? #f))]
+  )
 
 ;; --- Class reference ---
 (import-class NSError)

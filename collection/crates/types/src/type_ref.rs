@@ -61,6 +61,19 @@ pub enum TypeRefKind {
     #[serde(rename = "instancetype")]
     Instancetype,
 
+    /// C function pointer type with parameter types and a return type.
+    /// Captures the full signature for callback typedefs like `CGEventTapCallBack`.
+    #[serde(rename = "function_pointer")]
+    FunctionPointer {
+        /// Typedef name (e.g., `"CGEventTapCallBack"`). Present when the function
+        /// pointer was reached through a typedef; absent for anonymous function pointers.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(default)]
+        params: Vec<TypeRef>,
+        return_type: Box<TypeRef>,
+    },
+
     /// Raw C pointer (e.g., `const char *`, `void *`).
     #[serde(rename = "pointer")]
     Pointer,

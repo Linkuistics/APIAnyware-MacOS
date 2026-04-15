@@ -6,10 +6,12 @@
 ;;   id-returning (1):
 ;;     copyWithZone:  (zone:pointer)
 
-(require "../../../../runtime/delegate.rkt")
+(require racket/contract
+         "../../../../runtime/delegate.rkt")
 
-(provide make-tkcopying
-         tkcopying-selectors)
+(provide/contract
+  [make-tkcopying (->* () () #:rest (listof (or/c string? procedure?)) any/c)]
+  [tkcopying-selectors (listof string?)])
 
 ;; All selectors in this protocol
 (define tkcopying-selectors

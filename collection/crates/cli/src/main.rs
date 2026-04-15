@@ -122,13 +122,11 @@ fn main() -> Result<()> {
         .filter(|m| only_set.is_empty() || only_set.contains(m.name.as_str()))
         .collect();
 
-    if frameworks_to_extract.is_empty() && swift_only_modules.is_empty() {
-        if !cli.only.is_empty() {
-            anyhow::bail!(
-                "no frameworks matched --only {:?}. Use --list to see available frameworks.",
-                cli.only
-            );
-        }
+    if frameworks_to_extract.is_empty() && swift_only_modules.is_empty() && !cli.only.is_empty() {
+        anyhow::bail!(
+            "no frameworks matched --only {:?}. Use --list to see available frameworks.",
+            cli.only
+        );
     }
 
     // Ensure output directory exists

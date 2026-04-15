@@ -563,6 +563,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn test_golden_test_update_mode() {
         let gen_dir = tempfile::tempdir().unwrap();
         let golden_root = tempfile::tempdir().unwrap();

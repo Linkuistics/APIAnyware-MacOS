@@ -382,7 +382,7 @@ These relations enable emitters to query "give me all resource-lifecycle pattern
 {
   "format_version": "1.0",
   "checkpoint": "collected",
-  "framework": "Foundation",
+  "name": "Foundation",
   "sdk_version": "15.4",
   "collected_at": "2026-03-26T10:00:00Z",
   "classes": [

@@ -131,6 +131,35 @@ fn foundation_has_functions() {
 }
 
 #[test]
+fn foundation_skips_static_const_variables() {
+    // `NSHashTableCopyIn`, `NSHashTableStrongMemory`, and similar symbols
+    // in NSHashTable.h are declared as `static const NSPointerFunctionsOptions`.
+    // They have internal linkage, no dylib symbol, and must be filtered from
+    // the constants list so downstream `dlsym`-based bindings don't fail
+    // at load time.
+    let fw = foundation();
+    let leaked: Vec<&str> = fw
+        .constants
+        .iter()
+        .map(|c| c.name.as_str())
+        .filter(|name| {
+            matches!(
+                *name,
+                "NSHashTableCopyIn"
+                    | "NSHashTableStrongMemory"
+                    | "NSHashTableWeakMemory"
+                    | "NSHashTableObjectPointerPersonality"
+                    | "NSHashTableZeroingWeakMemory"
+            )
+        })
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "static const variables should be filtered out, but found: {leaked:?}"
+    );
+}
+
+#[test]
 fn foundation_has_constants() {
     let fw = foundation();
     assert!(
@@ -202,7 +231,7 @@ fn foundation_methods_have_source_field() {
 fn foundation_serializes_to_json() {
     let fw = foundation();
     let json = serde_json::to_string_pretty(&fw).expect("should serialize to JSON");
-    assert!(json.contains("\"framework\": \"Foundation\""));
+    assert!(json.contains("\"name\": \"Foundation\""));
     assert!(json.contains("\"checkpoint\": \"collected\""));
 
     // Verify roundtrip

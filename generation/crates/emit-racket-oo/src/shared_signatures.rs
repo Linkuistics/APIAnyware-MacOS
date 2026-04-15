@@ -94,13 +94,14 @@ pub fn collect_class_signatures(cls: &Class, mapper: &dyn FfiTypeMapper) -> Sign
 
     // Collect from instance/class methods (typed path only)
     for m in methods {
-        if !m.init_method && is_supported_method(m) {
-            if dispatch_strategy(m, mapper) == DispatchStrategy::TypedMsgSend {
-                let param_types = collect_param_ffi_types(m, mapper);
-                let ret_type = mapper.map_type(&m.return_type, true);
-                let key = make_signature_key(&param_types, &ret_type);
-                sig_set.insert(key, ());
-            }
+        if !m.init_method
+            && is_supported_method(m)
+            && dispatch_strategy(m, mapper) == DispatchStrategy::TypedMsgSend
+        {
+            let param_types = collect_param_ffi_types(m, mapper);
+            let ret_type = mapper.map_type(&m.return_type, true);
+            let key = make_signature_key(&param_types, &ret_type);
+            sig_set.insert(key, ());
         }
     }
 
@@ -151,6 +152,22 @@ pub fn block_ffi_types(
     (real_params, ret)
 }
 
+/// Returns true if any type-ref in the iterator is a struct passed by value.
+///
+/// Single decision point for "does this emission unit need the
+/// `runtime/type-mapping.rkt` require for its `define-cstruct` types?".
+/// Callers (class wrappers, `functions.rkt`, `constants.rkt`) describe
+/// *which* type-refs their unit carries; this helper applies
+/// `mapper.is_struct_type` uniformly so future geometry struct additions
+/// only require updating the allowlist in the FFI type mapper — not
+/// three parallel detection sites.
+pub fn any_struct_type<'a, I>(type_refs: I, mapper: &dyn FfiTypeMapper) -> bool
+where
+    I: IntoIterator<Item = &'a TypeRef>,
+{
+    type_refs.into_iter().any(|tr| mapper.is_struct_type(tr))
+}
+
 /// Check if a class has any methods with struct parameters or struct return types.
 ///
 /// When struct types are present in typed msgSend signatures, the generated file
@@ -166,14 +183,11 @@ pub fn class_has_struct_types(cls: &Class, mapper: &dyn FfiTypeMapper) -> bool {
     } else {
         &cls.all_properties
     };
-    methods.iter().any(|m| {
-        m.params
-            .iter()
-            .any(|p| mapper.is_struct_type(&p.param_type))
-            || mapper.is_struct_type(&m.return_type)
-    }) || properties
-        .iter()
-        .any(|p| mapper.is_struct_type(&p.property_type))
+    let method_types = methods.iter().flat_map(|m| {
+        std::iter::once(&m.return_type).chain(m.params.iter().map(|p| &p.param_type))
+    });
+    let property_types = properties.iter().map(|p| &p.property_type);
+    any_struct_type(method_types.chain(property_types), mapper)
 }
 
 /// Check if a class has any methods with block parameters.

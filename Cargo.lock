@@ -246,6 +246,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "apianyware-macos-stub-launcher"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "apianyware-macos-types"
 version = "0.1.0"
 dependencies = [

@@ -7,7 +7,7 @@
 //!   apianyware-macos-analyze enrich                # Datalog pass 2 only
 //!   apianyware-macos-analyze resolve --only Foundation
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -45,6 +45,27 @@ enum Command {
 
         /// Output directory for annotated checkpoints.
         #[arg(long, default_value = "analysis/ir/annotated")]
+        output_dir: PathBuf,
+
+        /// Directory containing .llm.json files from LLM annotation.
+        /// If provided, LLM annotations are loaded from here instead of
+        /// from existing annotated checkpoints.
+        #[arg(long)]
+        llm_dir: Option<PathBuf>,
+    },
+
+    /// Extract interesting methods for LLM annotation.
+    ///
+    /// Writes per-framework method summaries to output_dir as
+    /// {Framework}.methods.json, containing only methods that need
+    /// LLM classification (block params, error out-params, delegate patterns).
+    LlmExtract {
+        /// Directory containing resolved IR JSON files.
+        #[arg(long, default_value = "analysis/ir/resolved")]
+        input_dir: PathBuf,
+
+        /// Output directory for method summary files.
+        #[arg(long, default_value = "analysis/ir/llm-summaries")]
         output_dir: PathBuf,
     },
 
@@ -84,7 +105,13 @@ fn main() -> Result<()> {
         Some(Command::Annotate {
             input_dir,
             output_dir,
-        }) => run_annotate(&input_dir, &output_dir, only),
+            llm_dir,
+        }) => run_annotate(&input_dir, &output_dir, only, llm_dir.as_deref()),
+
+        Some(Command::LlmExtract {
+            input_dir,
+            output_dir,
+        }) => run_llm_extract(&input_dir, &output_dir, only),
 
         Some(Command::Enrich {
             input_dir,
@@ -101,7 +128,7 @@ fn main() -> Result<()> {
             run_resolve(&collected_dir, &resolved_dir, only)?;
 
             let annotated_dir = PathBuf::from("analysis/ir/annotated");
-            run_annotate(&resolved_dir, &annotated_dir, only)?;
+            run_annotate(&resolved_dir, &annotated_dir, only, None)?;
 
             let enriched_dir = PathBuf::from("analysis/ir/enriched");
             run_enrich(&annotated_dir, &enriched_dir, only)
@@ -109,7 +136,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn run_resolve(input_dir: &PathBuf, output_dir: &PathBuf, only: Option<&[String]>) -> Result<()> {
+fn run_resolve(input_dir: &Path, output_dir: &Path, only: Option<&[String]>) -> Result<()> {
     tracing::info!(
         input = %input_dir.display(),
         output = %output_dir.display(),
@@ -145,14 +172,21 @@ fn run_resolve(input_dir: &PathBuf, output_dir: &PathBuf, only: Option<&[String]
     Ok(())
 }
 
-fn run_annotate(input_dir: &PathBuf, output_dir: &PathBuf, only: Option<&[String]>) -> Result<()> {
+fn run_annotate(
+    input_dir: &Path,
+    output_dir: &Path,
+    only: Option<&[String]>,
+    llm_dir: Option<&Path>,
+) -> Result<()> {
     tracing::info!(
         input = %input_dir.display(),
         output = %output_dir.display(),
+        llm_dir = ?llm_dir.map(|d| d.display().to_string()),
         "starting annotation"
     );
 
-    let annotated = apianyware_macos_annotate::annotate_frameworks(input_dir, output_dir, only)?;
+    let annotated =
+        apianyware_macos_annotate::annotate_frameworks(input_dir, output_dir, only, llm_dir)?;
 
     tracing::info!(frameworks = annotated.len(), "annotation complete");
 
@@ -170,7 +204,28 @@ fn run_annotate(input_dir: &PathBuf, output_dir: &PathBuf, only: Option<&[String
     Ok(())
 }
 
-fn run_enrich(input_dir: &PathBuf, output_dir: &PathBuf, only: Option<&[String]>) -> Result<()> {
+fn run_llm_extract(input_dir: &Path, output_dir: &Path, only: Option<&[String]>) -> Result<()> {
+    tracing::info!(
+        input = %input_dir.display(),
+        output = %output_dir.display(),
+        "extracting methods for LLM annotation"
+    );
+
+    let summaries =
+        apianyware_macos_annotate::llm::extract_all_frameworks(input_dir, output_dir, only)?;
+
+    let total_methods: usize = summaries.iter().map(|s| s.method_count).sum();
+
+    tracing::info!(
+        frameworks = summaries.len(),
+        methods = total_methods,
+        "LLM extraction complete"
+    );
+
+    Ok(())
+}
+
+fn run_enrich(input_dir: &Path, output_dir: &Path, only: Option<&[String]>) -> Result<()> {
     tracing::info!(
         input = %input_dir.display(),
         output = %output_dir.display(),

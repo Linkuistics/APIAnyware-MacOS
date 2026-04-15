@@ -12,8 +12,9 @@ use apianyware_macos_emit::ffi_type_mapping::{FfiTypeMapper, RacketFfiTypeMapper
 use apianyware_macos_emit::naming::camel_to_kebab;
 use apianyware_macos_emit::write_line;
 use apianyware_macos_types::ir::{Class, Method, Param, Property};
-use apianyware_macos_types::type_ref::TypeRefKind;
+use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 
+use crate::emit_functions::map_contract;
 use crate::method_filter::{
     all_params_are_object_type, dispatch_strategy, is_supported_method, returns_object_type,
     returns_void, DispatchStrategy,
@@ -63,11 +64,20 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
     let needs_structs = class_has_struct_types(cls, &mapper);
     let sig_map = collect_class_signatures(cls, &mapper);
 
+    // Build export contracts
+    let exports = build_export_contracts(
+        cls,
+        &properties,
+        &init_methods,
+        &instance_methods,
+        &class_methods,
+    );
+
     // Header
     emit_header(&mut w, &cls.name, framework, needs_blocks, needs_structs);
 
-    // Provide (excluding internal names)
-    emit_provide(&mut w, &sig_map);
+    // Provide with contracts
+    emit_provide(&mut w, &cls.name, &exports);
 
     // Class reference
     w.line(";; --- Class reference ---");
@@ -198,6 +208,163 @@ fn method_collides_with_property(
     property_names.contains(&fn_name)
 }
 
+// --- Contracts ---
+
+/// Contract for the `self` parameter of instance-method wrappers, instance
+/// property getters, and instance property setters.
+///
+/// `objc-object?` is the runtime's struct wrapping an ObjC `_id` pointer
+/// with release-finalizer GC plumbing; it is what every constructor
+/// returns via `wrap-objc-object`, so normal user code always has the
+/// right shape. Tightening from `any/c` catches "you passed a number /
+/// string / cpointer you got from somewhere else" at the wrapper's
+/// contract boundary rather than deep inside `coerce-arg`'s cond dispatch.
+/// `objc-object?` is in scope in every generated class wrapper because
+/// the wrapper requires `coerce.rkt`, which re-exports everything from
+/// `objc-base.rkt`.
+const SELF_CONTRACT: &str = "objc-object?";
+
+/// Map a TypeRef to a contract for class wrapper parameter position.
+///
+/// Unlike `map_contract` (for C FFI boundaries), this accounts for
+/// `coerce-arg` flexibility (accepts strings, objc-objects, pointers)
+/// and block wrapping (accepts Racket procedures).
+fn map_param_contract(type_ref: &TypeRef) -> String {
+    match &type_ref.kind {
+        // Object types go through coerce-arg which accepts various types
+        TypeRefKind::Class { .. } | TypeRefKind::Id | TypeRefKind::Instancetype => {
+            "any/c".to_string()
+        }
+        // Block params receive Racket procedures (or #f for nil)
+        TypeRefKind::Block { .. } => "(or/c procedure? #f)".to_string(),
+        // Everything else delegates to the standard contract mapper
+        _ => map_contract(type_ref, false),
+    }
+}
+
+/// Map a TypeRef to a contract for class wrapper return position.
+fn map_return_contract(type_ref: &TypeRef) -> String {
+    match &type_ref.kind {
+        // Object returns are wrapped by wrap-objc-object → opaque value
+        TypeRefKind::Class { .. } | TypeRefKind::Id | TypeRefKind::Instancetype => {
+            "any/c".to_string()
+        }
+        // Everything else delegates to the standard contract mapper
+        _ => map_contract(type_ref, true),
+    }
+}
+
+/// Format an arrow contract: `(c-> param-contracts... return-contract)`.
+///
+/// Uses the locally-renamed `c->` instead of `->` to avoid colliding with
+/// `ffi/unsafe`'s `->`, which is a literal in `(_fun ... -> ...)` FFI signatures.
+/// The rename-in at the top of each generated file maps `racket/contract`'s `->`
+/// to `c->`.
+fn format_arrow_contract(params: &[String], return_contract: &str) -> String {
+    if params.is_empty() {
+        format!("(c-> {return_contract})")
+    } else {
+        format!("(c-> {} {return_contract})", params.join(" "))
+    }
+}
+
+/// An exported symbol with its contract.
+struct ExportContract {
+    name: String,
+    contract: String,
+}
+
+/// Collect all exported symbols and their contracts for a class.
+fn build_export_contracts(
+    cls: &Class,
+    properties: &[&Property],
+    init_methods: &[&Method],
+    instance_methods: &[&Method],
+    class_methods: &[&Method],
+) -> Vec<ExportContract> {
+    let mut exports = Vec::new();
+
+    // Constructors: (-> param-contracts... cpointer?)
+    for m in init_methods {
+        if !is_supported_method(m) || m.selector == "init" {
+            continue;
+        }
+        let name = make_unique_constructor_name(&cls.name, &m.selector);
+        let param_contracts: Vec<String> = m
+            .params
+            .iter()
+            .map(|p| map_param_contract(&p.param_type))
+            .collect();
+        let contract = format_arrow_contract(&param_contracts, "any/c");
+        exports.push(ExportContract { name, contract });
+    }
+
+    // Properties
+    for p in properties {
+        // Getter
+        let getter = make_property_getter_name(&cls.name, &p.name);
+        let return_contract = map_return_contract(&p.property_type);
+        let contract = if p.class_property {
+            format_arrow_contract(&[], &return_contract)
+        } else {
+            format_arrow_contract(&[SELF_CONTRACT.to_string()], &return_contract)
+        };
+        exports.push(ExportContract {
+            name: getter,
+            contract,
+        });
+
+        // Setter (if not readonly)
+        if !p.readonly {
+            let setter = make_property_setter_name(&cls.name, &p.name);
+            let value_contract = map_param_contract(&p.property_type);
+            let self_arg = if p.class_property {
+                vec![]
+            } else {
+                vec![SELF_CONTRACT.to_string()]
+            };
+            let mut params = self_arg;
+            params.push(value_contract);
+            let contract = format_arrow_contract(&params, "void?");
+            exports.push(ExportContract {
+                name: setter,
+                contract,
+            });
+        }
+    }
+
+    // Instance methods: (-> objc-object? param-contracts... return-contract)
+    for m in instance_methods {
+        if !is_supported_method(m) {
+            continue;
+        }
+        let name = make_method_name(&cls.name, &m.selector);
+        let mut param_contracts = vec![SELF_CONTRACT.to_string()];
+        param_contracts.extend(m.params.iter().map(|p| map_param_contract(&p.param_type)));
+        let return_contract = map_return_contract(&m.return_type);
+        let contract = format_arrow_contract(&param_contracts, &return_contract);
+        exports.push(ExportContract { name, contract });
+    }
+
+    // Class methods: (-> param-contracts... return-contract)
+    for m in class_methods {
+        if !is_supported_method(m) {
+            continue;
+        }
+        let name = make_method_name(&cls.name, &m.selector);
+        let param_contracts: Vec<String> = m
+            .params
+            .iter()
+            .map(|p| map_param_contract(&p.param_type))
+            .collect();
+        let return_contract = map_return_contract(&m.return_type);
+        let contract = format_arrow_contract(&param_contracts, &return_contract);
+        exports.push(ExportContract { name, contract });
+    }
+
+    exports
+}
+
 // --- Header ---
 
 fn emit_header(
@@ -213,6 +380,10 @@ fn emit_header(
     w.blank_line();
     w.line("(require ffi/unsafe");
     w.raw("         ffi/unsafe/objc\n");
+    // `racket/contract` and `ffi/unsafe` both export `->` with different
+    // semantics (contract arrow vs `_fun` type arrow). Rename the contract
+    // arrow to `c->` so both are usable in the same module.
+    w.raw("         (rename-in racket/contract [-> c->])\n");
     w.raw("         \"../../../runtime/objc-base.rkt\"\n");
     w.raw("         \"../../../runtime/coerce.rkt\"");
     if needs_blocks {
@@ -235,12 +406,21 @@ fn emit_header(
 
 // --- Provide ---
 
-fn emit_provide(w: &mut CodeWriter, sig_map: &SignatureMap) {
-    w.raw("(provide (except-out (all-defined-out) _fw-lib _objc-lib");
-    for i in 0..sig_map.len() {
-        w.raw(&format!(" _msg-{i}"));
+fn emit_provide(w: &mut CodeWriter, class_name: &str, exports: &[ExportContract]) {
+    // The class reference itself (bound by `import-class` below) is exported
+    // via plain `provide` — it's a syntactic binding, not a value that can
+    // carry a contract, and callers need it for raw `tell` on methods that
+    // aren't generated or that bypass the wrappers.
+    write_line!(w, "(provide {})", class_name);
+    if exports.is_empty() {
+        w.blank_line();
+        return;
     }
-    w.raw_line("))");
+    w.line("(provide/contract");
+    for export in exports {
+        write_line!(w, "  [{} {}]", export.name, export.contract);
+    }
+    w.line("  )");
     w.blank_line();
 }
 
@@ -443,27 +623,40 @@ fn emit_property(
         );
         let setter_name = make_property_setter_name(class_name, &prop.name);
 
+        // Class-method (static) property setters take no receiver — the
+        // class metaobject is the target. Instance setters take `self`.
+        // The provide/contract entry must mirror this arity exactly or
+        // `provide/contract` rejects the binding at module load.
+        let params = if prop.class_property { "" } else { " self" };
+        let target = if prop.class_property {
+            class_name.to_string()
+        } else {
+            "(coerce-arg self)".to_string()
+        };
+
         if ffi_type == "_id" {
-            write_line!(w, "(define ({} self value)", setter_name);
+            write_line!(w, "(define ({}{} value)", setter_name, params);
             write_line!(
                 w,
-                "  (tell (coerce-arg self) {} (coerce-arg value)))",
+                "  (tell #:type _void {} {} (coerce-arg value)))",
+                target,
                 setter_sel
             );
         } else {
-            let shared_name = sig_map.lookup(&[ffi_type.clone()], "_void");
+            let shared_name = sig_map.lookup(std::slice::from_ref(&ffi_type), "_void");
             match shared_name {
                 Some(name) => {
-                    write_line!(w, "(define ({} self value)", setter_name);
+                    write_line!(w, "(define ({}{} value)", setter_name, params);
                     write_line!(
                         w,
-                        "  ({} (coerce-arg self) (sel_registerName \"{}\") value))",
+                        "  ({} {} (sel_registerName \"{}\") value))",
                         name,
+                        target,
                         setter_sel
                     );
                 }
                 None => {
-                    write_line!(w, "(define ({} self value)", setter_name);
+                    write_line!(w, "(define ({}{} value)", setter_name, params);
                     w.line("  (let ([msg (get-ffi-obj \"objc_msgSend\" _objc-lib");
                     write_line!(
                         w,
@@ -472,7 +665,8 @@ fn emit_property(
                     );
                     write_line!(
                         w,
-                        "    (msg (coerce-arg self) (sel_registerName \"{}\") value)))",
+                        "    (msg {} (sel_registerName \"{}\") value)))",
+                        target,
                         setter_sel
                     );
                 }
@@ -536,6 +730,13 @@ fn emit_method(
                 } else {
                     write_line!(w, "   (tell {} {})))", target, tell_args);
                 }
+            } else if ret_is_void {
+                // `#:type _void` ensures the underlying objc_msgSend binding
+                // declares a void return, matching the C ABI. Without this,
+                // `tell` defaults to `_id`-returning, which is a calling-
+                // convention mismatch on arm64e (PAC) and reads garbage from
+                // the return register on any platform.
+                write_line!(w, "  (tell #:type _void {} {}))", target, tell_args);
             } else {
                 write_line!(w, "  (tell {} {}))", target, tell_args);
             }
@@ -657,7 +858,7 @@ fn format_tell_args(selector: &str, param_names: &[String], params: &[Param]) ->
 fn emit_block_wrapping(
     w: &mut CodeWriter,
     params: &[Param],
-    call_args: &mut Vec<String>,
+    call_args: &mut [String],
     mapper: &dyn FfiTypeMapper,
 ) {
     for (i, p) in params.iter().enumerate() {
@@ -683,7 +884,7 @@ fn emit_block_wrapping(
 }
 
 /// Wrap id-kind params (that aren't blocks) with coerce-arg.
-fn coerce_id_params(params: &[Param], call_args: &mut Vec<String>, mapper: &dyn FfiTypeMapper) {
+fn coerce_id_params(params: &[Param], call_args: &mut [String], mapper: &dyn FfiTypeMapper) {
     for (i, p) in params.iter().enumerate() {
         if mapper.is_object_type(&p.param_type) && !mapper.is_block_type(&p.param_type) {
             call_args[i] = format!("(coerce-arg {})", call_args[i]);
@@ -838,5 +1039,624 @@ mod tests {
         assert!(output.contains("(import-class NSObject)"));
         assert!(output.contains("(define (nsobject-description self)"));
         assert!(output.contains("wrap-objc-object"));
+    }
+
+    // --- Contract tests ---
+
+    fn make_test_method(
+        selector: &str,
+        class_method: bool,
+        init_method: bool,
+        params: Vec<Param>,
+        return_type: TypeRef,
+    ) -> Method {
+        Method {
+            selector: selector.to_string(),
+            class_method,
+            init_method,
+            params,
+            return_type,
+            deprecated: false,
+            variadic: false,
+            source: None,
+            provenance: None,
+            doc_refs: None,
+            origin: None,
+            category: None,
+            overrides: None,
+            returns_retained: None,
+            satisfies_protocol: None,
+        }
+    }
+
+    fn make_test_property(name: &str, kind: TypeRefKind, readonly: bool) -> Property {
+        Property {
+            name: name.to_string(),
+            property_type: TypeRef {
+                nullable: false,
+                kind,
+            },
+            readonly,
+            class_property: false,
+            deprecated: false,
+            source: None,
+            provenance: None,
+            doc_refs: None,
+            origin: None,
+        }
+    }
+
+    fn make_test_class_property(name: &str, kind: TypeRefKind, readonly: bool) -> Property {
+        Property {
+            name: name.to_string(),
+            property_type: TypeRef {
+                nullable: false,
+                kind,
+            },
+            readonly,
+            class_property: true,
+            deprecated: false,
+            source: None,
+            provenance: None,
+            doc_refs: None,
+            origin: None,
+        }
+    }
+
+    fn type_id() -> TypeRef {
+        TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Id,
+        }
+    }
+
+    fn type_void() -> TypeRef {
+        TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Primitive {
+                name: "void".into(),
+            },
+        }
+    }
+
+    fn type_bool() -> TypeRef {
+        TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Primitive {
+                name: "bool".into(),
+            },
+        }
+    }
+
+    fn type_double() -> TypeRef {
+        TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Primitive {
+                name: "double".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn test_class_file_has_provide_contract() {
+        let cls = Class {
+            name: "NSObject".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "description",
+                false,
+                false,
+                vec![],
+                type_id(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "Foundation");
+        assert!(
+            output.contains("(provide/contract"),
+            "Should use provide/contract"
+        );
+        assert!(
+            output.contains("racket/contract"),
+            "Should require racket/contract"
+        );
+    }
+
+    #[test]
+    fn test_instance_method_contract() {
+        let cls = Class {
+            name: "NSObject".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "description",
+                false,
+                false,
+                vec![],
+                type_id(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "Foundation");
+        // Instance method: (-> objc-object? return-contract)
+        assert!(
+            output.contains("[nsobject-description (c-> objc-object? any/c)]"),
+            "Instance method should have tightened self + return contract. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_property_getter_contract() {
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![
+                make_test_property("title", TypeRefKind::Id, false),
+                make_test_property(
+                    "hidden",
+                    TypeRefKind::Primitive {
+                        name: "bool".into(),
+                    },
+                    true,
+                ),
+            ],
+            methods: vec![],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        // Object getter: (-> objc-object? any/c)
+        assert!(
+            output.contains("[tkview-title (c-> objc-object? any/c)]"),
+            "Object property getter contract. Output:\n{output}"
+        );
+        // Bool getter: (-> objc-object? boolean?)
+        assert!(
+            output.contains("[tkview-hidden (c-> objc-object? boolean?)]"),
+            "Bool property getter contract. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_id_property_setter_body_uses_void_typed_tell() {
+        // Setter must emit `(tell #:type _void ...)` so the underlying
+        // objc_msgSend binding matches the C ABI. The older form
+        // `(void (tell ...))` discarded the result at the Racket level but
+        // left objc_msgSend bound as `_id`-returning — a calling-convention
+        // mismatch that matters on arm64e PAC.
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![make_test_property("title", TypeRefKind::Id, false)],
+            methods: vec![],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        assert!(
+            output
+                .contains("  (tell #:type _void (coerce-arg self) setTitle: (coerce-arg value)))"),
+            "_id setter body must use `tell #:type _void`. Output:\n{output}"
+        );
+        assert!(
+            !output.contains("(void (tell"),
+            "Setter body must not use legacy `(void (tell ...))` form. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_void_method_tell_dispatch_uses_void_typed_tell() {
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "addObject:",
+                false,
+                false,
+                vec![Param {
+                    name: "obj".to_string(),
+                    param_type: type_id(),
+                }],
+                type_void(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        assert!(
+            output.contains("  (tell #:type _void (coerce-arg self) addObject: (coerce-arg obj)))"),
+            "Void Tell-dispatch method body must use `tell #:type _void`. Output:\n{output}"
+        );
+        assert!(
+            !output.contains("(void (tell"),
+            "Method body must not use legacy `(void (tell ...))` form. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_void_zero_arg_tell_dispatch_uses_void_typed_tell() {
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "dealloc",
+                false,
+                false,
+                vec![],
+                type_void(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        assert!(
+            output.contains("  (tell #:type _void (coerce-arg self) dealloc))"),
+            "Zero-arg void Tell-dispatch body must use `tell #:type _void`. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_property_setter_contract() {
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![
+                make_test_property("title", TypeRefKind::Id, false),
+                make_test_property(
+                    "tag",
+                    TypeRefKind::Primitive {
+                        name: "int64".into(),
+                    },
+                    false,
+                ),
+            ],
+            methods: vec![],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        // Object setter: (-> objc-object? any/c void?) — self + coerced value
+        assert!(
+            output.contains("[tkview-set-title! (c-> objc-object? any/c void?)]"),
+            "Object property setter contract. Output:\n{output}"
+        );
+        // Typed setter: (-> objc-object? exact-integer? void?)
+        assert!(
+            output.contains("[tkview-set-tag! (c-> objc-object? exact-integer? void?)]"),
+            "Typed property setter contract. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_class_property_setter_impl_and_contract_agree() {
+        // A class-method (static) property setter must emit an impl whose
+        // arity matches its provide/contract. Prior bug: contract dropped
+        // the receiver (correct for a class method) but the impl was still
+        // emitted as `(define (setter self value) ...)`, so `provide/contract`
+        // rejected the binding at module load with an arity mismatch.
+        let cls = Class {
+            name: "TKWindow".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![
+                // Primitive class property: shared typed-msgSend setter path.
+                make_test_class_property(
+                    "allowsAutomaticWindowTabbing",
+                    TypeRefKind::Primitive {
+                        name: "bool".into(),
+                    },
+                    false,
+                ),
+                // `_id` class property: tell-dispatch setter path.
+                make_test_class_property("defaultTitle", TypeRefKind::Id, false),
+            ],
+            methods: vec![],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+
+        // Contract: no receiver slot (class methods have no `self`).
+        assert!(
+            output.contains(
+                "[tkwindow-set-allows-automatic-window-tabbing! (c-> boolean? void?)]"
+            ),
+            "Class-property primitive setter contract must omit receiver. Output:\n{output}"
+        );
+        assert!(
+            output.contains("[tkwindow-set-default-title! (c-> any/c void?)]"),
+            "Class-property _id setter contract must omit receiver. Output:\n{output}"
+        );
+
+        // Impl: one-argument definition, no `self` parameter.
+        assert!(
+            output.contains("(define (tkwindow-set-allows-automatic-window-tabbing! value)"),
+            "Class-property primitive setter impl must be single-arg. Output:\n{output}"
+        );
+        assert!(
+            output.contains("(define (tkwindow-set-default-title! value)"),
+            "Class-property _id setter impl must be single-arg. Output:\n{output}"
+        );
+
+        // Impl body must target the class metaobject, not `(coerce-arg self)`.
+        assert!(
+            !output.contains("(tkwindow-set-allows-automatic-window-tabbing! self value)")
+                && !output.contains("(tkwindow-set-default-title! self value)"),
+            "Class-property setter impls must not take `self`. Output:\n{output}"
+        );
+        assert!(
+            output.contains(
+                "(tell #:type _void TKWindow setDefaultTitle: (coerce-arg value))"
+            ),
+            "Class-property _id setter body must tell the class directly. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_class_property_getter_impl_and_contract_agree() {
+        // Symmetry check for the getter: class-property getters already
+        // emit correctly (0-arg impl + 0-arg contract) — lock it down so a
+        // future refactor does not regress one side without the other.
+        let cls = Class {
+            name: "TKWindow".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![
+                make_test_class_property(
+                    "allowsAutomaticWindowTabbing",
+                    TypeRefKind::Primitive {
+                        name: "bool".into(),
+                    },
+                    true,
+                ),
+                make_test_class_property("defaultTitle", TypeRefKind::Id, true),
+            ],
+            methods: vec![],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+
+        assert!(
+            output.contains("[tkwindow-allows-automatic-window-tabbing (c-> boolean?)]"),
+            "Class-property primitive getter contract must omit receiver. Output:\n{output}"
+        );
+        assert!(
+            output.contains("[tkwindow-default-title (c-> any/c)]"),
+            "Class-property _id getter contract must omit receiver. Output:\n{output}"
+        );
+        assert!(
+            output.contains("(define (tkwindow-allows-automatic-window-tabbing)"),
+            "Class-property primitive getter impl must be zero-arg. Output:\n{output}"
+        );
+        assert!(
+            output.contains("(define (tkwindow-default-title)"),
+            "Class-property _id getter impl must be zero-arg. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_readonly_property_no_setter_contract() {
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![make_test_property(
+                "hidden",
+                TypeRefKind::Primitive {
+                    name: "bool".into(),
+                },
+                true,
+            )],
+            methods: vec![],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        assert!(
+            !output.contains("set-hidden!"),
+            "Readonly property should not have setter contract"
+        );
+    }
+
+    #[test]
+    fn test_method_with_typed_params_contract() {
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "setTag:",
+                false,
+                false,
+                vec![Param {
+                    name: "tag".to_string(),
+                    param_type: TypeRef {
+                        nullable: false,
+                        kind: TypeRefKind::Primitive {
+                            name: "int64".into(),
+                        },
+                    },
+                }],
+                type_void(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        // (-> objc-object? exact-integer? void?)
+        assert!(
+            output.contains("[tkview-set-tag! (c-> objc-object? exact-integer? void?)]"),
+            "Typed param method contract. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_method_with_block_param_contract() {
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "animateWithDuration:animations:",
+                false,
+                false,
+                vec![
+                    Param {
+                        name: "duration".to_string(),
+                        param_type: type_double(),
+                    },
+                    Param {
+                        name: "animations".to_string(),
+                        param_type: TypeRef {
+                            nullable: false,
+                            kind: TypeRefKind::Block {
+                                params: vec![],
+                                return_type: Box::new(type_void()),
+                            },
+                        },
+                    },
+                ],
+                type_void(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        // Block param → (or/c procedure? #f); self is objc-object?
+        assert!(
+            output.contains("(c-> objc-object? real? (or/c procedure? #f) void?)"),
+            "Block param contract. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_constructor_contract() {
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "initWithFrame:",
+                false,
+                true,
+                vec![Param {
+                    name: "frame".to_string(),
+                    param_type: TypeRef {
+                        nullable: false,
+                        kind: TypeRefKind::Alias {
+                            name: "NSRect".into(),
+                            framework: None,
+                        },
+                    },
+                }],
+                type_id(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        // Constructor: (-> param-contracts... any/c) — returns wrapped object
+        assert!(
+            output.contains("[make-tkview-init-with-frame (c-> any/c any/c)]"),
+            "Constructor contract. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_empty_class_provide() {
+        let cls = Class {
+            name: "TKEmpty".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        assert!(
+            output.contains("(provide TKEmpty)"),
+            "Empty class should export class name. Output:\n{output}"
+        );
+        assert!(
+            !output.contains("(provide/contract"),
+            "Empty class should not emit provide/contract. Output:\n{output}"
+        );
+        assert!(
+            !output.contains("provide/contract"),
+            "No contracts for empty class"
+        );
+    }
+
+    #[test]
+    fn test_map_param_contract_coercion() {
+        // Object types → any/c (coerce-arg is permissive)
+        assert_eq!(map_param_contract(&type_id()), "any/c");
+        // Block → procedure? or #f
+        let block = TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Block {
+                params: vec![],
+                return_type: Box::new(type_void()),
+            },
+        };
+        assert_eq!(map_param_contract(&block), "(or/c procedure? #f)");
+        // Primitive → delegates to map_contract
+        assert_eq!(map_param_contract(&type_double()), "real?");
+        assert_eq!(map_param_contract(&type_bool()), "boolean?");
+    }
+
+    #[test]
+    fn test_map_return_contract_wrapping() {
+        // Object returns → any/c (wrap-objc-object returns opaque value)
+        assert_eq!(map_return_contract(&type_id()), "any/c");
+        // Void → void?
+        assert_eq!(map_return_contract(&type_void()), "void?");
+        // Primitive → delegates
+        assert_eq!(map_return_contract(&type_bool()), "boolean?");
     }
 }

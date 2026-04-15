@@ -274,7 +274,6 @@ mod tests {
             api_patterns: vec![],
             enrichment: None,
             verification: None,
-            ir_level: None,
         }
     }
 

@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt")
 
@@ -11,7 +12,15 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1))
+(provide NSData)
+(provide/contract
+  [nsdata-bytes (c-> objc-object? (or/c cpointer? #f))]
+  [nsdata-description (c-> objc-object? any/c)]
+  [nsdata-end-index (c-> objc-object? exact-integer?)]
+  [nsdata-length (c-> objc-object? exact-nonnegative-integer?)]
+  [nsdata-regions (c-> objc-object? any/c)]
+  [nsdata-start-index (c-> objc-object? exact-integer?)]
+  )
 
 ;; --- Class reference ---
 (import-class NSData)

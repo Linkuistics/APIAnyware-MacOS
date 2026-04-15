@@ -983,3 +983,496 @@
   (which still requires a manual `cargo run -p apianyware-macos-collect`
   by design, since collection is not auto-regenerated).
 
+
+### Session (2026-04-14T05:46:54Z) — ObjC platform-availability filter for methods, classes, protocols
+
+**Attempted:** Extend `is_unavailable_on_macos` gate from `extract_constant` / `extract_function` to `extract_method`, `extract_class`, `extract_protocol` in `collection/crates/extract-objc/src/extract_declarations.rs`, mirroring the 2026-04-13 extern-path filter. Wholesale-drop strategy at class/protocol level, per-selector at method level.
+
+**Worked:**
+- TDD cycle: extended synthetic header in `filter_platform_unavailable.rs` with `AvailableClass`, `UnavailableClass`, `MixedClass` (4 methods, 2 available + 2 `API_UNAVAILABLE(macos)`), `AvailableProtocol`, `UnavailableProtocol`. 4 tests failed for the right reasons before the fix; all 15 pass after (11 pre-existing constant/function tests + 4 new wholesale-drop + 5 new per-selector cases).
+- Three 3-line filters added at the top of `extract_class`, `extract_method`, `extract_protocol`, each with a focused comment pointing to the test file. The category path already routes through `extract_method`, so per-selector filtering covers category methods for free.
+- libclang's `get_platform_availability()` is reliable at method granularity — no workaround needed.
+- Blast radius via stash → re-collect → unstash → re-collect across 283 frameworks: **53 frameworks affected, −450 classes, −151 protocols, −2,982 class methods, −414 protocol methods**. Largest hits are iOS-family frameworks (Intents, SensorKit, CallKit, NearbyInteraction, BackgroundTasks go to zero or near-zero classes; ARKit 72 → 15 protocols). Cross-platform frameworks barely move (Foundation −1 class / −19 methods; Metal −2 methods).
+- Foundation drop audit confirms correctness: only dropped class is `NSBundleResourceRequest` (iOS on-demand resources); dropped methods are all documented iOS-only selectors (`NSURLSessionConfiguration.multipathServiceType`, `NSUserActivity.isEligibleForPrediction`, `NSXMLDTD`/`NSUnit` NS_UNAVAILABLE init kinds, `NSProxy.{allowsWeakReference,retainWeakReference}`).
+- `cargo clippy --workspace --all-targets -- -D warnings` clean. `cargo +nightly fmt` applied.
+
+**Didn't work:**
+- `snapshot_racket_oo_foundation_subset` fails on the workspace test run. Confirmed pre-existing via `git stash` + rerun — reproduces with my changes stashed. Baseline is broken on main; not caused by this task. Logged as a new medium-priority testing task.
+
+**Suggests trying next:**
+- Fix the stale Foundation/AppKit golden snapshot (new backlog task). Must be done before any further emitter changes have a working regression gate.
+- Per-property availability filter in `extract_property`, symmetric to the method filter — 3-line extension. Leave it filed implicit until a property-shaped runtime crash surfaces it.
+- Task 3 ("surface ObjC silent-filter decisions into `skipped_symbols`") is now unblocked; the new class/protocol/method filter classes should be surfaced alongside the existing linkage + extern-availability ones.
+- The Golden-test coverage task (#2 in the 2026-04-14 backlog) would have caught the stale-baseline failure early by exercising representative C-heavy framework shapes in CI. Strongly supports investing there next.
+
+**Key learnings / discoveries:**
+- libclang's platform-availability API is per-entity, including individual ObjC method declarations. No need to inspect cursor children or walk attribute tables by hand. Recorded in memory.
+- Class-level wholesale drop is the clearly right default. Flagged-but-populated IR defers runtime failure to every downstream language target and forces each emitter to reimplement the same filter logic.
+- Blast radii underpredict wildly when estimated from a single triggering symptom. The extern-path filter was "1,738 symbols / 56 frameworks"; the method-side filter is 3,396+ symbols / 53 frameworks — an order-of-magnitude heavier on class methods alone. The stash → re-collect → diff procedure from memory is essential, not a nice-to-have.
+- Reminder of the "downstream checkpoints can predate source fixes" rule: the Foundation snapshot failure looked like my patch broke it, but was pre-existing drift unrelated to the task. Always test with changes stashed before assuming responsibility for a failure.
+
+### Session N (2026-04-14T08:31:13Z) — Stale Foundation golden snapshots fixed
+
+- **What was attempted:** Backlog task "Stale Foundation/AppKit golden
+  snapshots" (priority: high). Workspace `cargo test` was red on main due
+  to `snapshot_racket_oo_foundation_subset` drift after the 2026-04-14
+  ObjC availability filter landed.
+
+- **What worked:**
+  - Auto-regen hook had already refreshed `analysis/ir/enriched/`
+    (source 15:42 < collected 15:42 < enriched 16:20); task 2 ("regen
+    pipeline") was effectively free.
+  - Copy-to-temp + `UPDATE_GOLDEN=1` + `diff -rq` narrowed the audit to
+    exactly the two drifted files: `main.rkt` and `constants.rkt`.
+    Worked because the prior (uncommitted) emitter-rewrite session had
+    already updated the per-class goldens; only the index files lagged.
+  - `main.rkt`: 1 removal — `nsbundleresourcerequest.rkt` (iOS/tvOS).
+  - `constants.rkt`: 13 pure deletions, 0 additions, 0 reorderings —
+    all iOS/tvOS-only (NSBundleResourceRequest*, NSExtensionHost*,
+    NSExtensionJavaScriptFinalizeArgumentKey,
+    NSFileProtectionCompleteWhenUserInactive{,NSURL-prefixed},
+    NSUbiquitousUserDefaults*, NSUserDefaultsSizeLimitExceededNotification).
+  - `snapshot_racket_oo_appkit_subset` was already green.
+  - `cargo test --workspace` now fully green — baseline restored.
+
+- **What didn't:** Nothing broke. The initial ctx_shell compression of
+  the failing diff collapsed identifier names into `α{N}` placeholders,
+  which was misleading; switching to `raw=true` was necessary to read
+  the real diff.
+
+- **What this suggests trying next:**
+  - The committed `HEAD` goldens are stale by a much larger margin than
+    this task uncovered — the working tree contains an unrelated WIP
+    emitter rewrite (`provide/contract` form, ~1,659-line
+    `constants.rkt` drift). I did **not** commit: bundling the 13-line
+    availability-filter fix with that WIP would conflate independent
+    changes. Left for the rewrite author to ship together.
+  - Remaining core-backlog tasks (in priority order): golden-test
+    coverage for C-heavy framework shapes `[testing]` (medium), per-
+    property availability filter `[collection]` (low), surface ObjC
+    silent-filter decisions `[observability]` (low).
+  - The copy-to-temp + `UPDATE_GOLDEN=1` + `diff -rq` audit workflow
+    is reusable whenever incremental drift sits atop a larger in-flight
+    rewrite. Candidate for a memory entry if it recurs.
+
+- **Key learnings:**
+  - `diff -rq` against a pre-`UPDATE_GOLDEN=1` snapshot is the
+    load-bearing trick for auditing goldens that already contain
+    partial prior-session updates. Without the snapshot, `git diff
+    HEAD` would have drowned the 13-line task signal in 1,659 lines
+    of unrelated rewrite noise.
+  - The auto-regen hook on work-phase start correctly handled
+    freshness, sparing a ~2-minute full re-collect. Worth trusting
+    after mtime verification.
+  - `ctx_shell` pattern-compression of Rust test output maps
+    identifier names into `α{N}` aliases, which reads as Greek soup
+    when diagnosing snapshot diffs. Use `raw=true` for snapshot
+    output.
+
+### Session N (2026-04-14T09:21:11Z) — Per-property availability filter for extract-objc
+
+- **Attempted:** Complete the "Per-property availability filter for ObjC
+  properties" backlog task — extend the existing
+  `is_unavailable_on_macos` gate pattern (already applied to classes,
+  protocols, methods, functions, constants on 2026-04-14 earlier this
+  session history) to `extract_property` in
+  `collection/crates/extract-objc/src/extract_declarations.rs`.
+
+- **What worked:**
+  - TDD cycle executed cleanly: added 4 new tests
+    (`available_instance_property_is_kept`,
+    `unavailable_instance_property_is_filtered`,
+    `available_class_property_is_kept`,
+    `unavailable_class_property_is_filtered`) plus a
+    `property_names_for` helper and 8 lines of synthetic header
+    (instance/class × available/unavailable property matrix on
+    `MixedClass`). RED shape was ideal — 2 symmetric failures with a
+    clear panic message listing exactly the 4 expected names; 0
+    compilation errors; 0 false-greens; 0 collateral failures in the
+    other 15 existing tests. This is what a well-factored predicate
+    looks like: adding a new call site changes nothing downstream
+    except the exact names the test pins.
+  - GREEN step was a 10-line edit (early return + doc comment)
+    mirroring `extract_method`. Reused the existing predicate
+    verbatim — the libclang `PlatformAvailability` API is uniform
+    across declaration kinds, so no refactor was needed.
+  - Blast radius measurement used a shortcut: since the on-disk
+    `collection/ir/collected/*.json` had mtime 15:42 and my source
+    edit was at 19:13, the checkpoint was already a valid "before"
+    snapshot. Copied to `/tmp/prop-filter-before/`, re-ran the
+    collector, diffed via a small python counter script. Avoided the
+    standard `git stash` dance entirely. ~2 min saved.
+  - Verification gates all green: 19/19 in `filter_platform_unavailable`,
+    82/82 in `emit-racket-oo` (including the Foundation snapshot
+    subset and both AppKit/TestKit snapshots), 437/0 workspace-wide,
+    clippy clean on extract-objc.
+
+- **What didn't:** Nothing. Single-shot TDD cycle, no rework, no
+  surprises. The only non-trivial decision was whether to run the
+  2×2min collection twice (standard stash procedure) or once (mtime
+  shortcut); the shortcut was valid here because I could prove via
+  mtime that `collected/` predated the source edit.
+
+- **Blast radius:** 303 properties dropped across 31 frameworks
+  (total 24,120 → 23,817). Extreme concentration: AVFoundation alone
+  is −223 (74% of total). Next tier is FileProvider −8, AVFAudio −8,
+  AutomaticAssessmentConfiguration −7, AVKit −6, NetworkExtension −5,
+  UserNotifications −5, EventKit −4, Intents −4. Everything else is
+  ≤ 3. Foundation: −2. AppKit: 0. The AVFoundation spike matches the
+  framework's shape — heavy iOS capture/picker surface living in
+  shared headers with aggressive platform gating.
+
+- **Suggests next:**
+  - Task #3 ("Surface ObjC silent-filter decisions into
+    `skipped_symbols`") is now fully unblocked. The
+    filter-class quartet (class, protocol, method, property) is
+    complete, so the reason vocabulary for `skipped_symbols`
+    recording can be finalized without fear of another filter class
+    landing later.
+  - Audit AVFoundation specifically if any future filter widens
+    platform-availability coverage (e.g., per-parameter or
+    per-category). The −223 figure here suggests it is the heaviest
+    offender by roughly an order of magnitude.
+  - Task #2 ("Golden-test coverage for C-heavy framework shapes") is
+    still the highest-priority pending item and now the only
+    medium-priority task in the core pipeline backlog.
+
+- **Key learnings / discoveries:**
+  - When the on-disk checkpoint predates a mid-phase source edit
+    (verifiable via mtime), it is already a valid "before" snapshot
+    for blast-radius measurement — no `git stash` dance is needed.
+    The standard stash procedure exists for the case where source
+    and checkpoint are both post-edit. Flag as a memory candidate on
+    second encounter.
+  - AVFoundation is the worst-offender framework for
+    platform-availability leakage in the property dimension. Mental
+    model: iOS-first framework that ships on macOS with large
+    subsets gated out at the decl-attribute level, not the
+    decl-removal level.
+  - The 2026-04-14 filter additions (class/protocol/method, then
+    property) together land in the same shape: each fires on a
+    different decl kind but shares one predicate and one test
+    pattern. The abstraction held up well — adding property support
+    needed zero predicate changes and zero test-helper refactors,
+    only one call site and one helper function.
+  - Working tree still carries the unrelated uncommitted emitter
+    rewrite from prior sessions. This 10-line filter addition is
+    deliberately not bundled with it — same policy as the "stale
+    Foundation/AppKit golden snapshots" task earlier today.
+
+### Session N (2026-04-14T09:41:35Z) — Real-SDK availability-filter canary for AudioToolbox
+
+- **What was attempted:** "Golden-test coverage for C-heavy framework shapes"
+  task from the core backlog. Originally scoped to add synthetic fixtures
+  covering the four landed filter classes (internal linkage, platform
+  unavailability, `c:@macro@` macros, anonymous enum members).
+- **Survey outcome:** the task description was partly stale. All four
+  filter classes already have comprehensive synthetic regression tests:
+  extract-objc's `filter_internal_linkage.rs` (internal linkage),
+  `filter_platform_unavailable.rs` (19 tests, full availability quartet
+  across constants/functions/classes/protocols/methods/properties), and
+  extract-swift's `declaration_mapping.rs` (swift-native, macros,
+  anonymous enum members — with real-name regression canaries
+  `kCTVersionNumber10_*` and `nw_browse_result_change_*` baked in).
+  The property-level availability filter landed 2026-04-14, closing the
+  filter quartet. The meta-gap is now much narrower than when the task
+  was filed.
+- **What was actually missing:** a *real-SDK* canary layer — synthetic
+  tests verify the filter predicate, but not that the predicate fires
+  on the declaration shapes libclang / swift-api-digester actually emit
+  from real headers. The WIP working tree had already added one such
+  canary for the internal-linkage filter
+  (`foundation_skips_static_const_variables` against real Foundation
+  NSHashTable symbols).
+- **What was added:** `collection/crates/extract-objc/tests/extract_audiotoolbox.rs`
+  — mirrors the `extract_coregraphics.rs` template and locks in two
+  canaries against real AudioToolbox extraction:
+  - Negative: `kAudioServicesDetailIntendedSpatialExperience` (the
+    canonical `API_UNAVAILABLE(macos)` canary from the availability
+    memory entry) must be filtered out of `fw.constants`.
+  - Positive control: `AudioServicesPlaySystemSound`
+    (`API_AVAILABLE(macos(10.5))`) must survive — ensures discovery
+    breakage fails loudly instead of letting the negative pass for
+    the wrong reason.
+- **What worked:** both new tests pass against the current
+  `is_unavailable_on_macos` implementation. Full
+  `cargo test -p apianyware-macos-extract-objc` green (2 new tests on
+  top of existing suite). Clippy clean, rustfmt clean. The test
+  compiled and ran on first attempt — the `extract_coregraphics.rs`
+  template was a direct fit.
+- **What didn't:** nothing surprising; the expected steady-state path.
+- **Key learnings / discoveries:**
+  - The real gap in CI filter coverage was NOT missing synthetic tests
+    — synthetic coverage for all four landed filter classes already
+    exists and is comprehensive. The gap was the lack of an
+    *integration-level* pin: "filter fires on a specific real-world
+    declaration libclang actually produces." Synthetic tests alone
+    cannot catch the class of regression where libclang changes how
+    it surfaces availability attributes in a future SDK release.
+  - The task's original "synthetic TestKit fixture vs real curated
+    golden set" framing had a false dichotomy. Both layers matter:
+    synthetic for filter-predicate logic, real-SDK canaries for
+    filter-input fidelity. The answer is "add thin real-SDK canaries
+    on top of existing synthetic coverage," not "choose one."
+  - The extract-swift side has zero real-SDK integration tests today
+    — its tests all use pre-captured digester JSON fixtures under
+    `tests/fixtures/`. Building a real swift-api-digester harness is
+    scope-expanding (not a one-line canary), so the remaining work
+    for the macro-derived-constant filter and the anonymous-enum
+    filter is appropriately deferred to a dedicated cycle.
+- **What this suggests trying next:**
+  - A future cycle: add an extract-swift real-SDK integration harness
+    (mirror the objc `sdk::discover_frameworks` + `extract_framework`
+    pattern but for swift modules), then land real-SDK canaries for
+    `kCTVersionNumber10_*` in CoreText and `nw_browse_result_change_*`
+    in Network. That closes the remaining half of this task.
+  - The "Golden-test framework coverage is biased toward
+    Foundation/AppKit" memory entry should be sharpened to reflect the
+    narrower remaining gap (extract-swift side only). Defer to triage.
+
+### Session N (2026-04-14T09:53:32Z) — extract-swift real-SDK test harness
+
+- **Attempted:** Build the real-SDK integration test harness for
+  `collection/crates/extract-swift/`, mirroring extract-objc's pattern, and
+  add canaries for both swift-side filter classes (`c:@macro@`,
+  `c:@Ea@`/`c:@EA@`) with positive controls so discovery breakage fails
+  loudly. Task #1 in core backlog, promoted from "Real-SDK canary gap is
+  extract-swift only" and "extract-swift tests use pre-captured fixtures
+  only" memory entries.
+
+- **What worked:**
+  - Discovered the production harness surface already existed:
+    `digester::discover_swift_modules`, `digester::run_swift_api_digester`,
+    and `extract_swift_framework` were all in place. The actual gap was
+    *test coverage* calling the full mapping pipeline against real SDK
+    modules, not missing infrastructure.
+  - Added `tests/extract_coretext.rs` (4 tests, LazyLock-shared framework):
+    shape assertions, `CTGetCoreTextVersion` positive control,
+    `kCTVersionNumber*` absence canary, and skipped_symbols recording check
+    with the exact "preprocessor macro cursor" reason string.
+  - Added `tests/extract_network.rs` (5 tests, LazyLock-shared framework):
+    shape, >400 `nw_*` function bulk positive, `nw_parameters_create`
+    named positive, `nw_browse_result_change_*` absence canary, and
+    `anonymous_enum_filter_skips` floor (≥50) + exact-7 browse-result
+    assertion. The exact-7 is specifically designed to catch a
+    `c:@Ea@`-only or `c:@EA@`-only regression — missing one case would
+    flip 7 → 0 and fail loudly.
+  - Pre-flight reconnaissance via direct `swift-api-digester` + Python
+    revealed CoreText's Swift module has exactly 15 top-level Vars and
+    all 15 are `kCTVersionNumber*` macros. That makes the filter test
+    essentially binary (no legitimate constants to confuse with leaks),
+    and confirmed `CTGetCoreTextVersion` as the single surviving Func
+    — a razor-clean positive control.
+  - Same recon on Network confirmed 143 `c:@EA@` + 7 `c:@Ea@` + 4
+    `c:@macro@` + 12 legit `c:@…` Vars, 437 total Functions with 433
+    `nw_*`-prefixed. `kNWErrorDomainDNS` etc. survive as legit constants.
+  - All 9 new tests pass on first run; full extract-swift suite (14
+    tests) green; `cargo clippy -p apianyware-macos-extract-swift
+    --all-targets -D warnings` clean.
+
+- **What didn't:** Nothing. The task's framing ("build a harness") implied
+  new infrastructure, but the actual shape was a thin test-coverage add.
+  The "scope-expanding / dedicated cycle" scope note on the backlog entry
+  was accurate about importance but overstated the work — the harness was
+  already in production code, the tests just hadn't been written.
+
+- **Suggests trying next:**
+  - The two retired memory entries ("Real-SDK canary gap is extract-swift
+    only", "extract-swift tests use pre-captured fixtures only") should
+    be removed or rewritten during reflect — the gap they document no
+    longer exists.
+  - Task #2 ("Surface ObjC silent-filter decisions into skipped_symbols")
+    is now the last open core task and fully unblocked. It's flagged as
+    low priority, but completing it would close the cross-pipeline
+    observability asymmetry in one more session.
+  - `depends_on` / `extract_imports` output from the mapper is now known
+    to be an untested surface. If it ever matters downstream, add
+    assertions in the new test files.
+  - Consider whether test-time cost of re-invoking `swift-api-digester`
+    per framework (~2s each) becomes a problem if this pattern scales
+    to more frameworks. Foundation via Swift would be much larger.
+
+- **Key learnings:**
+  - Backlog "scope note" fields describe task importance, not always task
+    work size. Check the production surface before assuming new code is
+    needed — sometimes the gap is purely coverage.
+  - CoreText's Swift digester output is an unusually clean test target
+    for `c:@macro@`: 100% of its Vars are macros. Worth knowing if we
+    need a similar binary-shaped canary for future filter work.
+  - The `c:@Ea@` vs `c:@EA@` case sensitivity matters — single-character
+    regressions would miss 7 vs 143 entries. Exact-7 assertions on
+    `nw_browse_result_change_*` are now the regression guard.
+
+### Session N (2026-04-14T10:34:09Z) — Surface ObjC silent-filter decisions
+
+- **Attempted:** Promote extract-objc's silent `None`-returns for
+  internal-linkage and platform-unavailability filters into structured
+  `skipped_symbols` audit entries, mirroring extract-swift's
+  `non_c_linkable_skip_reason`. Unify the reason vocabulary across both
+  extractors so downstream audit tooling has a single grep target.
+- **Worked:**
+  - New `apianyware_macos_types::skipped_symbol_reason` module with five
+    tagged `&'static str` constants (`internal_linkage`,
+    `platform_unavailable_macos`, `swift_native`, `preprocessor_macro`,
+    `anonymous_enum_member`). Format: `"<tag>: <description>"` — human
+    strings retain substrings existing extract-swift tests match on
+    (`swift-native`, `preprocessor macro`, `anonymous enum member`).
+  - extract-objc: threaded `&mut Vec<ir::SkippedSymbol>` through every
+    extract helper, added a `record_skip` helper, and fired skip records
+    from all five filter sites (`extract_class`, `extract_protocol`,
+    `extract_method`, `extract_property`, `extract_function`,
+    `extract_constant`). Method/property names qualified with owner
+    context (`"ClassName.selector"`) so class-level scope survives the
+    flattening. Dead-code `"extraction failed"` class record removed.
+  - extract-swift: `non_c_linkable_skip_reason` now references the
+    shared constants — zero behavioural change, single source of truth.
+  - TDD: 12 new tests (internal linkage +3, platform unavailability
+    +9). RED run produced expected failures. After implementation,
+    `cargo test -p apianyware-macos-extract-objc -p apianyware-macos-extract-swift`
+    green, workspace-wide clippy `-D warnings` green on fresh build.
+  - Full pipeline regeneration: 283 frameworks re-collected. 3,927
+    `skipped_symbols` now recorded (previously ~383 extract-swift-only):
+    2,528 `platform_unavailable_macos`, 1,016 `internal_linkage`
+    (newly visible — AppKit alone contributes 390), 205
+    `anonymous_enum_member`, 148 `swift_native`, 30 `preprocessor_macro`.
+  - Double-count verification: NSLog and NSApplicationMain appear once
+    in `fw.functions` (extract-objc) and once in `fw.skipped_symbols`
+    with `swift_native` tag (extract-swift). extract-objc does *not*
+    re-record them, since they're external-linkage and
+    macOS-available, so the filter simply doesn't fire — no
+    duplicate-suppression code needed.
+- **Didn't work / pre-existing issues:**
+  - `collection/crates/types/tests/deserialize_ir.rs` fails on main
+    unrelated to this work — points at a legacy `APIAnyware/ir/level1`
+    path that no longer exists. The "Prefer synthetic tests over
+    SDK-dependent tests" memory rule applies.
+  - `cargo +nightly fmt --check` flags pre-existing drift in
+    `extract-swift/tests/extract_network.rs` (unmodified by this task).
+  - extract-swift has 30 duplicate (name, kind) entries per framework
+    in CoreML/CreateML from Swift overloads sharing a printed simple
+    name (`pointwiseMin`, `show`, `maximumAbsoluteError`). Pre-existing,
+    now *visible* thanks to the new audit entries. Qualifying Swift
+    names with parameter labels would fix it — worth a follow-up task.
+- **Suggests next:**
+  - Retire the "Silent filters create an observability gap vs
+    skipped_symbols" memory entry (the design tension is now gone).
+  - File a follow-up for Swift overload printed-name collisions
+    if/when audit tooling begins consuming `skipped_symbols`.
+- **Learnings:**
+  - extract-swift uses free-form reason strings today; adding a shared
+    constants module was cheap and didn't require touching
+    `ir::SkippedSymbol` itself — the `&'static str` table approach
+    suggested in the backlog task was exactly right.
+  - Threading a `&mut Vec<ir::SkippedSymbol>` through the clang
+    `visit_children` closures works because clang-rs visitor closures
+    are `FnMut`; no borrow-checker gymnastics required beyond splitting
+    the `result.classes` vs `result.skipped_symbols` field borrows at
+    the top-level dispatch.
+  - Owner-qualifying method/property names at the recording site keeps
+    the audit trail usable even after the flat list is serialized —
+    trying to reconstruct the owner later would have required a parallel
+    index. The qualification is one line per filter.
+  - The dead-code `"extraction failed"` outer record in extract_class
+    was the reason an initial run of the platform-unavailable test saw
+    stale `"extraction failed"` reasons instead of the new
+    `platform_unavailable_macos` tag. TDD caught the double-recording
+    straight away; without the test, the stale record would have
+    shipped silently.
+
+### Session 28 (2026-04-14T12:10:53Z) — Drain testing follow-ups: synthetic deserialize_ir + fmt drift
+
+- **Attempted:** Clear both pending core tasks left over from the
+  "Surface ObjC silent-filter decisions" cycle —
+  `collection/crates/types/tests/deserialize_ir.rs` was depending on a
+  vanished POC fixture, and
+  `collection/crates/extract-swift/tests/extract_network.rs` had
+  pre-existing fmt drift on main. Bundled both into a single work cycle
+  since they're tiny, share a triage trail, and want to ship together.
+
+- **What worked:**
+  - Rewrote `deserialize_ir.rs` from 16 fixture-coupled assertions
+    (244 lines) to 6 synthetic schema-evolution tests (88 lines)
+    driven by one inline `LEGACY_POC_JSON` literal. Pins the
+    load-bearing serde contract: `ir_version`→`format_version` alias,
+    `framework`→`name` rename, `ir_level` legacy field preserved on
+    deserialise, and `serde(default)` for every post-POC field
+    (`sdk_version`, `collected_at`, `checkpoint`, `skipped_symbols`,
+    `class_annotations`, `api_patterns`, `enrichment`, `verification`).
+    Includes a legacy→modern→legacy round-trip that confirms
+    re-serialised output drops `ir_level` per `skip_serializing` and
+    re-parses cleanly.
+  - `cargo +nightly fmt -- extract_network.rs` cleared the drift in
+    one shot.
+  - Full verification gate green: `cargo test --workspace` 452/0/0
+    (up from 437 — +6 from this rewrite, +9 from prior real-SDK
+    integration that hadn't entered the baseline), `cargo +nightly
+    fmt --check` clean, `cargo clippy --workspace --all-targets --
+    -D warnings` clean.
+
+- **What didn't:**
+  - The pending-task description claimed the broken test "silently
+    skips → false-green CI". The actual loader was
+    `unwrap_or_else(|e| panic!(...))` — i.e. the test was loudly
+    failing on main, not passing on a missed fixture. The fix is the
+    same regardless, but the framing was wrong. Recorded as a
+    correction in the backlog Completed entry. The "Backlog task
+    descriptions are hypotheses" memory rule already covers this
+    misdirection mode; nothing new to add to memory.
+  - Two minor coding-flow frictions: (1) the harness's Edit/Write
+    "must Read first" guard does not accept ctx_read, forcing one
+    native `Read` on `backlog.md` despite the global "use ctx_read"
+    rule; (2) for net-new files, `rm` + `Write` is the workaround.
+    Not worth changing anything; flagging only because both will keep
+    surfacing in future sessions and the workaround is non-obvious.
+
+- **What this suggests trying next:**
+  - Core backlog is now empty. The post-M9 review note still says
+    "pause for testing hardening, framework ignore list, LLM
+    integration before more languages" — testing hardening just
+    advanced (deserialize_ir is now actually load-bearing, fmt gate is
+    green). Next reactive prompts are likely to come from target apps
+    or from triage of the racket-oo sibling backlog, not from the core
+    pipeline itself. Reflect cycle should consider whether the
+    long-standing follow-ups parked in memory (Swift overload
+    printed-name collisions; `depends_on`/`extract_imports` test
+    coverage; cumulative real-SDK digester cost) want promotion to
+    explicit backlog entries now that the easy follow-ups are drained.
+  - Consider whether the legacy POC compatibility surface
+    (`ir_version` alias, `ir_level` field, `framework` rename) is
+    still earning its keep. The POC source dir is gone, no production
+    caller reads files needing those aliases, and the only thing
+    pinning them is now the synthetic test I just wrote. Not a
+    correctness issue, but a candidate for a "rip out dead serde
+    surface" cleanup if anyone wants to reduce cognitive load on
+    `Framework`. Out of scope for this session.
+
+- **Key learnings / discoveries:**
+  - The synthetic-test rewrite reduced the test file by 64% in line
+    count while *increasing* the unique schema-contract surface
+    actually covered (legacy→modern round-trip is new). The lesson:
+    when a test pins multiple narrow facts about a fixture
+    (NSString.length is uint64, NSCacheDelegate has 1 required
+    method, ...), most of those facts are coincidental to the unit
+    under test (serde) and belong elsewhere or nowhere.
+  - Confirmed: workspace test count 452 across the full pipeline.
+    Previous milestones (per Per-property availability filter task)
+    cited 437. Reconciliation: +6 from this session, +9 from the
+    real-SDK integration harness that landed in the prior cycle but
+    whose count I hadn't seen tallied. No mystery delta.
+
+### Session N (2026-04-14T22:53:08Z) — Bundle three core-backlog cleanups (serde, overload names, depends_on tests)
+- Attempted: bundled all three low-priority follow-ups surfaced on 2026-04-14 into one work cycle per explicit user request ("They all look simple. Can we do all three in this work session please").
+  1. Remove legacy POC serde aliases (`ir_version` alias, `framework→name` rename, `ir_level` field) from `collection/crates/types/src/ir.rs::Framework`.
+  2. Qualify Swift overload names with parameter labels in `extract-swift`, writing `child.printed_name` into `fw.skipped_symbols` for Func nodes.
+  3. Add `depends_on` / `extract_imports` assertions to the existing real-SDK integration harness (`extract_coretext.rs`, `extract_network.rs`).
+- What worked:
+  - Task 1: production code already used the struct-field names (`format_version`, `name`); the serde rename/alias existed only for the JSON wire format. Nothing read `ir_level` back — all 13 call sites were mechanical struct-literal completeness. Pipeline regen required because on-disk checkpoints still wrote `"framework":`. After regen (collect + analyze, all 283 frameworks), tests green at 451/451. Updated `foundation_serializes_to_json` and the design-doc JSON example to match the new wire shape.
+  - Task 2: one-line change (`child.name` → `child.printed_name`) in the Func arm of `map_abi_to_framework`. Var arm unchanged (Swift constants do not overload). Duplicate `(name, kind)` groups in `skipped_symbols` fell from 18 → 12 across the fresh pipeline. 4 existing synthetic filter tests updated to the printed-name form. TDD worked smoothly: modified one test first, watched it fail, implemented, watched it pass, then swept the sibling tests.
+  - Task 3: 4 new assertions added (2 per harness file) — non-empty `depends_on`, presence of known parents (Foundation / Dispatch), and absence of `_`-prefixed private imports. All pass against the real SDK. Harness cost unchanged (the digester runs were already amortised via `LazyLock`).
+- What didn't: 12 Swift overload duplicates remain in `skipped_symbols` after Task 2 — these are true type-based overloads sharing identical parameter labels (CoreML `pointwiseMin(_:_:)`×3, TabularData `/(_:_:)`×4, Network `withNetworkConnection(to:using:_:)`×4, etc.). Resolving them would require embedding Swift mangled signatures or parameter-type lists in the name, deviating from the task's stated `printed_name`-based spec. Left as a follow-up in the backlog — only worth pursuing if a concrete consumer reads these entries and cares about dedup.
+- Suggests trying next: the core pipeline is now genuinely empty of pending tasks. Next cycles will come from reactive discovery — either target-app development surfacing new pipeline gaps, or a triage phase promoting fresh memory entries. The "Regenerate pipeline aggressively" rule was load-bearing again in Task 1: stale checkpoints would have silently masked the schema change.
+- Key learnings:
+  - Workspace test count baseline moves: 437 → 451 after Task 1 (no new tests, just preventing the pre-existing deserialize_ir.rs from getting re-counted differently) → 455 after Task 3 (+4 new depends_on assertions). Hold on to the post-task count before declaring green to avoid spurious "tests went down" alarms.
+  - `printed_name` qualification catches label overloads but not type overloads. The ObjC analog (`{owner}.{selector}`) is actually stronger because selectors in ObjC encode the full parameter structure — Swift's `printed_name` hides parameter types entirely.
+  - Design-doc example JSON matters: `docs/specs/2026-03-26-macos-workspace-design.md` had a `"framework": "Foundation"` example that needed updating to `"name"` alongside the code change. Doc examples that show wire format are a hidden coupling surface.
+  - `foundation_serializes_to_json` is a subtle test shape: it pinned the JSON *key* directly rather than going through the struct field. Tests that assert on `serde_json::to_string` output are tightly coupled to the wire format and must be updated in lockstep with serde annotations.

@@ -6,10 +6,12 @@
 ;;   id-returning (1):
 ;;     copyWithZone:  (zone:pointer)
 
-(require "../../../../runtime/delegate.rkt")
+(require racket/contract
+         "../../../../runtime/delegate.rkt")
 
-(provide make-nscopying
-         nscopying-selectors)
+(provide/contract
+  [make-nscopying (->* () () #:rest (listof (or/c string? procedure?)) any/c)]
+  [nscopying-selectors (listof string?)])
 
 ;; All selectors in this protocol
 (define nscopying-selectors

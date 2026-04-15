@@ -8,6 +8,7 @@ pub mod emit_class;
 pub mod emit_constants;
 pub mod emit_enums;
 pub mod emit_framework;
+pub mod emit_functions;
 pub mod emit_protocol;
 pub mod method_filter;
 pub mod naming;

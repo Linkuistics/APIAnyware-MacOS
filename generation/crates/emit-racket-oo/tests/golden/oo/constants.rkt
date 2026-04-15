@@ -1,10 +1,16 @@
 #lang racket/base
-;; Generated constant declarations for TestKit
+;; Generated constant definitions for TestKit
 
-(require ffi/unsafe ffi/unsafe/objc)
+(require ffi/unsafe
+         ffi/unsafe/objc
+         (rename-in racket/contract [-> c->]))
 
-(provide (all-defined-out))
+(provide/contract
+  [TKVersionString cpointer?]
+  [TKDefaultTimeout real?]
+  )
 
-;; Note: constants are ObjC object pointers loaded at runtime.
-;; Most are NSString constants (notification names, etc.).
-;; Accessing them requires linking to the framework.
+(define _fw-lib (ffi-lib "/System/Library/Frameworks/TestKit.framework/TestKit"))
+
+(define TKVersionString (get-ffi-obj 'TKVersionString _fw-lib _id))
+(define TKDefaultTimeout (get-ffi-obj 'TKDefaultTimeout _fw-lib _double))

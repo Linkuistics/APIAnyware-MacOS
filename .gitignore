@@ -11,3 +11,10 @@ analysis/ir/enriched/
 
 # Generated language bindings (reproducible from enriched IR)
 generation/targets/*/generated/
+
+# Racket bytecode caches
+generation/targets/*/runtime/compiled/
+generation/targets/*/apps/*/compiled/
+
+# Run-phase scratch baseline files maintained by run-backlog-plan.sh
+LLM_STATE/**/compact-baseline

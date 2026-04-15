@@ -7,10 +7,12 @@
 ;;     lock  ()
 ;;     unlock  ()
 
-(require "../../../../runtime/delegate.rkt")
+(require racket/contract
+         "../../../../runtime/delegate.rkt")
 
-(provide make-nslocking
-         nslocking-selectors)
+(provide/contract
+  [make-nslocking (->* () () #:rest (listof (or/c string? procedure?)) any/c)]
+  [nslocking-selectors (listof string?)])
 
 ;; All selectors in this protocol
 (define nslocking-selectors

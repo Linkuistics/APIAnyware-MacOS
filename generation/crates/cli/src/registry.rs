@@ -14,9 +14,7 @@ impl EmitterRegistry {
     pub fn new() -> Self {
         let emitters: Vec<Box<dyn LanguageEmitter>> = vec![
             Box::new(apianyware_macos_emit_racket_oo::RacketEmitter),
-            Box::new(
-                apianyware_macos_emit_racket_functional::RacketFunctionalEmitter,
-            ),
+            Box::new(apianyware_macos_emit_racket_functional::RacketFunctionalEmitter),
         ];
         Self { emitters }
     }

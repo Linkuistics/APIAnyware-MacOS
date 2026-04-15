@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt"
          "../../../runtime/block.rkt")
@@ -12,7 +13,17 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1))
+(provide NSNotificationCenter)
+(provide/contract
+  [nsnotificationcenter-default-center (c-> any/c)]
+  [nsnotificationcenter-add-observer-selector-name-object! (c-> objc-object? any/c cpointer? any/c any/c void?)]
+  [nsnotificationcenter-add-observer-for-name-object-queue-using-block! (c-> objc-object? any/c any/c any/c (or/c procedure? #f) any/c)]
+  [nsnotificationcenter-post-notification (c-> objc-object? any/c void?)]
+  [nsnotificationcenter-post-notification-name-object (c-> objc-object? any/c any/c void?)]
+  [nsnotificationcenter-post-notification-name-object-user-info (c-> objc-object? any/c any/c any/c void?)]
+  [nsnotificationcenter-remove-observer! (c-> objc-object? any/c void?)]
+  [nsnotificationcenter-remove-observer-name-object! (c-> objc-object? any/c any/c any/c void?)]
+  )
 
 ;; --- Class reference ---
 (import-class NSNotificationCenter)
@@ -38,12 +49,12 @@
    (_msg-0 (coerce-arg self) (sel_registerName "addObserverForName:object:queue:usingBlock:") (coerce-arg name) (coerce-arg obj) (coerce-arg queue) _blk3)
    ))
 (define (nsnotificationcenter-post-notification self notification)
-  (tell (coerce-arg self) postNotification: (coerce-arg notification)))
+  (tell #:type _void (coerce-arg self) postNotification: (coerce-arg notification)))
 (define (nsnotificationcenter-post-notification-name-object self a-name an-object)
-  (tell (coerce-arg self) postNotificationName: (coerce-arg a-name) object: (coerce-arg an-object)))
+  (tell #:type _void (coerce-arg self) postNotificationName: (coerce-arg a-name) object: (coerce-arg an-object)))
 (define (nsnotificationcenter-post-notification-name-object-user-info self a-name an-object a-user-info)
-  (tell (coerce-arg self) postNotificationName: (coerce-arg a-name) object: (coerce-arg an-object) userInfo: (coerce-arg a-user-info)))
+  (tell #:type _void (coerce-arg self) postNotificationName: (coerce-arg a-name) object: (coerce-arg an-object) userInfo: (coerce-arg a-user-info)))
 (define (nsnotificationcenter-remove-observer! self observer)
-  (tell (coerce-arg self) removeObserver: (coerce-arg observer)))
+  (tell #:type _void (coerce-arg self) removeObserver: (coerce-arg observer)))
 (define (nsnotificationcenter-remove-observer-name-object! self observer a-name an-object)
-  (tell (coerce-arg self) removeObserver: (coerce-arg observer) name: (coerce-arg a-name) object: (coerce-arg an-object)))
+  (tell #:type _void (coerce-arg self) removeObserver: (coerce-arg observer) name: (coerce-arg a-name) object: (coerce-arg an-object)))

@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt")
 
@@ -11,7 +12,13 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1))
+(provide NSLock)
+(provide/contract
+  [nslock-name (c-> objc-object? any/c)]
+  [nslock-set-name! (c-> objc-object? any/c void?)]
+  [nslock-lock-before-date (c-> objc-object? any/c boolean?)]
+  [nslock-try-lock (c-> objc-object? boolean?)]
+  )
 
 ;; --- Class reference ---
 (import-class NSLock)
@@ -27,7 +34,7 @@
   (wrap-objc-object
    (tell (coerce-arg self) name)))
 (define (nslock-set-name! self value)
-  (tell (coerce-arg self) setName: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setName: (coerce-arg value)))
 
 ;; --- Instance methods ---
 (define (nslock-lock-before-date self limit)

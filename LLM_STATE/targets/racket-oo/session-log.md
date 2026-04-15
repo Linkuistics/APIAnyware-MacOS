@@ -797,3 +797,94 @@
     centralized in the FFI mapper. The real duplication was
     boilerplate, not decision drift. Worth refining in the next
     reflect cycle.
+
+### Session N (2026-04-14T23:16:41Z) — fix class-method property setter arity mismatch
+- **Attempted:** the high-priority Modaliser-Racket blocker "Class-method
+  property accessors drop self-arg in contract but not impl". The bug: every
+  class-method (static) property setter emitted a 1-arg `provide/contract`
+  entry but a 2-arg impl (`(define (name self value) ...)`), so
+  `provide/contract` rejected the binding at module load with
+  `broke its own contract / accepts: 2 arguments`. NSMenuItem and NSPanel
+  were the canaries from Modaliser startup.
+- **Diagnosis refinement.** The backlog claimed *both* getter and setter
+  were wrong. Inspection of freshly-regenerated `nsmenuitem.rkt` showed the
+  getter was already correct (zero-arg impl at line 262-263 matching its
+  `(c-> boolean?)` contract); only the setter diverged. Root cause was
+  narrower than reported: `emit_property` in
+  `generation/crates/emit-racket-oo/src/emit_class.rs` checked
+  `prop.class_property` in both getter branches but *never* in any of its
+  three setter branches (`_id` tell path, shared `_msg-N` path, fallback
+  inline msgSend). Contracts at `build_export_contracts:321-325` correctly
+  dropped `self` for `class_property` — the impl side was the divergence.
+- **What worked:**
+  - **TDD**: wrote two new unit tests
+    (`test_class_property_setter_impl_and_contract_agree`,
+    `test_class_property_getter_impl_and_contract_agree`) before touching
+    emission. Setter test failed as expected showing
+    `(define (... self value)`; getter test passed immediately (confirms
+    the getter was always correct). Added `make_test_class_property`
+    helper mirroring the existing `make_test_property`.
+  - **Minimal fix**: threaded `prop.class_property` through all three
+    setter branches as `params` and `target` locals. Class-property
+    setters now emit `(define (name value) ...)` with `class_name`
+    substituted for `(coerce-arg self)` as the tell/msgSend target.
+  - **Regeneration**: `cargo run --bin apianyware-macos-generate
+    -- --lang racket-oo` rebuilt all 7,046 files. Verified
+    `nsmenuitem-set-uses-user-key-equivalents!` and
+    `nspanel-set-allows-automatic-window-tabbing!` both emit `(define
+    (... value)` without `self`, matching their contracts.
+  - **Harness extension**: added `generated/oo/appkit/nsmenuitem.rkt`
+    to `LIBRARY_LOAD_CHECKS` in
+    `tests/runtime_load_test.rs` as a permanent canary for this
+    regression class. Documented the rationale in the slice comment
+    (dimension 7). `RUNTIME_LOAD_TEST=1 cargo test ...runtime_load_test`
+    passes: all 7 libraries load, all 3 apps build via `raco make`,
+    ~40s runtime.
+  - `cargo test -p apianyware-macos-emit-racket-oo` fully green: 82
+    unit tests (including the 2 new class-property tests), 3 snapshot
+    tests, 2 runtime load tests.
+- **What didn't:** nothing actively failed; one mild false start: I
+  initially worried my change was producing the entire testkit golden
+  diff. Verification (`git grep 'class_property: true'` plus stashing
+  the goldens and re-running snapshots at HEAD) confirmed the testkit
+  goldens were already stale before my change — 100% of that diff comes
+  from the pre-existing uncommitted emitter rewrite noted in the "Fix
+  stale goldens" task. TestKit's synthetic fixtures contain no
+  class-method properties, so the setter fix itself produces zero
+  testkit-golden drift.
+- **What this suggests next:**
+  - The Modaliser-Racket startup path should now load past
+    `nsmenuitem.rkt`/`nspanel.rkt` once it re-symlinks against the
+    regenerated bindings. Worth a cross-project verification ping but
+    out-of-scope for the work phase.
+  - **Generalisable lesson** (candidate memory entry): when extending
+    any emitter dimension that touches Apple-specific metadata (class
+    methods, class properties, platform-availability, deprecation, …),
+    add a real-framework canary to `LIBRARY_LOAD_CHECKS` at the same
+    time the dimension is added — don't wait for a downstream consumer
+    to trip over it. TestKit's minimal synthetic fixture set is
+    deliberately narrow and cannot model the full combinatorial
+    surface of real frameworks.
+  - The "Fix stale `snapshot_racket_oo_foundation_subset` golden files"
+    task remains blocked on the emitter rewrite landing; this session
+    did not touch it. The regenerated testkit goldens sit in the
+    working tree, green against current source but unrelated to the
+    class-property fix.
+- **Key learnings / discoveries:**
+  - The backlog entry's "getters also affected" claim was slightly
+    wrong. Next time, verify load failures against the *exact* file
+    line before assuming symmetry — even in a backlog written 12h ago
+    by a prior-cycle triager.
+  - The contract↔impl arity divergence is invisible to snapshot tests
+    in both directions (text-level) and invisible to runtime load
+    checks too *unless* a canary class with class-method properties
+    is in `LIBRARY_LOAD_CHECKS`. Memory's "load is the real acceptance
+    test" rule applies here, but with a twist: "real" means "real
+    frameworks with real Apple-specific metadata", not just "loads in
+    Racket".
+  - Fix option selection ("make contract match impl" vs "make impl
+    match contract") depends entirely on which side is already
+    correct. With the getter already zero-arg-correct, option 2
+    (adjust the impl) was the only non-regressive choice — option 1
+    would have introduced a pointless `self` slot where the getter
+    didn't have one.

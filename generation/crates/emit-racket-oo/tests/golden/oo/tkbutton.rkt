@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt"
          "../../../runtime/block.rkt")
@@ -12,15 +13,30 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/TestKit.framework/TestKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1))
+(provide TKButton)
+(provide/contract
+  [tkbutton-title (c-> objc-object? any/c)]
+  [tkbutton-set-title! (c-> objc-object? any/c void?)]
+  [tkbutton-hidden (c-> objc-object? boolean?)]
+  [tkbutton-set-hidden! (c-> objc-object? boolean? void?)]
+  [tkbutton-tag (c-> objc-object? any/c)]
+  [tkbutton-set-tag! (c-> objc-object? any/c void?)]
+  [tkbutton-frame (c-> objc-object? any/c)]
+  [tkbutton-dealloc (c-> objc-object? void?)]
+  [tkbutton-description (c-> objc-object? any/c)]
+  [tkbutton-set-needs-display! (c-> objc-object? void?)]
+  [tkbutton-animate-with-duration-animations (c-> objc-object? real? (or/c procedure? #f) void?)]
+  )
 
 ;; --- Class reference ---
 (import-class TKButton)
 
 ;; --- Shared typed objc_msgSend bindings ---
-(define _msg-0  ; (_fun _pointer _pointer _double _pointer -> _void)
+(define _msg-0  ; (_fun _pointer _pointer _bool -> _void)
+  (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _bool -> _void)))
+(define _msg-1  ; (_fun _pointer _pointer _double _pointer -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _double _pointer -> _void)))
-(define _msg-1  ; (_fun _pointer _pointer _pointer -> _void)
+(define _msg-2  ; (_fun _pointer _pointer _pointer -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer -> _void)))
 
 ;; --- Properties ---
@@ -28,28 +44,28 @@
   (wrap-objc-object
    (tell (coerce-arg self) title)))
 (define (tkbutton-set-title! self value)
-  (tell (coerce-arg self) setTitle: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setTitle: (coerce-arg value)))
 (define (tkbutton-hidden self)
-  (tell #:type _pointer (coerce-arg self) hidden))
+  (tell #:type _bool (coerce-arg self) hidden))
 (define (tkbutton-set-hidden! self value)
-  (_msg-1 (coerce-arg self) (sel_registerName "setHidden:") value))
+  (_msg-0 (coerce-arg self) (sel_registerName "setHidden:") value))
 (define (tkbutton-tag self)
   (tell #:type _pointer (coerce-arg self) tag))
 (define (tkbutton-set-tag! self value)
-  (_msg-1 (coerce-arg self) (sel_registerName "setTag:") value))
+  (_msg-2 (coerce-arg self) (sel_registerName "setTag:") value))
 (define (tkbutton-frame self)
   (wrap-objc-object
    (tell (coerce-arg self) frame)))
 
 ;; --- Instance methods ---
 (define (tkbutton-dealloc self)
-  (tell (coerce-arg self) dealloc))
+  (tell #:type _void (coerce-arg self) dealloc))
 (define (tkbutton-description self)
   (wrap-objc-object
    (tell (coerce-arg self) description)))
 (define (tkbutton-set-needs-display! self)
-  (tell (coerce-arg self) setNeedsDisplay))
+  (tell #:type _void (coerce-arg self) setNeedsDisplay))
 (define (tkbutton-animate-with-duration-animations self duration animations)
   (define-values (_blk1 _blk1-id)
     (make-objc-block animations (list ) _void))
-  (_msg-0 (coerce-arg self) (sel_registerName "animateWithDuration:animations:") duration _blk1))
+  (_msg-1 (coerce-arg self) (sel_registerName "animateWithDuration:animations:") duration _blk1))

@@ -154,6 +154,7 @@ pub fn run_generation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use apianyware_macos_emit::test_fixtures::build_snapshot_test_framework;
     use apianyware_macos_types::ir::{Class, Framework, Method};
     use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 
@@ -205,7 +206,6 @@ mod tests {
             api_patterns: vec![],
             enrichment: None,
             verification: None,
-            ir_level: None,
         }
     }
 
@@ -324,5 +324,206 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("no enriched IR"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Integration tests — rich synthetic IR through full pipeline
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn rich_framework_reports_correct_emit_statistics() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input_dir = tmp.path().join("enriched");
+        let output_dir = tmp.path().join("targets");
+
+        write_test_framework(&input_dir, &build_snapshot_test_framework());
+
+        let registry = EmitterRegistry::new();
+        let langs = vec!["racket-oo".to_string()];
+        let summaries = run_generation(&registry, &input_dir, &output_dir, Some(&langs)).unwrap();
+
+        let style = &summaries[0].style_results[0];
+        assert_eq!(style.frameworks_generated, 1);
+        assert_eq!(style.total_classes, 5, "TestKit has 5 classes");
+        assert_eq!(style.total_protocols, 2, "TestKit has 2 protocols");
+        assert_eq!(style.total_enums, 1, "TestKit has 1 enum");
+    }
+
+    #[test]
+    fn rich_framework_creates_expected_file_structure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input_dir = tmp.path().join("enriched");
+        let output_dir = tmp.path().join("targets");
+
+        write_test_framework(&input_dir, &build_snapshot_test_framework());
+
+        let registry = EmitterRegistry::new();
+        let langs = vec!["racket-oo".to_string()];
+        run_generation(&registry, &input_dir, &output_dir, Some(&langs)).unwrap();
+
+        let testkit_dir = output_dir.join("racket-oo/generated/oo/testkit");
+
+        // Per-class files
+        for name in &["tkobject", "tkview", "tkbutton", "tkmanager", "tkhelper"] {
+            assert!(
+                testkit_dir.join(format!("{name}.rkt")).exists(),
+                "missing class file: {name}.rkt"
+            );
+        }
+
+        // Aggregate files
+        assert!(testkit_dir.join("main.rkt").exists(), "missing main.rkt");
+        assert!(testkit_dir.join("enums.rkt").exists(), "missing enums.rkt");
+        assert!(
+            testkit_dir.join("constants.rkt").exists(),
+            "missing constants.rkt"
+        );
+
+        // Protocol directory
+        assert!(
+            testkit_dir.join("protocols").is_dir(),
+            "missing protocols/ directory"
+        );
+    }
+
+    #[test]
+    fn rich_framework_output_contains_expected_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input_dir = tmp.path().join("enriched");
+        let output_dir = tmp.path().join("targets");
+
+        write_test_framework(&input_dir, &build_snapshot_test_framework());
+
+        let registry = EmitterRegistry::new();
+        let langs = vec!["racket-oo".to_string()];
+        run_generation(&registry, &input_dir, &output_dir, Some(&langs)).unwrap();
+
+        let testkit_dir = output_dir.join("racket-oo/generated/oo/testkit");
+
+        // main.rkt re-exports submodules
+        let main = std::fs::read_to_string(testkit_dir.join("main.rkt")).unwrap();
+        assert!(
+            main.contains("require"),
+            "main.rkt should require submodules"
+        );
+
+        // Class file references its class name
+        let tkview = std::fs::read_to_string(testkit_dir.join("tkview.rkt")).unwrap();
+        assert!(
+            tkview.contains("TKView"),
+            "tkview.rkt should reference TKView"
+        );
+
+        // Enum file contains enum values
+        let enums = std::fs::read_to_string(testkit_dir.join("enums.rkt")).unwrap();
+        assert!(
+            enums.contains("TKAlignment"),
+            "enums.rkt should contain TKAlignment"
+        );
+        assert!(
+            enums.contains("TKAlignmentLeft"),
+            "enums.rkt should contain TKAlignmentLeft"
+        );
+
+        // Constants file references the framework
+        let constants = std::fs::read_to_string(testkit_dir.join("constants.rkt")).unwrap();
+        assert!(
+            constants.contains("TestKit"),
+            "constants.rkt should reference the TestKit framework"
+        );
+    }
+
+    #[test]
+    fn all_emitters_handle_rich_framework() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input_dir = tmp.path().join("enriched");
+        let output_dir = tmp.path().join("targets");
+
+        write_test_framework(&input_dir, &build_snapshot_test_framework());
+
+        let registry = EmitterRegistry::new();
+        let summaries = run_generation(&registry, &input_dir, &output_dir, None).unwrap();
+
+        // Both registered emitters should produce results without error
+        assert_eq!(summaries.len(), 2, "should run all registered emitters");
+
+        let racket_oo = summaries
+            .iter()
+            .find(|s| s.language_id == "racket-oo")
+            .expect("racket-oo should be in results");
+        assert!(
+            racket_oo.style_results[0].total_files_written > 0,
+            "racket-oo should produce files"
+        );
+        assert_eq!(racket_oo.style_results[0].total_classes, 5);
+
+        let racket_fn = summaries
+            .iter()
+            .find(|s| s.language_id == "racket-functional")
+            .expect("racket-functional should be in results");
+        // Stub emitter produces zero output without erroring
+        assert_eq!(
+            racket_fn.style_results[0].total_files_written, 0,
+            "stub emitter should produce no files"
+        );
+    }
+
+    #[test]
+    fn dependent_frameworks_both_generate_correctly() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input_dir = tmp.path().join("enriched");
+        let output_dir = tmp.path().join("targets");
+
+        let mut foundation = make_test_framework("Foundation");
+        foundation.depends_on = vec![];
+
+        let mut appkit = make_test_framework("AppKit");
+        appkit.depends_on = vec!["Foundation".to_string()];
+
+        write_test_framework(&input_dir, &foundation);
+        write_test_framework(&input_dir, &appkit);
+
+        let registry = EmitterRegistry::new();
+        let langs = vec!["racket-oo".to_string()];
+        let summaries = run_generation(&registry, &input_dir, &output_dir, Some(&langs)).unwrap();
+
+        assert_eq!(summaries[0].style_results[0].frameworks_generated, 2);
+
+        // Both output directories should exist with correct content
+        let oo_dir = output_dir.join("racket-oo/generated/oo");
+        assert!(
+            oo_dir.join("foundation/main.rkt").exists(),
+            "Foundation output should exist"
+        );
+        assert!(
+            oo_dir.join("appkit/main.rkt").exists(),
+            "AppKit output should exist"
+        );
+    }
+
+    #[test]
+    fn multiple_rich_frameworks_accumulate_statistics() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input_dir = tmp.path().join("enriched");
+        let output_dir = tmp.path().join("targets");
+
+        // Write the same rich framework under two names
+        let mut fw1 = build_snapshot_test_framework();
+        fw1.name = "FrameworkA".to_string();
+        let mut fw2 = build_snapshot_test_framework();
+        fw2.name = "FrameworkB".to_string();
+
+        write_test_framework(&input_dir, &fw1);
+        write_test_framework(&input_dir, &fw2);
+
+        let registry = EmitterRegistry::new();
+        let langs = vec!["racket-oo".to_string()];
+        let summaries = run_generation(&registry, &input_dir, &output_dir, Some(&langs)).unwrap();
+
+        let style = &summaries[0].style_results[0];
+        assert_eq!(style.frameworks_generated, 2);
+        assert_eq!(style.total_classes, 10, "5 classes x 2 frameworks");
+        assert_eq!(style.total_protocols, 4, "2 protocols x 2 frameworks");
+        assert_eq!(style.total_enums, 2, "1 enum x 2 frameworks");
     }
 }

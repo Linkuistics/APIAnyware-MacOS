@@ -1,0 +1,13 @@
+[package]
+name = "apianyware-macos-stub-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Swift stub launcher generator for TCC-compatible macOS app bundles"
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

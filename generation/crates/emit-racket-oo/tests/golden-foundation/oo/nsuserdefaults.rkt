@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt")
 
@@ -11,7 +12,44 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1 _msg-2 _msg-3 _msg-4 _msg-5 _msg-6 _msg-7 _msg-8 _msg-9))
+(provide NSUserDefaults)
+(provide/contract
+  [make-nsuserdefaults-init-with-suite-name (c-> any/c any/c)]
+  [nsuserdefaults-standard-user-defaults (c-> any/c)]
+  [nsuserdefaults-volatile-domain-names (c-> objc-object? any/c)]
+  [nsuserdefaults-url-for-key (c-> objc-object? any/c any/c)]
+  [nsuserdefaults-add-suite-named! (c-> objc-object? any/c void?)]
+  [nsuserdefaults-array-for-key (c-> objc-object? any/c any/c)]
+  [nsuserdefaults-bool-for-key (c-> objc-object? any/c boolean?)]
+  [nsuserdefaults-data-for-key (c-> objc-object? any/c any/c)]
+  [nsuserdefaults-dictionary-for-key (c-> objc-object? any/c any/c)]
+  [nsuserdefaults-dictionary-representation (c-> objc-object? any/c)]
+  [nsuserdefaults-double-for-key (c-> objc-object? any/c real?)]
+  [nsuserdefaults-float-for-key (c-> objc-object? any/c real?)]
+  [nsuserdefaults-integer-for-key (c-> objc-object? any/c exact-integer?)]
+  [nsuserdefaults-object-for-key (c-> objc-object? any/c any/c)]
+  [nsuserdefaults-object-is-forced-for-key (c-> objc-object? any/c boolean?)]
+  [nsuserdefaults-object-is-forced-for-key-in-domain (c-> objc-object? any/c any/c boolean?)]
+  [nsuserdefaults-persistent-domain-for-name (c-> objc-object? any/c any/c)]
+  [nsuserdefaults-register-defaults (c-> objc-object? any/c void?)]
+  [nsuserdefaults-remove-object-for-key! (c-> objc-object? any/c void?)]
+  [nsuserdefaults-remove-persistent-domain-for-name! (c-> objc-object? any/c void?)]
+  [nsuserdefaults-remove-suite-named! (c-> objc-object? any/c void?)]
+  [nsuserdefaults-remove-volatile-domain-for-name! (c-> objc-object? any/c void?)]
+  [nsuserdefaults-set-bool-for-key! (c-> objc-object? boolean? any/c void?)]
+  [nsuserdefaults-set-double-for-key! (c-> objc-object? real? any/c void?)]
+  [nsuserdefaults-set-float-for-key! (c-> objc-object? real? any/c void?)]
+  [nsuserdefaults-set-integer-for-key! (c-> objc-object? exact-integer? any/c void?)]
+  [nsuserdefaults-set-object-for-key! (c-> objc-object? any/c any/c void?)]
+  [nsuserdefaults-set-persistent-domain-for-name! (c-> objc-object? any/c any/c void?)]
+  [nsuserdefaults-set-url-for-key! (c-> objc-object? any/c any/c void?)]
+  [nsuserdefaults-set-volatile-domain-for-name! (c-> objc-object? any/c any/c void?)]
+  [nsuserdefaults-string-array-for-key (c-> objc-object? any/c any/c)]
+  [nsuserdefaults-string-for-key (c-> objc-object? any/c any/c)]
+  [nsuserdefaults-synchronize (c-> objc-object? boolean?)]
+  [nsuserdefaults-volatile-domain-for-name (c-> objc-object? any/c any/c)]
+  [nsuserdefaults-reset-standard-user-defaults! (c-> void?)]
+  )
 
 ;; --- Class reference ---
 (import-class NSUserDefaults)
@@ -59,7 +97,7 @@
   (wrap-objc-object
    (tell (coerce-arg self) URLForKey: (coerce-arg default-name))))
 (define (nsuserdefaults-add-suite-named! self suite-name)
-  (tell (coerce-arg self) addSuiteNamed: (coerce-arg suite-name)))
+  (tell #:type _void (coerce-arg self) addSuiteNamed: (coerce-arg suite-name)))
 (define (nsuserdefaults-array-for-key self default-name)
   (wrap-objc-object
    (tell (coerce-arg self) arrayForKey: (coerce-arg default-name))))
@@ -91,15 +129,15 @@
   (wrap-objc-object
    (tell (coerce-arg self) persistentDomainForName: (coerce-arg domain-name))))
 (define (nsuserdefaults-register-defaults self registration-dictionary)
-  (tell (coerce-arg self) registerDefaults: (coerce-arg registration-dictionary)))
+  (tell #:type _void (coerce-arg self) registerDefaults: (coerce-arg registration-dictionary)))
 (define (nsuserdefaults-remove-object-for-key! self default-name)
-  (tell (coerce-arg self) removeObjectForKey: (coerce-arg default-name)))
+  (tell #:type _void (coerce-arg self) removeObjectForKey: (coerce-arg default-name)))
 (define (nsuserdefaults-remove-persistent-domain-for-name! self domain-name)
-  (tell (coerce-arg self) removePersistentDomainForName: (coerce-arg domain-name)))
+  (tell #:type _void (coerce-arg self) removePersistentDomainForName: (coerce-arg domain-name)))
 (define (nsuserdefaults-remove-suite-named! self suite-name)
-  (tell (coerce-arg self) removeSuiteNamed: (coerce-arg suite-name)))
+  (tell #:type _void (coerce-arg self) removeSuiteNamed: (coerce-arg suite-name)))
 (define (nsuserdefaults-remove-volatile-domain-for-name! self domain-name)
-  (tell (coerce-arg self) removeVolatileDomainForName: (coerce-arg domain-name)))
+  (tell #:type _void (coerce-arg self) removeVolatileDomainForName: (coerce-arg domain-name)))
 (define (nsuserdefaults-set-bool-for-key! self value default-name)
   (_msg-1 (coerce-arg self) (sel_registerName "setBool:forKey:") value (coerce-arg default-name)))
 (define (nsuserdefaults-set-double-for-key! self value default-name)
@@ -109,13 +147,13 @@
 (define (nsuserdefaults-set-integer-for-key! self value default-name)
   (_msg-9 (coerce-arg self) (sel_registerName "setInteger:forKey:") value (coerce-arg default-name)))
 (define (nsuserdefaults-set-object-for-key! self value default-name)
-  (tell (coerce-arg self) setObject: (coerce-arg value) forKey: (coerce-arg default-name)))
+  (tell #:type _void (coerce-arg self) setObject: (coerce-arg value) forKey: (coerce-arg default-name)))
 (define (nsuserdefaults-set-persistent-domain-for-name! self domain domain-name)
-  (tell (coerce-arg self) setPersistentDomain: (coerce-arg domain) forName: (coerce-arg domain-name)))
+  (tell #:type _void (coerce-arg self) setPersistentDomain: (coerce-arg domain) forName: (coerce-arg domain-name)))
 (define (nsuserdefaults-set-url-for-key! self url default-name)
-  (tell (coerce-arg self) setURL: (coerce-arg url) forKey: (coerce-arg default-name)))
+  (tell #:type _void (coerce-arg self) setURL: (coerce-arg url) forKey: (coerce-arg default-name)))
 (define (nsuserdefaults-set-volatile-domain-for-name! self domain domain-name)
-  (tell (coerce-arg self) setVolatileDomain: (coerce-arg domain) forName: (coerce-arg domain-name)))
+  (tell #:type _void (coerce-arg self) setVolatileDomain: (coerce-arg domain) forName: (coerce-arg domain-name)))
 (define (nsuserdefaults-string-array-for-key self default-name)
   (wrap-objc-object
    (tell (coerce-arg self) stringArrayForKey: (coerce-arg default-name))))
@@ -130,4 +168,4 @@
 
 ;; --- Class methods ---
 (define (nsuserdefaults-reset-standard-user-defaults!)
-  (tell NSUserDefaults resetStandardUserDefaults))
+  (tell #:type _void NSUserDefaults resetStandardUserDefaults))

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use apianyware_macos_extract_swift::abi_types::AbiDocument;
 use apianyware_macos_extract_swift::declaration_mapping::map_abi_to_framework;
+use serde_json::{json, Value};
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -123,17 +124,548 @@ fn map_test_framework_struct() {
 }
 
 #[test]
-fn map_test_framework_function() {
-    let json = std::fs::read_to_string(fixtures_dir().join("test_framework_abi.json"))
+fn map_test_framework_function_is_filtered_as_swift_native() {
+    // The synthetic fixture's `createDefaultWidget` has a Swift-mangled USR
+    // (`s:13TestFramework...`). Swift-native top-level functions cannot be
+    // resolved via `dlsym` from the dylib, so they must not land in the
+    // `functions` list; they belong in `skipped_symbols` instead.
+    let json_str = std::fs::read_to_string(fixtures_dir().join("test_framework_abi.json"))
         .expect("read fixture");
-    let doc: AbiDocument = serde_json::from_str(&json).expect("parse");
+    let doc: AbiDocument = serde_json::from_str(&json_str).expect("parse");
     let framework = map_abi_to_framework(&doc, "15.4");
 
-    assert_eq!(framework.functions.len(), 1);
-    let func = &framework.functions[0];
-    assert_eq!(func.name, "createDefaultWidget");
-    assert_eq!(func.params.len(), 1);
-    assert_eq!(func.params[0].name, "name");
+    assert!(
+        framework.functions.is_empty(),
+        "Swift-native createDefaultWidget must not appear in functions; got {:?}",
+        framework
+            .functions
+            .iter()
+            .map(|f| &f.name)
+            .collect::<Vec<_>>()
+    );
+
+    // Swift-native top-level functions are recorded with their printed name
+    // (including parameter labels) so overloads with identical simple names
+    // become distinct entries in `skipped_symbols`. Matches how extract-objc
+    // qualifies methods with their owner class.
+    let skipped = framework
+        .skipped_symbols
+        .iter()
+        .find(|s| s.name == "createDefaultWidget(name:)")
+        .unwrap_or_else(|| {
+            panic!(
+                "createDefaultWidget(name:) should be recorded in skipped_symbols; got {:?}",
+                framework
+                    .skipped_symbols
+                    .iter()
+                    .map(|s| &s.name)
+                    .collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(skipped.kind, "function");
+    assert!(
+        skipped.reason.contains("swift-native"),
+        "skip reason should mention swift-native, got {:?}",
+        skipped.reason
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Swift-native symbol filter — synthetic tests
+// ---------------------------------------------------------------------------
+
+fn doc_with_top_level(children: Vec<Value>) -> AbiDocument {
+    let value = json!({
+        "ABIRoot": {
+            "kind": "Root",
+            "name": "SyntheticFramework",
+            "printedName": "SyntheticFramework",
+            "children": children,
+        }
+    });
+    serde_json::from_value(value).expect("build AbiDocument")
+}
+
+fn top_level_func(name: &str, usr: &str) -> Value {
+    json!({
+        "kind": "Function",
+        "name": name,
+        "printedName": format!("{name}()"),
+        "declKind": "Func",
+        "usr": usr,
+        "children": [
+            { "kind": "TypeNominal", "name": "Void", "printedName": "Swift.Void", "children": [] }
+        ]
+    })
+}
+
+fn top_level_var(name: &str, usr: &str) -> Value {
+    json!({
+        "kind": "Var",
+        "name": name,
+        "printedName": name,
+        "declKind": "Var",
+        "usr": usr,
+        "children": [
+            { "kind": "TypeNominal", "name": "UInt32", "printedName": "Swift.UInt32", "children": [] }
+        ]
+    })
+}
+
+#[test]
+fn swift_native_top_level_func_is_skipped_while_c_reexport_is_kept() {
+    // Mixed USR prefixes in one synthetic framework:
+    //   `s:…`   → Swift-native, filter
+    //   `c:@F@` → clang function cursor (real dylib export), keep
+    //   ``      → missing USR: keep (conservative — missing data is not
+    //              evidence of non-linkability, and every real-world node
+    //              produced by the digester carries a USR).
+    let doc = doc_with_top_level(vec![
+        top_level_func("swiftNative", "s:10MyFramework11swiftNativeyyF"),
+        top_level_func("c_reexport", "c:@F@c_reexport"),
+        top_level_func("unknown", ""),
+    ]);
+
+    let framework = map_abi_to_framework(&doc, "15.4");
+
+    let kept: Vec<&str> = framework
+        .functions
+        .iter()
+        .map(|f| f.name.as_str())
+        .collect();
+    assert_eq!(
+        kept,
+        vec!["c_reexport", "unknown"],
+        "only `s:`-prefixed functions should be filtered"
+    );
+
+    // Swift-native functions are recorded with their printed name (parameter
+    // labels included) so overloads with identical simple names remain
+    // distinct in `skipped_symbols`.
+    let skipped: Vec<&str> = framework
+        .skipped_symbols
+        .iter()
+        .filter(|s| s.kind == "function")
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(skipped, vec!["swiftNative()"]);
+}
+
+#[test]
+fn swift_native_top_level_var_is_skipped_while_c_reexport_is_kept() {
+    let doc = doc_with_top_level(vec![
+        top_level_var("kSwiftNative", "s:10MyFramework13kSwiftNativeSivp"),
+        top_level_var("kCReexport", "c:@kCReexport"),
+    ]);
+
+    let framework = map_abi_to_framework(&doc, "15.4");
+
+    let kept: Vec<&str> = framework
+        .constants
+        .iter()
+        .map(|c| c.name.as_str())
+        .collect();
+    assert_eq!(kept, vec!["kCReexport"]);
+
+    let skipped: Vec<&str> = framework
+        .skipped_symbols
+        .iter()
+        .filter(|s| s.kind == "constant")
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(skipped, vec!["kSwiftNative"]);
+}
+
+#[test]
+fn foundation_swift_overlay_symbols_are_filtered() {
+    // Regression guard: these four symbols were observed leaking into the
+    // Foundation collected IR via extract-swift despite having no matching
+    // C dylib export. Their USRs (captured verbatim from a real
+    // `swift-api-digester -dump-sdk -module Foundation` run on macOS 26.4)
+    // all begin with the Swift mangling prefix `s:10Foundation…`. The test
+    // reproduces the USR shape inline rather than reading the gitignored
+    // `collection/ir/collected/Foundation.json`, so CI is not silently
+    // green when the checkpoint is absent (see memory: "Prefer synthetic
+    // tests over external-data-dependent tests").
+    let doc = doc_with_top_level(vec![
+        top_level_func("pow", "s:10Foundation3powySo9NSDecimalaAD_SitF"),
+        top_level_func(
+            "NSLocalizedString",
+            "s:10Foundation17NSLocalizedString_9tableName6bundle5value7commentS2S_SSSgSo8NSBundleCS2StF",
+        ),
+        top_level_var(
+            "kCFStringEncodingASCII",
+            "s:10Foundation22kCFStringEncodingASCIIs6UInt32Vvp",
+        ),
+        top_level_var("NSNotFound", "s:10Foundation10NSNotFoundSivp"),
+    ]);
+
+    let framework = map_abi_to_framework(&doc, "15.4");
+
+    assert!(
+        framework.functions.is_empty(),
+        "no Foundation swift-overlay functions should reach the IR: got {:?}",
+        framework
+            .functions
+            .iter()
+            .map(|f| &f.name)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        framework.constants.is_empty(),
+        "no Foundation swift-overlay constants should reach the IR: got {:?}",
+        framework
+            .constants
+            .iter()
+            .map(|c| &c.name)
+            .collect::<Vec<_>>()
+    );
+
+    // Functions are qualified with their parameter labels (via printed_name);
+    // vars carry their simple name (no overloads, no labels).
+    let skipped_names: std::collections::BTreeSet<&str> = framework
+        .skipped_symbols
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
+    for name in [
+        "pow()",
+        "NSLocalizedString()",
+        "kCFStringEncodingASCII",
+        "NSNotFound",
+    ] {
+        assert!(
+            skipped_names.contains(name),
+            "{name} should be recorded in skipped_symbols; got {skipped_names:?}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Preprocessor-macro cursor filter — synthetic tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn preprocessor_macro_top_level_var_is_skipped_while_c_var_is_kept() {
+    // The Swift API digester surfaces clang-imported preprocessor macros as
+    // top-level `Var` nodes whose USR begins `c:@macro@`. They have no
+    // dylib export (the C compiler inlines `#define` constants at use sites)
+    // and any C-FFI binding that references them dies at load time with
+    // `get-ffi-obj: could not find export from foreign library`. The filter
+    // must distinguish them from `c:@<name>` (clang `VarDecl` cursor — a
+    // real exported global) which must continue to land in `constants`.
+    let doc = doc_with_top_level(vec![
+        top_level_var("kPreprocessorMacro", "c:@macro@kPreprocessorMacro"),
+        top_level_var("kRealCVar", "c:@kRealCVar"),
+    ]);
+
+    let framework = map_abi_to_framework(&doc, "15.4");
+
+    let kept: Vec<&str> = framework
+        .constants
+        .iter()
+        .map(|c| c.name.as_str())
+        .collect();
+    assert_eq!(
+        kept,
+        vec!["kRealCVar"],
+        "only `c:@macro@` USRs should be filtered; `c:@<name>` clang VarDecls remain"
+    );
+
+    let skipped: Vec<&str> = framework
+        .skipped_symbols
+        .iter()
+        .filter(|s| s.kind == "constant")
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(skipped, vec!["kPreprocessorMacro"]);
+
+    let skipped_entry = framework
+        .skipped_symbols
+        .iter()
+        .find(|s| s.name == "kPreprocessorMacro")
+        .expect("kPreprocessorMacro must be recorded in skipped_symbols");
+    assert!(
+        skipped_entry.reason.contains("preprocessor macro"),
+        "skip reason should identify the cursor family; got {:?}",
+        skipped_entry.reason
+    );
+}
+
+#[test]
+fn coretext_version_macro_regression_is_filtered() {
+    // Regression guard: `kCTVersionNumber10_10` and siblings were observed
+    // leaking into the CoreText collected IR via extract-swift. CoreText
+    // exposes a family of `kCTVersionNumber*` `#define` constants that the
+    // Swift API digester surfaces as top-level `Var` nodes with
+    // `c:@macro@kCTVersionNumber10_10`-shaped USRs. The test reproduces the
+    // USR shape inline rather than reading the gitignored
+    // `collection/ir/collected/CoreText.json`, so CI is not silently green
+    // when the checkpoint is absent (see memory: "Prefer synthetic tests
+    // over external-data-dependent tests").
+    let doc = doc_with_top_level(vec![
+        top_level_var("kCTVersionNumber10_10", "c:@macro@kCTVersionNumber10_10"),
+        top_level_var("kCTVersionNumber10_11", "c:@macro@kCTVersionNumber10_11"),
+        top_level_var("kCTVersionNumber10_12", "c:@macro@kCTVersionNumber10_12"),
+    ]);
+
+    let framework = map_abi_to_framework(&doc, "15.4");
+
+    assert!(
+        framework.constants.is_empty(),
+        "no kCTVersionNumber* macro entries should reach the IR: got {:?}",
+        framework
+            .constants
+            .iter()
+            .map(|c| &c.name)
+            .collect::<Vec<_>>()
+    );
+
+    let skipped_names: std::collections::BTreeSet<&str> = framework
+        .skipped_symbols
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
+    for name in [
+        "kCTVersionNumber10_10",
+        "kCTVersionNumber10_11",
+        "kCTVersionNumber10_12",
+    ] {
+        assert!(
+            skipped_names.contains(name),
+            "{name} should be recorded in skipped_symbols; got {skipped_names:?}"
+        );
+    }
+}
+
+#[test]
+fn preprocessor_macro_top_level_func_is_skipped() {
+    // Defensive symmetry: a `c:@macro@` USR on a `Func` node (function-like
+    // macro) is equally non-`dlsym`-able and must be filtered. Whether or
+    // not the digester actually emits this shape today, the filter should
+    // be symmetric across the Var and Func arms — same producer, same
+    // discriminator, same skip path — so future digester releases that
+    // surface function-like macros as Func nodes are caught automatically.
+    let doc = doc_with_top_level(vec![
+        top_level_func("CTFontGetGlyphCount", "c:@F@CTFontGetGlyphCount"),
+        top_level_func("MIN", "c:@macro@MIN"),
+    ]);
+
+    let framework = map_abi_to_framework(&doc, "15.4");
+
+    let kept: Vec<&str> = framework
+        .functions
+        .iter()
+        .map(|f| f.name.as_str())
+        .collect();
+    assert_eq!(
+        kept,
+        vec!["CTFontGetGlyphCount"],
+        "only `c:@macro@` USRs should be filtered from functions"
+    );
+
+    let skipped: Vec<&str> = framework
+        .skipped_symbols
+        .iter()
+        .filter(|s| s.kind == "function")
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(skipped, vec!["MIN()"]);
+}
+
+// ---------------------------------------------------------------------------
+// Anonymous-enum-member cursor filter — synthetic tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn anonymous_enum_member_top_level_vars_are_skipped_while_c_var_is_kept() {
+    // libclang USRs distinguish enum cursors by a one- or two-letter family
+    // marker after `c:@`:
+    //   `c:@E@<Enum>@<Member>`   → member of a *named* enum
+    //   `c:@Ea@<dummy>@<Member>` → member of an *anonymous* enum (synthetic
+    //                              disambiguator from the first member)
+    //   `c:@EA@<typedef>@<Member>` → member of `typedef enum { … } Name_t`
+    // Both anonymous shapes (`Ea` and `EA`) are enum *members*: the C
+    // compiler inlines their integer values at every use site, so they
+    // never receive a dylib symbol and any C-FFI binding that references
+    // them dies at load time with `get-ffi-obj: could not find export from
+    // foreign library`. The filter must reject both shapes while leaving
+    // real `c:@<name>` clang VarDecls (exported globals) untouched.
+    let doc = doc_with_top_level(vec![
+        top_level_var(
+            "nw_browse_result_change_identical",
+            "c:@Ea@nw_browse_result_change_invalid@nw_browse_result_change_identical",
+        ),
+        top_level_var(
+            "nw_browser_state_ready",
+            "c:@EA@nw_browser_state_t@nw_browser_state_ready",
+        ),
+        top_level_var("kRealCVar", "c:@kRealCVar"),
+    ]);
+
+    let framework = map_abi_to_framework(&doc, "15.4");
+
+    let kept: Vec<&str> = framework
+        .constants
+        .iter()
+        .map(|c| c.name.as_str())
+        .collect();
+    assert_eq!(
+        kept,
+        vec!["kRealCVar"],
+        "only `c:@<name>` clang VarDecls should remain; both anonymous-enum-member shapes must be filtered"
+    );
+
+    let skipped: Vec<&str> = framework
+        .skipped_symbols
+        .iter()
+        .filter(|s| s.kind == "constant")
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(
+        skipped,
+        vec![
+            "nw_browse_result_change_identical",
+            "nw_browser_state_ready"
+        ]
+    );
+
+    for name in [
+        "nw_browse_result_change_identical",
+        "nw_browser_state_ready",
+    ] {
+        let entry = framework
+            .skipped_symbols
+            .iter()
+            .find(|s| s.name == name)
+            .unwrap_or_else(|| panic!("{name} must be recorded in skipped_symbols"));
+        assert!(
+            entry.reason.contains("anonymous enum member"),
+            "skip reason for {name} should identify the cursor family; got {:?}",
+            entry.reason
+        );
+    }
+}
+
+#[test]
+fn nw_browse_result_change_regression_is_filtered() {
+    // Regression guard: the seven members of Network's
+    // `nw_browse_result_change_*` anonymous enum were observed leaking into
+    // the Network collected IR via extract-swift after the racket-oo
+    // runtime load harness extension attempt failed at `dlsym` on
+    // `nw_browse_result_change_identical`. Their USRs (captured verbatim
+    // from a real `swift-api-digester -dump-sdk -module Network` run on
+    // macOS 26.4) all begin with `c:@Ea@nw_browse_result_change_invalid@`,
+    // where the second segment is the synthetic disambiguator libclang
+    // generates for anonymous enums — by convention the first member's
+    // name. The test reproduces the USR shape inline rather than reading
+    // the gitignored `collection/ir/collected/Network.json`, so CI is not
+    // silently green when the checkpoint is absent (see memory: "Prefer
+    // synthetic tests over external-data-dependent tests").
+    let doc = doc_with_top_level(vec![
+        top_level_var(
+            "nw_browse_result_change_invalid",
+            "c:@Ea@nw_browse_result_change_invalid@nw_browse_result_change_invalid",
+        ),
+        top_level_var(
+            "nw_browse_result_change_identical",
+            "c:@Ea@nw_browse_result_change_invalid@nw_browse_result_change_identical",
+        ),
+        top_level_var(
+            "nw_browse_result_change_result_added",
+            "c:@Ea@nw_browse_result_change_invalid@nw_browse_result_change_result_added",
+        ),
+        top_level_var(
+            "nw_browse_result_change_result_removed",
+            "c:@Ea@nw_browse_result_change_invalid@nw_browse_result_change_result_removed",
+        ),
+        top_level_var(
+            "nw_browse_result_change_interface_added",
+            "c:@Ea@nw_browse_result_change_invalid@nw_browse_result_change_interface_added",
+        ),
+        top_level_var(
+            "nw_browse_result_change_interface_removed",
+            "c:@Ea@nw_browse_result_change_invalid@nw_browse_result_change_interface_removed",
+        ),
+        top_level_var(
+            "nw_browse_result_change_txt_record_changed",
+            "c:@Ea@nw_browse_result_change_invalid@nw_browse_result_change_txt_record_changed",
+        ),
+    ]);
+
+    let framework = map_abi_to_framework(&doc, "15.4");
+
+    assert!(
+        framework.constants.is_empty(),
+        "no nw_browse_result_change_* members should reach the IR: got {:?}",
+        framework
+            .constants
+            .iter()
+            .map(|c| &c.name)
+            .collect::<Vec<_>>()
+    );
+
+    let skipped_names: std::collections::BTreeSet<&str> = framework
+        .skipped_symbols
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
+    for name in [
+        "nw_browse_result_change_invalid",
+        "nw_browse_result_change_identical",
+        "nw_browse_result_change_result_added",
+        "nw_browse_result_change_result_removed",
+        "nw_browse_result_change_interface_added",
+        "nw_browse_result_change_interface_removed",
+        "nw_browse_result_change_txt_record_changed",
+    ] {
+        assert!(
+            skipped_names.contains(name),
+            "{name} should be recorded in skipped_symbols; got {skipped_names:?}"
+        );
+    }
+}
+
+#[test]
+fn anonymous_enum_member_top_level_func_is_skipped() {
+    // Defensive symmetry: a `c:@Ea@`/`c:@EA@` USR on a `Func` node is
+    // equally non-`dlsym`-able and must be filtered. Whether or not the
+    // digester actually emits this shape today, the filter should be
+    // symmetric across the Var and Func arms — same producer, same
+    // discriminator, same skip path — so future digester releases that
+    // surface anonymous-enum-shaped Func nodes are caught automatically.
+    let doc = doc_with_top_level(vec![
+        top_level_func("real_c_function", "c:@F@real_c_function"),
+        top_level_func("anon_enum_func_a", "c:@Ea@SomeEnum@anon_enum_func_a"),
+        top_level_func(
+            "anon_enum_func_typedef",
+            "c:@EA@SomeEnum_t@anon_enum_func_typedef",
+        ),
+    ]);
+
+    let framework = map_abi_to_framework(&doc, "15.4");
+
+    let kept: Vec<&str> = framework
+        .functions
+        .iter()
+        .map(|f| f.name.as_str())
+        .collect();
+    assert_eq!(
+        kept,
+        vec!["real_c_function"],
+        "only `c:@Ea@`/`c:@EA@` USRs should be filtered from functions"
+    );
+
+    let skipped: Vec<&str> = framework
+        .skipped_symbols
+        .iter()
+        .filter(|s| s.kind == "function")
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(
+        skipped,
+        vec!["anon_enum_func_a()", "anon_enum_func_typedef()"]
+    );
 }
 
 #[test]

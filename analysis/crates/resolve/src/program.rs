@@ -8,6 +8,11 @@
 //! - `returns_retained_method` — Cocoa ownership family detection
 //! - `satisfies_protocol_method` — protocol conformance matching
 
+// The `ascent!` macro expands rule bodies into code that clones Copy-typed
+// relation fields and produces `()` tail expressions. Clippy cannot see past
+// macro boundaries, so these lints fire on generated code we don't own.
+#![allow(clippy::clone_on_copy, clippy::unused_unit)]
+
 use ascent::ascent;
 
 use apianyware_macos_datalog::ownership::is_returns_retained;

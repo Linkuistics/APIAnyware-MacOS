@@ -73,7 +73,7 @@ pub fn resolve_loaded_frameworks(frameworks: &[Framework]) -> Result<Vec<Framewo
 
     let mut resolved = Vec::with_capacity(frameworks.len());
     for framework in frameworks {
-        let enriched = checkpoint::build_resolved_framework(framework, &prog);
+        let enriched = checkpoint::build_resolved_framework(framework, &prog, frameworks);
         resolved.push(enriched);
     }
 

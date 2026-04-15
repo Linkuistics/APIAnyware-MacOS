@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt"
          "../../../runtime/block.rkt")
@@ -12,7 +13,27 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1 _msg-2 _msg-3 _msg-4 _msg-5 _msg-6 _msg-7))
+(provide NSTimer)
+(provide/contract
+  [make-nstimer-init-with-fire-date-interval-repeats-block (c-> any/c real? boolean? (or/c procedure? #f) any/c)]
+  [make-nstimer-init-with-fire-date-interval-target-selector-user-info-repeats (c-> any/c real? any/c cpointer? any/c boolean? any/c)]
+  [nstimer-fire-date (c-> objc-object? any/c)]
+  [nstimer-set-fire-date! (c-> objc-object? any/c void?)]
+  [nstimer-time-interval (c-> objc-object? real?)]
+  [nstimer-tolerance (c-> objc-object? real?)]
+  [nstimer-set-tolerance! (c-> objc-object? real? void?)]
+  [nstimer-user-info (c-> objc-object? any/c)]
+  [nstimer-valid (c-> objc-object? boolean?)]
+  [nstimer-fire (c-> objc-object? void?)]
+  [nstimer-invalidate (c-> objc-object? void?)]
+  [nstimer-is-valid (c-> objc-object? boolean?)]
+  [nstimer-scheduled-timer-with-time-interval-invocation-repeats (c-> real? any/c boolean? any/c)]
+  [nstimer-scheduled-timer-with-time-interval-repeats-block (c-> real? boolean? (or/c procedure? #f) any/c)]
+  [nstimer-scheduled-timer-with-time-interval-target-selector-user-info-repeats (c-> real? any/c cpointer? any/c boolean? any/c)]
+  [nstimer-timer-with-time-interval-invocation-repeats (c-> real? any/c boolean? any/c)]
+  [nstimer-timer-with-time-interval-repeats-block (c-> real? boolean? (or/c procedure? #f) any/c)]
+  [nstimer-timer-with-time-interval-target-selector-user-info-repeats (c-> real? any/c cpointer? any/c boolean? any/c)]
+  )
 
 ;; --- Class reference ---
 (import-class NSTimer)
@@ -66,7 +87,7 @@
   (wrap-objc-object
    (tell (coerce-arg self) fireDate)))
 (define (nstimer-set-fire-date! self value)
-  (tell (coerce-arg self) setFireDate: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setFireDate: (coerce-arg value)))
 (define (nstimer-time-interval self)
   (tell #:type _double (coerce-arg self) timeInterval))
 (define (nstimer-tolerance self)
@@ -81,9 +102,9 @@
 
 ;; --- Instance methods ---
 (define (nstimer-fire self)
-  (tell (coerce-arg self) fire))
+  (tell #:type _void (coerce-arg self) fire))
 (define (nstimer-invalidate self)
-  (tell (coerce-arg self) invalidate))
+  (tell #:type _void (coerce-arg self) invalidate))
 (define (nstimer-is-valid self)
   (_msg-0 (coerce-arg self) (sel_registerName "isValid")))
 

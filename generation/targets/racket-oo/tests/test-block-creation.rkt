@@ -155,6 +155,32 @@
               (unbox count))))
 
          (check-equal? result 1 "Block should have been called once")
-         (free-objc-block blk-id))))))
+         (free-objc-block blk-id))))
+
+   (test-case "make-objc-block with #f returns NULL pointer"
+     ;; Passing #f as proc should return a NULL block pointer,
+     ;; not a wrapped lambda that crashes on invocation.
+     ;; This is how callers express "no callback" (ObjC nil block).
+     (define-values (blk blk-id)
+       (make-objc-block #f '() _void))
+     (check-false blk "Block pointer should be #f (NULL) for nil proc")
+     (check-false blk-id "Block ID should be #f for nil proc"))
+
+   (test-case "free-objc-block with #f block-id is a no-op"
+     ;; Freeing a nil block should not error
+     (check-not-exn
+       (lambda () (free-objc-block #f))
+       "free-objc-block should accept #f gracefully"))
+
+   (test-case "call-with-objc-block with #f proc passes NULL"
+     ;; When proc is #f, the body should receive #f as the block pointer.
+     (define-values (result blk-id)
+       (call-with-objc-block
+        #f '() _void
+        (lambda (blk)
+          (check-false blk "Body should receive #f for nil block")
+          'ok)))
+     (check-equal? result 'ok "Body should execute normally")
+     (check-false blk-id "Block ID should be #f for nil proc"))))
 
 (run-tests block-tests)

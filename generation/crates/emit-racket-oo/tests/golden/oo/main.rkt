@@ -8,6 +8,8 @@
   "tkmanager.rkt"
   "tkhelper.rkt"
   "enums.rkt"
+  "constants.rkt"
+  "functions.rkt"
   "protocols/tkcopying.rkt"
   "protocols/tkdelegate.rkt"
   )
@@ -19,6 +21,8 @@
   "tkmanager.rkt"
   "tkhelper.rkt"
   "enums.rkt"
+  "constants.rkt"
+  "functions.rkt"
   "protocols/tkcopying.rkt"
   "protocols/tkdelegate.rkt"
   ))

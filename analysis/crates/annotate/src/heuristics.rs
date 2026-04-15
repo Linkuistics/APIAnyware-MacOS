@@ -243,10 +243,10 @@ fn derive_error_pattern(method: &Method) -> Option<ErrorPattern> {
     if let Some(last_param) = method.params.last() {
         // NSError** appears as Pointer type with name containing "error"
         let name_lower = last_param.name.to_lowercase();
-        if name_lower == "error" || name_lower.ends_with("error") {
-            if matches!(last_param.param_type.kind, TypeRefKind::Pointer) {
-                return Some(ErrorPattern::ErrorOutParam);
-            }
+        if (name_lower == "error" || name_lower.ends_with("error"))
+            && matches!(last_param.param_type.kind, TypeRefKind::Pointer)
+        {
+            return Some(ErrorPattern::ErrorOutParam);
         }
     }
 

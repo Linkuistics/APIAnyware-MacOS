@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt")
 
@@ -11,7 +12,48 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1))
+(provide NSString)
+(provide/contract
+  [make-nsstring-init-with-coder (c-> any/c any/c)]
+  [nsstring-utf8-string (c-> objc-object? (or/c cpointer? #f))]
+  [nsstring-absolute-path (c-> objc-object? boolean?)]
+  [nsstring-available-string-encodings (c-> (or/c cpointer? #f))]
+  [nsstring-bool-value (c-> objc-object? boolean?)]
+  [nsstring-capitalized-string (c-> objc-object? any/c)]
+  [nsstring-custom-playground-quick-look (c-> objc-object? any/c)]
+  [nsstring-decomposed-string-with-canonical-mapping (c-> objc-object? any/c)]
+  [nsstring-decomposed-string-with-compatibility-mapping (c-> objc-object? any/c)]
+  [nsstring-default-c-string-encoding (c-> exact-nonnegative-integer?)]
+  [nsstring-description (c-> objc-object? any/c)]
+  [nsstring-double-value (c-> objc-object? real?)]
+  [nsstring-fastest-encoding (c-> objc-object? exact-nonnegative-integer?)]
+  [nsstring-file-system-representation (c-> objc-object? (or/c cpointer? #f))]
+  [nsstring-float-value (c-> objc-object? real?)]
+  [nsstring-hash (c-> objc-object? exact-nonnegative-integer?)]
+  [nsstring-int-value (c-> objc-object? exact-integer?)]
+  [nsstring-integer-value (c-> objc-object? exact-integer?)]
+  [nsstring-last-path-component (c-> objc-object? any/c)]
+  [nsstring-length (c-> objc-object? exact-nonnegative-integer?)]
+  [nsstring-localized-capitalized-string (c-> objc-object? any/c)]
+  [nsstring-localized-lowercase-string (c-> objc-object? any/c)]
+  [nsstring-localized-uppercase-string (c-> objc-object? any/c)]
+  [nsstring-long-long-value (c-> objc-object? exact-integer?)]
+  [nsstring-lowercase-string (c-> objc-object? any/c)]
+  [nsstring-path-components (c-> objc-object? any/c)]
+  [nsstring-path-extension (c-> objc-object? any/c)]
+  [nsstring-precomposed-string-with-canonical-mapping (c-> objc-object? any/c)]
+  [nsstring-precomposed-string-with-compatibility-mapping (c-> objc-object? any/c)]
+  [nsstring-smallest-encoding (c-> objc-object? exact-nonnegative-integer?)]
+  [nsstring-string-by-abbreviating-with-tilde-in-path (c-> objc-object? any/c)]
+  [nsstring-string-by-deleting-last-path-component (c-> objc-object? any/c)]
+  [nsstring-string-by-deleting-path-extension (c-> objc-object? any/c)]
+  [nsstring-string-by-expanding-tilde-in-path (c-> objc-object? any/c)]
+  [nsstring-string-by-removing-percent-encoding (c-> objc-object? any/c)]
+  [nsstring-string-by-resolving-symlinks-in-path (c-> objc-object? any/c)]
+  [nsstring-string-by-standardizing-path (c-> objc-object? any/c)]
+  [nsstring-uppercase-string (c-> objc-object? any/c)]
+  [nsstring-character-at-index (c-> objc-object? exact-nonnegative-integer? exact-nonnegative-integer?)]
+  )
 
 ;; --- Class reference ---
 (import-class NSString)
@@ -43,7 +85,8 @@
   (wrap-objc-object
    (tell (coerce-arg self) capitalizedString)))
 (define (nsstring-custom-playground-quick-look self)
-  (tell #:type _pointer (coerce-arg self) customPlaygroundQuickLook))
+  (wrap-objc-object
+   (tell (coerce-arg self) customPlaygroundQuickLook)))
 (define (nsstring-decomposed-string-with-canonical-mapping self)
   (wrap-objc-object
    (tell (coerce-arg self) decomposedStringWithCanonicalMapping)))

@@ -16,6 +16,12 @@
 //! - `violation_unclassified_block` — block param without sync/async/stored classification
 //! - `violation_flag_mismatch` — returns_retained flag disagrees with ownership family
 
+// The `ascent!` macro expands rule bodies into code that clones Copy-typed
+// relation fields, produces `()` tail expressions, and stamps explicit
+// lifetimes on index iterators. Clippy cannot see past macro boundaries, so
+// these lints fire on generated code we don't own.
+#![allow(clippy::clone_on_copy, clippy::unused_unit, clippy::needless_lifetimes)]
+
 use ascent::ascent;
 
 use apianyware_macos_datalog::ownership::is_returns_retained;

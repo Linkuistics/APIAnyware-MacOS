@@ -24,8 +24,7 @@ use crate::type_ref::TypeRef;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Framework {
     /// Schema version for this checkpoint format (e.g., `"1.0"`).
-    /// Also accepts `ir_version` from legacy POC JSON.
-    #[serde(alias = "ir_version", default)]
+    #[serde(default)]
     pub format_version: String,
 
     /// Pipeline phase that produced this checkpoint: `"collected"`, `"resolved"`,
@@ -34,7 +33,6 @@ pub struct Framework {
     pub checkpoint: String,
 
     /// Framework name (e.g., `"Foundation"`, `"AppKit"`).
-    #[serde(rename = "framework")]
     pub name: String,
 
     /// macOS SDK version used during collection (e.g., `"15.4"`).
@@ -94,11 +92,6 @@ pub struct Framework {
     /// Verification report (populated by enrich step).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification: Option<VerificationReport>,
-
-    // --- Legacy POC fields (read-only backward compatibility) ---
-    /// Legacy: IR level from POC (0 = collected, 1 = resolved). Ignored in new format.
-    #[serde(default, skip_serializing)]
-    pub ir_level: Option<i32>,
 }
 
 /// A symbol that was skipped during extraction.

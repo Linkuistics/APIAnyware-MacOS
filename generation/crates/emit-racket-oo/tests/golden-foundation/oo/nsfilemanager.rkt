@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt"
          "../../../runtime/block.rkt")
@@ -12,7 +13,72 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1 _msg-2 _msg-3 _msg-4 _msg-5 _msg-6 _msg-7 _msg-8 _msg-9 _msg-10 _msg-11 _msg-12 _msg-13 _msg-14 _msg-15 _msg-16 _msg-17 _msg-18 _msg-19 _msg-20))
+(provide NSFileManager)
+(provide/contract
+  [nsfilemanager-current-directory-path (c-> objc-object? any/c)]
+  [nsfilemanager-default-manager (c-> any/c)]
+  [nsfilemanager-delegate (c-> objc-object? any/c)]
+  [nsfilemanager-set-delegate! (c-> objc-object? any/c void?)]
+  [nsfilemanager-home-directory-for-current-user (c-> objc-object? any/c)]
+  [nsfilemanager-temporary-directory (c-> objc-object? any/c)]
+  [nsfilemanager-ubiquity-identity-token (c-> objc-object? any/c)]
+  [nsfilemanager-url-for-directory-in-domain-appropriate-for-url-create-error (c-> objc-object? exact-nonnegative-integer? exact-nonnegative-integer? any/c boolean? (or/c cpointer? #f) any/c)]
+  [nsfilemanager-url-for-publishing-ubiquitous-item-at-url-expiration-date-error (c-> objc-object? any/c (or/c cpointer? #f) (or/c cpointer? #f) any/c)]
+  [nsfilemanager-url-for-ubiquity-container-identifier (c-> objc-object? any/c any/c)]
+  [nsfilemanager-ur-ls-for-directory-in-domains (c-> objc-object? exact-nonnegative-integer? exact-nonnegative-integer? any/c)]
+  [nsfilemanager-attributes-of-file-system-for-path-error (c-> objc-object? any/c (or/c cpointer? #f) any/c)]
+  [nsfilemanager-attributes-of-item-at-path-error (c-> objc-object? any/c (or/c cpointer? #f) any/c)]
+  [nsfilemanager-change-current-directory-path (c-> objc-object? any/c boolean?)]
+  [nsfilemanager-components-to-display-for-path (c-> objc-object? any/c any/c)]
+  [nsfilemanager-container-url-for-security-application-group-identifier (c-> objc-object? any/c any/c)]
+  [nsfilemanager-contents-at-path (c-> objc-object? any/c any/c)]
+  [nsfilemanager-contents-equal-at-path-and-path (c-> objc-object? any/c any/c boolean?)]
+  [nsfilemanager-contents-of-directory-at-path-error (c-> objc-object? any/c (or/c cpointer? #f) any/c)]
+  [nsfilemanager-contents-of-directory-at-url-including-properties-for-keys-options-error (c-> objc-object? any/c any/c exact-nonnegative-integer? (or/c cpointer? #f) any/c)]
+  [nsfilemanager-copy-item-at-path-to-path-error (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-copy-item-at-url-to-url-error (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-create-directory-at-path-with-intermediate-directories-attributes-error (c-> objc-object? any/c boolean? any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-create-directory-at-url-with-intermediate-directories-attributes-error (c-> objc-object? any/c boolean? any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-create-file-at-path-contents-attributes (c-> objc-object? any/c any/c any/c boolean?)]
+  [nsfilemanager-create-symbolic-link-at-path-with-destination-path-error (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-create-symbolic-link-at-url-with-destination-url-error (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-destination-of-symbolic-link-at-path-error (c-> objc-object? any/c (or/c cpointer? #f) any/c)]
+  [nsfilemanager-display-name-at-path! (c-> objc-object? any/c any/c)]
+  [nsfilemanager-enumerator-at-path (c-> objc-object? any/c any/c)]
+  [nsfilemanager-enumerator-at-url-including-properties-for-keys-options-error-handler (c-> objc-object? any/c any/c exact-nonnegative-integer? (or/c procedure? #f) any/c)]
+  [nsfilemanager-evict-ubiquitous-item-at-url-error (c-> objc-object? any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-fetch-latest-remote-version-of-item-at-url-completion-handler (c-> objc-object? any/c (or/c procedure? #f) void?)]
+  [nsfilemanager-file-exists-at-path (c-> objc-object? any/c boolean?)]
+  [nsfilemanager-file-exists-at-path-is-directory (c-> objc-object? any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-file-system-representation-with-path (c-> objc-object? any/c (or/c cpointer? #f))]
+  [nsfilemanager-get-file-provider-services-for-item-at-url-completion-handler (c-> objc-object? any/c (or/c procedure? #f) void?)]
+  [nsfilemanager-get-relationship-of-directory-in-domain-to-item-at-url-error (c-> objc-object? (or/c cpointer? #f) exact-nonnegative-integer? exact-nonnegative-integer? any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-get-relationship-of-directory-at-url-to-item-at-url-error (c-> objc-object? (or/c cpointer? #f) any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-is-deletable-file-at-path (c-> objc-object? any/c boolean?)]
+  [nsfilemanager-is-executable-file-at-path (c-> objc-object? any/c boolean?)]
+  [nsfilemanager-is-readable-file-at-path (c-> objc-object? any/c boolean?)]
+  [nsfilemanager-is-ubiquitous-item-at-url (c-> objc-object? any/c boolean?)]
+  [nsfilemanager-is-writable-file-at-path (c-> objc-object? any/c boolean?)]
+  [nsfilemanager-link-item-at-path-to-path-error (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-link-item-at-url-to-url-error (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-mounted-volume-ur-ls-including-resource-values-for-keys-options (c-> objc-object? any/c exact-nonnegative-integer? any/c)]
+  [nsfilemanager-move-item-at-path-to-path-error! (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-move-item-at-url-to-url-error! (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-pause-sync-for-ubiquitous-item-at-url-completion-handler (c-> objc-object? any/c (or/c procedure? #f) void?)]
+  [nsfilemanager-remove-item-at-path-error! (c-> objc-object? any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-remove-item-at-url-error! (c-> objc-object? any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-replace-item-at-url-with-item-at-url-backup-item-name-options-resulting-item-url-error! (c-> objc-object? any/c any/c any/c exact-nonnegative-integer? (or/c cpointer? #f) (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-resume-sync-for-ubiquitous-item-at-url-with-behavior-completion-handler (c-> objc-object? any/c exact-nonnegative-integer? (or/c procedure? #f) void?)]
+  [nsfilemanager-set-attributes-of-item-at-path-error! (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-set-ubiquitous-item-at-url-destination-url-error! (c-> objc-object? boolean? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-start-downloading-ubiquitous-item-at-url-error (c-> objc-object? any/c (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-string-with-file-system-representation-length (c-> objc-object? (or/c cpointer? #f) exact-nonnegative-integer? any/c)]
+  [nsfilemanager-subpaths-at-path (c-> objc-object? any/c any/c)]
+  [nsfilemanager-subpaths-of-directory-at-path-error (c-> objc-object? any/c (or/c cpointer? #f) any/c)]
+  [nsfilemanager-trash-item-at-url-resulting-item-url-error (c-> objc-object? any/c (or/c cpointer? #f) (or/c cpointer? #f) boolean?)]
+  [nsfilemanager-unmount-volume-at-url-options-completion-handler (c-> objc-object? any/c exact-nonnegative-integer? (or/c procedure? #f) void?)]
+  [nsfilemanager-upload-local-version-of-ubiquitous-item-at-url-with-conflict-resolution-policy-completion-handler (c-> objc-object? any/c exact-nonnegative-integer? (or/c procedure? #f) void?)]
+  )
 
 ;; --- Class reference ---
 (import-class NSFileManager)
@@ -72,7 +138,7 @@
   (wrap-objc-object
    (tell (coerce-arg self) delegate)))
 (define (nsfilemanager-set-delegate! self value)
-  (tell (coerce-arg self) setDelegate: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setDelegate: (coerce-arg value)))
 (define (nsfilemanager-home-directory-for-current-user self)
   (wrap-objc-object
    (tell (coerce-arg self) homeDirectoryForCurrentUser)))

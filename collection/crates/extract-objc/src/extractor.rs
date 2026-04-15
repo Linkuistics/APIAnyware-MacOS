@@ -58,7 +58,6 @@ pub fn extract_framework(
         api_patterns: vec![],
         enrichment: None,
         verification: None,
-        ir_level: None,
     })
 }
 
@@ -85,7 +84,7 @@ fn parse_umbrella_header<'a>(
 
     // Build clang arguments for ObjC parsing with SDK paths
     let sdk_path_str = sdk_path.to_string_lossy();
-    let args = vec![
+    let args = [
         "-x".to_string(),
         "objective-c".to_string(),
         "-isysroot".to_string(),

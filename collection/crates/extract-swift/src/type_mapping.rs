@@ -16,6 +16,10 @@ pub fn map_swift_type(node: &AbiNode) -> TypeRef {
     match node.kind.as_str() {
         "TypeNominal" => map_type_nominal(node),
         "TypeFunc" => map_type_func(node),
+        // TypeNameAlias: a type reference through a typedef. The first child
+        // is the resolved underlying type — recurse into it rather than
+        // storing the alias's printedName as a Primitive.
+        "TypeNameAlias" if !node.children.is_empty() => map_swift_type(&node.children[0]),
         _ => TypeRef {
             nullable: false,
             kind: TypeRefKind::Primitive {
@@ -383,6 +387,76 @@ mod tests {
         let node = nominal("GenericTypeParam", "", "Subject", vec![]);
         let result = map_swift_type(&node);
         assert!(matches!(result.kind, TypeRefKind::Id));
+    }
+
+    fn type_name_alias(name: &str, printed: &str, children: Vec<AbiNode>) -> AbiNode {
+        AbiNode {
+            kind: "TypeNameAlias".to_string(),
+            name: name.to_string(),
+            printed_name: printed.to_string(),
+            children,
+            ..default_node()
+        }
+    }
+
+    #[test]
+    fn map_type_name_alias_resolves_to_underlying_type() {
+        // CFStringEncoding is a typedef for UInt32 — should resolve to uint32, not Primitive("CoreFoundation.CFStringEncoding")
+        let underlying = nominal("UInt32", "s:s6UInt32V", "Swift.UInt32", vec![]);
+        let node = type_name_alias(
+            "CFStringEncoding",
+            "CoreFoundation.CFStringEncoding",
+            vec![underlying],
+        );
+        let result = map_swift_type(&node);
+        assert!(
+            matches!(result.kind, TypeRefKind::Primitive { ref name } if name == "uint32"),
+            "CFStringEncoding should resolve to uint32 via underlying UInt32, got {:?}",
+            result.kind
+        );
+    }
+
+    #[test]
+    fn map_type_name_alias_resolves_void() {
+        // TypeNameAlias for Void should resolve to void, not Primitive("Swift.Void")
+        let underlying = nominal("Void", "", "()", vec![]);
+        let node = type_name_alias("Void", "Swift.Void", vec![underlying]);
+        let result = map_swift_type(&node);
+        assert!(
+            matches!(result.kind, TypeRefKind::Primitive { ref name } if name == "void"),
+            "TypeNameAlias(Void) should resolve to void, got {:?}",
+            result.kind
+        );
+    }
+
+    #[test]
+    fn map_type_name_alias_resolves_class() {
+        // A typedef alias to a class type should resolve to the class
+        let underlying = nominal(
+            "NSObject",
+            "c:objc(cs)NSObject",
+            "ObjectiveC.NSObject",
+            vec![],
+        );
+        let node = type_name_alias("SomeAlias", "Framework.SomeAlias", vec![underlying]);
+        let result = map_swift_type(&node);
+        assert!(
+            matches!(result.kind, TypeRefKind::Class { ref name, .. } if name == "NSObject"),
+            "TypeNameAlias to class should resolve to the class, got {:?}",
+            result.kind
+        );
+    }
+
+    #[test]
+    fn map_type_name_alias_no_children_falls_back() {
+        // Edge case: TypeNameAlias with no children uses printed_name as Primitive
+        let node = type_name_alias("Unknown", "SomeModule.Unknown", vec![]);
+        let result = map_swift_type(&node);
+        assert!(
+            matches!(result.kind, TypeRefKind::Primitive { ref name } if name == "SomeModule.Unknown"),
+            "TypeNameAlias with no children should fall back to Primitive, got {:?}",
+            result.kind
+        );
     }
 
     #[test]

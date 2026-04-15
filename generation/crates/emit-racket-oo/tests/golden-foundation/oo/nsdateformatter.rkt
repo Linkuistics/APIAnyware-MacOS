@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt"
          "../../../runtime/type-mapping.rkt")
@@ -12,7 +13,92 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1 _msg-2 _msg-3 _msg-4 _msg-5 _msg-6 _msg-7 _msg-8 _msg-9))
+(provide NSDateFormatter)
+(provide/contract
+  [nsdateformatter-am-symbol (c-> objc-object? any/c)]
+  [nsdateformatter-set-am-symbol! (c-> objc-object? any/c void?)]
+  [nsdateformatter-pm-symbol (c-> objc-object? any/c)]
+  [nsdateformatter-set-pm-symbol! (c-> objc-object? any/c void?)]
+  [nsdateformatter-calendar (c-> objc-object? any/c)]
+  [nsdateformatter-set-calendar! (c-> objc-object? any/c void?)]
+  [nsdateformatter-date-format (c-> objc-object? any/c)]
+  [nsdateformatter-set-date-format! (c-> objc-object? any/c void?)]
+  [nsdateformatter-date-style (c-> objc-object? exact-nonnegative-integer?)]
+  [nsdateformatter-set-date-style! (c-> objc-object? exact-nonnegative-integer? void?)]
+  [nsdateformatter-default-date (c-> objc-object? any/c)]
+  [nsdateformatter-set-default-date! (c-> objc-object? any/c void?)]
+  [nsdateformatter-default-formatter-behavior (c-> exact-nonnegative-integer?)]
+  [nsdateformatter-set-default-formatter-behavior! (c-> exact-nonnegative-integer? void?)]
+  [nsdateformatter-does-relative-date-formatting (c-> objc-object? boolean?)]
+  [nsdateformatter-set-does-relative-date-formatting! (c-> objc-object? boolean? void?)]
+  [nsdateformatter-era-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-era-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-formatter-behavior (c-> objc-object? exact-nonnegative-integer?)]
+  [nsdateformatter-set-formatter-behavior! (c-> objc-object? exact-nonnegative-integer? void?)]
+  [nsdateformatter-formatting-context (c-> objc-object? exact-nonnegative-integer?)]
+  [nsdateformatter-set-formatting-context! (c-> objc-object? exact-nonnegative-integer? void?)]
+  [nsdateformatter-generates-calendar-dates (c-> objc-object? boolean?)]
+  [nsdateformatter-set-generates-calendar-dates! (c-> objc-object? boolean? void?)]
+  [nsdateformatter-gregorian-start-date (c-> objc-object? any/c)]
+  [nsdateformatter-set-gregorian-start-date! (c-> objc-object? any/c void?)]
+  [nsdateformatter-lenient (c-> objc-object? boolean?)]
+  [nsdateformatter-set-lenient! (c-> objc-object? boolean? void?)]
+  [nsdateformatter-locale (c-> objc-object? any/c)]
+  [nsdateformatter-set-locale! (c-> objc-object? any/c void?)]
+  [nsdateformatter-long-era-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-long-era-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-month-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-month-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-quarter-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-quarter-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-short-month-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-short-month-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-short-quarter-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-short-quarter-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-short-standalone-month-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-short-standalone-month-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-short-standalone-quarter-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-short-standalone-quarter-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-short-standalone-weekday-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-short-standalone-weekday-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-short-weekday-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-short-weekday-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-standalone-month-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-standalone-month-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-standalone-quarter-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-standalone-quarter-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-standalone-weekday-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-standalone-weekday-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-time-style (c-> objc-object? exact-nonnegative-integer?)]
+  [nsdateformatter-set-time-style! (c-> objc-object? exact-nonnegative-integer? void?)]
+  [nsdateformatter-time-zone (c-> objc-object? any/c)]
+  [nsdateformatter-set-time-zone! (c-> objc-object? any/c void?)]
+  [nsdateformatter-two-digit-start-date (c-> objc-object? any/c)]
+  [nsdateformatter-set-two-digit-start-date! (c-> objc-object? any/c void?)]
+  [nsdateformatter-very-short-month-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-very-short-month-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-very-short-standalone-month-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-very-short-standalone-month-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-very-short-standalone-weekday-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-very-short-standalone-weekday-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-very-short-weekday-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-very-short-weekday-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-weekday-symbols (c-> objc-object? any/c)]
+  [nsdateformatter-set-weekday-symbols! (c-> objc-object? any/c void?)]
+  [nsdateformatter-attributed-string-for-object-value-with-default-attributes (c-> objc-object? any/c any/c any/c)]
+  [nsdateformatter-date-from-string (c-> objc-object? any/c any/c)]
+  [nsdateformatter-editing-string-for-object-value (c-> objc-object? any/c any/c)]
+  [nsdateformatter-get-object-value-for-string-error-description (c-> objc-object? (or/c cpointer? #f) any/c (or/c cpointer? #f) boolean?)]
+  [nsdateformatter-get-object-value-for-string-range-error (c-> objc-object? (or/c cpointer? #f) any/c (or/c cpointer? #f) (or/c cpointer? #f) boolean?)]
+  [nsdateformatter-is-lenient (c-> objc-object? boolean?)]
+  [nsdateformatter-is-partial-string-valid-new-editing-string-error-description (c-> objc-object? any/c (or/c cpointer? #f) (or/c cpointer? #f) boolean?)]
+  [nsdateformatter-is-partial-string-valid-proposed-selected-range-original-string-original-selected-range-error-description (c-> objc-object? (or/c cpointer? #f) (or/c cpointer? #f) any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsdateformatter-set-localized-date-format-from-template! (c-> objc-object? any/c void?)]
+  [nsdateformatter-string-for-object-value (c-> objc-object? any/c any/c)]
+  [nsdateformatter-string-from-date (c-> objc-object? any/c any/c)]
+  [nsdateformatter-date-format-from-template-options-locale (c-> any/c exact-nonnegative-integer? any/c any/c)]
+  [nsdateformatter-localized-string-from-date-date-style-time-style (c-> any/c exact-nonnegative-integer? exact-nonnegative-integer? any/c)]
+  )
 
 ;; --- Class reference ---
 (import-class NSDateFormatter)
@@ -44,22 +130,22 @@
   (wrap-objc-object
    (tell (coerce-arg self) AMSymbol)))
 (define (nsdateformatter-set-am-symbol! self value)
-  (tell (coerce-arg self) setAMSymbol: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setAMSymbol: (coerce-arg value)))
 (define (nsdateformatter-pm-symbol self)
   (wrap-objc-object
    (tell (coerce-arg self) PMSymbol)))
 (define (nsdateformatter-set-pm-symbol! self value)
-  (tell (coerce-arg self) setPMSymbol: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setPMSymbol: (coerce-arg value)))
 (define (nsdateformatter-calendar self)
   (wrap-objc-object
    (tell (coerce-arg self) calendar)))
 (define (nsdateformatter-set-calendar! self value)
-  (tell (coerce-arg self) setCalendar: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setCalendar: (coerce-arg value)))
 (define (nsdateformatter-date-format self)
   (wrap-objc-object
    (tell (coerce-arg self) dateFormat)))
 (define (nsdateformatter-set-date-format! self value)
-  (tell (coerce-arg self) setDateFormat: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setDateFormat: (coerce-arg value)))
 (define (nsdateformatter-date-style self)
   (tell #:type _uint64 (coerce-arg self) dateStyle))
 (define (nsdateformatter-set-date-style! self value)
@@ -68,11 +154,11 @@
   (wrap-objc-object
    (tell (coerce-arg self) defaultDate)))
 (define (nsdateformatter-set-default-date! self value)
-  (tell (coerce-arg self) setDefaultDate: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setDefaultDate: (coerce-arg value)))
 (define (nsdateformatter-default-formatter-behavior)
   (tell #:type _uint64 NSDateFormatter defaultFormatterBehavior))
-(define (nsdateformatter-set-default-formatter-behavior! self value)
-  (_msg-9 (coerce-arg self) (sel_registerName "setDefaultFormatterBehavior:") value))
+(define (nsdateformatter-set-default-formatter-behavior! value)
+  (_msg-9 NSDateFormatter (sel_registerName "setDefaultFormatterBehavior:") value))
 (define (nsdateformatter-does-relative-date-formatting self)
   (tell #:type _bool (coerce-arg self) doesRelativeDateFormatting))
 (define (nsdateformatter-set-does-relative-date-formatting! self value)
@@ -81,7 +167,7 @@
   (wrap-objc-object
    (tell (coerce-arg self) eraSymbols)))
 (define (nsdateformatter-set-era-symbols! self value)
-  (tell (coerce-arg self) setEraSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setEraSymbols: (coerce-arg value)))
 (define (nsdateformatter-formatter-behavior self)
   (tell #:type _uint64 (coerce-arg self) formatterBehavior))
 (define (nsdateformatter-set-formatter-behavior! self value)
@@ -98,7 +184,7 @@
   (wrap-objc-object
    (tell (coerce-arg self) gregorianStartDate)))
 (define (nsdateformatter-set-gregorian-start-date! self value)
-  (tell (coerce-arg self) setGregorianStartDate: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setGregorianStartDate: (coerce-arg value)))
 (define (nsdateformatter-lenient self)
   (tell #:type _bool (coerce-arg self) lenient))
 (define (nsdateformatter-set-lenient! self value)
@@ -107,67 +193,67 @@
   (wrap-objc-object
    (tell (coerce-arg self) locale)))
 (define (nsdateformatter-set-locale! self value)
-  (tell (coerce-arg self) setLocale: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setLocale: (coerce-arg value)))
 (define (nsdateformatter-long-era-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) longEraSymbols)))
 (define (nsdateformatter-set-long-era-symbols! self value)
-  (tell (coerce-arg self) setLongEraSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setLongEraSymbols: (coerce-arg value)))
 (define (nsdateformatter-month-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) monthSymbols)))
 (define (nsdateformatter-set-month-symbols! self value)
-  (tell (coerce-arg self) setMonthSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setMonthSymbols: (coerce-arg value)))
 (define (nsdateformatter-quarter-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) quarterSymbols)))
 (define (nsdateformatter-set-quarter-symbols! self value)
-  (tell (coerce-arg self) setQuarterSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setQuarterSymbols: (coerce-arg value)))
 (define (nsdateformatter-short-month-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) shortMonthSymbols)))
 (define (nsdateformatter-set-short-month-symbols! self value)
-  (tell (coerce-arg self) setShortMonthSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setShortMonthSymbols: (coerce-arg value)))
 (define (nsdateformatter-short-quarter-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) shortQuarterSymbols)))
 (define (nsdateformatter-set-short-quarter-symbols! self value)
-  (tell (coerce-arg self) setShortQuarterSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setShortQuarterSymbols: (coerce-arg value)))
 (define (nsdateformatter-short-standalone-month-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) shortStandaloneMonthSymbols)))
 (define (nsdateformatter-set-short-standalone-month-symbols! self value)
-  (tell (coerce-arg self) setShortStandaloneMonthSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setShortStandaloneMonthSymbols: (coerce-arg value)))
 (define (nsdateformatter-short-standalone-quarter-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) shortStandaloneQuarterSymbols)))
 (define (nsdateformatter-set-short-standalone-quarter-symbols! self value)
-  (tell (coerce-arg self) setShortStandaloneQuarterSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setShortStandaloneQuarterSymbols: (coerce-arg value)))
 (define (nsdateformatter-short-standalone-weekday-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) shortStandaloneWeekdaySymbols)))
 (define (nsdateformatter-set-short-standalone-weekday-symbols! self value)
-  (tell (coerce-arg self) setShortStandaloneWeekdaySymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setShortStandaloneWeekdaySymbols: (coerce-arg value)))
 (define (nsdateformatter-short-weekday-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) shortWeekdaySymbols)))
 (define (nsdateformatter-set-short-weekday-symbols! self value)
-  (tell (coerce-arg self) setShortWeekdaySymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setShortWeekdaySymbols: (coerce-arg value)))
 (define (nsdateformatter-standalone-month-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) standaloneMonthSymbols)))
 (define (nsdateformatter-set-standalone-month-symbols! self value)
-  (tell (coerce-arg self) setStandaloneMonthSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setStandaloneMonthSymbols: (coerce-arg value)))
 (define (nsdateformatter-standalone-quarter-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) standaloneQuarterSymbols)))
 (define (nsdateformatter-set-standalone-quarter-symbols! self value)
-  (tell (coerce-arg self) setStandaloneQuarterSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setStandaloneQuarterSymbols: (coerce-arg value)))
 (define (nsdateformatter-standalone-weekday-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) standaloneWeekdaySymbols)))
 (define (nsdateformatter-set-standalone-weekday-symbols! self value)
-  (tell (coerce-arg self) setStandaloneWeekdaySymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setStandaloneWeekdaySymbols: (coerce-arg value)))
 (define (nsdateformatter-time-style self)
   (tell #:type _uint64 (coerce-arg self) timeStyle))
 (define (nsdateformatter-set-time-style! self value)
@@ -176,37 +262,37 @@
   (wrap-objc-object
    (tell (coerce-arg self) timeZone)))
 (define (nsdateformatter-set-time-zone! self value)
-  (tell (coerce-arg self) setTimeZone: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setTimeZone: (coerce-arg value)))
 (define (nsdateformatter-two-digit-start-date self)
   (wrap-objc-object
    (tell (coerce-arg self) twoDigitStartDate)))
 (define (nsdateformatter-set-two-digit-start-date! self value)
-  (tell (coerce-arg self) setTwoDigitStartDate: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setTwoDigitStartDate: (coerce-arg value)))
 (define (nsdateformatter-very-short-month-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) veryShortMonthSymbols)))
 (define (nsdateformatter-set-very-short-month-symbols! self value)
-  (tell (coerce-arg self) setVeryShortMonthSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setVeryShortMonthSymbols: (coerce-arg value)))
 (define (nsdateformatter-very-short-standalone-month-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) veryShortStandaloneMonthSymbols)))
 (define (nsdateformatter-set-very-short-standalone-month-symbols! self value)
-  (tell (coerce-arg self) setVeryShortStandaloneMonthSymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setVeryShortStandaloneMonthSymbols: (coerce-arg value)))
 (define (nsdateformatter-very-short-standalone-weekday-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) veryShortStandaloneWeekdaySymbols)))
 (define (nsdateformatter-set-very-short-standalone-weekday-symbols! self value)
-  (tell (coerce-arg self) setVeryShortStandaloneWeekdaySymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setVeryShortStandaloneWeekdaySymbols: (coerce-arg value)))
 (define (nsdateformatter-very-short-weekday-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) veryShortWeekdaySymbols)))
 (define (nsdateformatter-set-very-short-weekday-symbols! self value)
-  (tell (coerce-arg self) setVeryShortWeekdaySymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setVeryShortWeekdaySymbols: (coerce-arg value)))
 (define (nsdateformatter-weekday-symbols self)
   (wrap-objc-object
    (tell (coerce-arg self) weekdaySymbols)))
 (define (nsdateformatter-set-weekday-symbols! self value)
-  (tell (coerce-arg self) setWeekdaySymbols: (coerce-arg value)))
+  (tell #:type _void (coerce-arg self) setWeekdaySymbols: (coerce-arg value)))
 
 ;; --- Instance methods ---
 (define (nsdateformatter-attributed-string-for-object-value-with-default-attributes self obj attrs)
@@ -229,7 +315,7 @@
 (define (nsdateformatter-is-partial-string-valid-proposed-selected-range-original-string-original-selected-range-error-description self partial-string-ptr proposed-sel-range-ptr orig-string orig-sel-range error)
   (_msg-8 (coerce-arg self) (sel_registerName "isPartialStringValid:proposedSelectedRange:originalString:originalSelectedRange:errorDescription:") partial-string-ptr proposed-sel-range-ptr (coerce-arg orig-string) orig-sel-range error))
 (define (nsdateformatter-set-localized-date-format-from-template! self date-format-template)
-  (tell (coerce-arg self) setLocalizedDateFormatFromTemplate: (coerce-arg date-format-template)))
+  (tell #:type _void (coerce-arg self) setLocalizedDateFormatFromTemplate: (coerce-arg date-format-template)))
 (define (nsdateformatter-string-for-object-value self obj)
   (wrap-objc-object
    (tell (coerce-arg self) stringForObjectValue: (coerce-arg obj))))

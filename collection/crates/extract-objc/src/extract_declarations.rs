@@ -7,12 +7,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use clang::{Entity, EntityKind, EntityVisitResult};
+use clang::{Entity, EntityKind, EntityVisitResult, Linkage};
 
 use apianyware_macos_types::ir;
 use apianyware_macos_types::provenance::{
     Availability, DeclarationSource, DocRefs, SourceProvenance,
 };
+use apianyware_macos_types::skipped_symbol_reason;
 
 use crate::type_mapping::map_type;
 
@@ -58,15 +59,10 @@ pub fn extract_from_translation_unit(
             EntityKind::ObjCInterfaceDecl => {
                 if let Some(name) = entity.get_name() {
                     if seen_classes.insert(name.clone()) {
-                        match extract_class(&entity, sdk_path) {
-                            Some(class) => result.classes.push(class),
-                            None => {
-                                result.skipped_symbols.push(ir::SkippedSymbol {
-                                    name,
-                                    kind: "class".to_string(),
-                                    reason: "extraction failed".to_string(),
-                                });
-                            }
+                        if let Some(class) =
+                            extract_class(&entity, sdk_path, &mut result.skipped_symbols)
+                        {
+                            result.classes.push(class);
                         }
                     }
                 }
@@ -74,7 +70,9 @@ pub fn extract_from_translation_unit(
             EntityKind::ObjCProtocolDecl => {
                 if let Some(name) = entity.get_name() {
                     if seen_protocols.insert(name.clone()) {
-                        if let Some(protocol) = extract_protocol(&entity, sdk_path) {
+                        if let Some(protocol) =
+                            extract_protocol(&entity, sdk_path, &mut result.skipped_symbols)
+                        {
                             result.protocols.push(protocol);
                         }
                     }
@@ -87,6 +85,7 @@ pub fn extract_from_translation_unit(
                     framework_name,
                     &mut category_methods,
                     &mut category_properties,
+                    &mut result.skipped_symbols,
                 );
             }
             EntityKind::EnumDecl => {
@@ -110,7 +109,9 @@ pub fn extract_from_translation_unit(
             EntityKind::FunctionDecl => {
                 if let Some(name) = entity.get_name() {
                     if seen_functions.insert(name.clone()) {
-                        if let Some(func) = extract_function(&entity, sdk_path) {
+                        if let Some(func) =
+                            extract_function(&entity, sdk_path, &mut result.skipped_symbols)
+                        {
                             result.functions.push(func);
                         }
                     }
@@ -119,7 +120,9 @@ pub fn extract_from_translation_unit(
             EntityKind::VarDecl => {
                 if let Some(name) = entity.get_name() {
                     if seen_constants.insert(name.clone()) {
-                        if let Some(constant) = extract_constant(&entity, sdk_path) {
+                        if let Some(constant) =
+                            extract_constant(&entity, sdk_path, &mut result.skipped_symbols)
+                        {
                             result.constants.push(constant);
                         }
                     }
@@ -158,12 +161,50 @@ pub fn extract_from_translation_unit(
     result
 }
 
+/// Append an audit-trail entry into a framework's `skipped_symbols` list.
+///
+/// The string form of `reason` comes from [`skipped_symbol_reason`] and
+/// carries both a machine-readable tag prefix and a human description.
+/// Downstream audit tooling can match on the tag via `reason.contains(...)`.
+fn record_skip(
+    skipped_symbols: &mut Vec<ir::SkippedSymbol>,
+    name: impl Into<String>,
+    kind: &'static str,
+    reason: &'static str,
+) {
+    skipped_symbols.push(ir::SkippedSymbol {
+        name: name.into(),
+        kind: kind.to_string(),
+        reason: reason.to_string(),
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Class extraction
 // ---------------------------------------------------------------------------
 
-fn extract_class(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Class> {
+fn extract_class(
+    entity: &Entity<'_>,
+    sdk_path: &Path,
+    skipped_symbols: &mut Vec<ir::SkippedSymbol>,
+) -> Option<ir::Class> {
     let name = entity.get_name()?;
+
+    // Wholesale-drop classes marked unavailable on macOS. The ObjC
+    // runtime cannot instantiate these classes on macOS, and any
+    // selector dispatch against them crashes at first call. Dropping
+    // the whole class (with its methods and properties) mirrors the
+    // shape visible from the macOS dylib — iOS-family classes are
+    // simply absent. See `filter_platform_unavailable.rs`.
+    if is_unavailable_on_macos(entity) {
+        record_skip(
+            skipped_symbols,
+            name,
+            "class",
+            skipped_symbol_reason::PLATFORM_UNAVAILABLE_MACOS,
+        );
+        return None;
+    }
 
     let superclass = entity
         .get_children()
@@ -185,12 +226,12 @@ fn extract_class(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Class> {
     entity.visit_children(|child, _parent| {
         match child.get_kind() {
             EntityKind::ObjCInstanceMethodDecl | EntityKind::ObjCClassMethodDecl => {
-                if let Some(method) = extract_method(&child, sdk_path) {
+                if let Some(method) = extract_method(&child, sdk_path, &name, skipped_symbols) {
                     methods.push(method);
                 }
             }
             EntityKind::ObjCPropertyDecl => {
-                if let Some(prop) = extract_property(&child, sdk_path) {
+                if let Some(prop) = extract_property(&child, sdk_path, &name, skipped_symbols) {
                     properties.push(prop);
                 }
             }
@@ -216,8 +257,31 @@ fn extract_class(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Class> {
 // Method extraction
 // ---------------------------------------------------------------------------
 
-fn extract_method(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Method> {
+fn extract_method(
+    entity: &Entity<'_>,
+    sdk_path: &Path,
+    owner_name: &str,
+    skipped_symbols: &mut Vec<ir::SkippedSymbol>,
+) -> Option<ir::Method> {
     let selector = entity.get_name()?;
+
+    // Per-selector availability: a class can be available on macOS
+    // while individual selectors are not (shared headers with
+    // platform-conditional `API_UNAVAILABLE(macos)` attributes are
+    // common in CoreMIDI / category extensions). These selectors have
+    // no implementation in the macOS variant of the class, so
+    // `objc_msgSend` crashes at first call with "unrecognized
+    // selector sent to instance". Drop them during extraction.
+    if is_unavailable_on_macos(entity) {
+        record_skip(
+            skipped_symbols,
+            format!("{owner_name}.{selector}"),
+            "method",
+            skipped_symbol_reason::PLATFORM_UNAVAILABLE_MACOS,
+        );
+        return None;
+    }
+
     let class_method = entity.get_kind() == EntityKind::ObjCClassMethodDecl;
 
     let init_method = !class_method && (selector == "init" || selector.starts_with("initWith"));
@@ -271,14 +335,36 @@ fn extract_params(entity: &Entity<'_>) -> Vec<ir::Param> {
 // Property extraction
 // ---------------------------------------------------------------------------
 
-fn extract_property(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Property> {
+fn extract_property(
+    entity: &Entity<'_>,
+    sdk_path: &Path,
+    owner_name: &str,
+    skipped_symbols: &mut Vec<ir::SkippedSymbol>,
+) -> Option<ir::Property> {
     let name = entity.get_name()?;
+
+    // Per-property availability: a class can be available on macOS
+    // while individual properties are not. Dropped properties'
+    // synthesized getter/setter selectors have no implementation in
+    // the macOS variant of the dylib, so `objc_msgSend` crashes at
+    // first call with "unrecognized selector". Symmetric to the
+    // per-selector gate in `extract_method`.
+    if is_unavailable_on_macos(entity) {
+        record_skip(
+            skipped_symbols,
+            format!("{owner_name}.{name}"),
+            "property",
+            skipped_symbol_reason::PLATFORM_UNAVAILABLE_MACOS,
+        );
+        return None;
+    }
+
     let property_type_clang = entity.get_type()?;
     let property_type = map_type(&property_type_clang);
 
     let objc_attrs = entity.get_objc_attributes();
-    let readonly = objc_attrs.map_or(false, |a| a.readonly);
-    let class_property = objc_attrs.map_or(false, |a| a.class);
+    let readonly = objc_attrs.is_some_and(|a| a.readonly);
+    let class_property = objc_attrs.is_some_and(|a| a.class);
 
     let deprecated = matches!(entity.get_availability(), clang::Availability::Deprecated);
 
@@ -302,8 +388,26 @@ fn extract_property(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Property
 // Protocol extraction
 // ---------------------------------------------------------------------------
 
-fn extract_protocol(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Protocol> {
+fn extract_protocol(
+    entity: &Entity<'_>,
+    sdk_path: &Path,
+    skipped_symbols: &mut Vec<ir::SkippedSymbol>,
+) -> Option<ir::Protocol> {
     let name = entity.get_name()?;
+
+    // Wholesale-drop protocols marked unavailable on macOS. Same
+    // reasoning as `extract_class`: the protocol conformance table
+    // does not exist in the macOS variant of the framework, and any
+    // attempt to use the protocol fails at runtime.
+    if is_unavailable_on_macos(entity) {
+        record_skip(
+            skipped_symbols,
+            name,
+            "protocol",
+            skipped_symbol_reason::PLATFORM_UNAVAILABLE_MACOS,
+        );
+        return None;
+    }
 
     let inherits: Vec<String> = entity
         .get_children()
@@ -319,7 +423,7 @@ fn extract_protocol(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Protocol
     entity.visit_children(|child, _parent| {
         match child.get_kind() {
             EntityKind::ObjCInstanceMethodDecl | EntityKind::ObjCClassMethodDecl => {
-                if let Some(method) = extract_method(&child, sdk_path) {
+                if let Some(method) = extract_method(&child, sdk_path, &name, skipped_symbols) {
                     if child.is_objc_optional() {
                         optional_methods.push(method);
                     } else {
@@ -328,7 +432,7 @@ fn extract_protocol(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Protocol
                 }
             }
             EntityKind::ObjCPropertyDecl => {
-                if let Some(prop) = extract_property(&child, sdk_path) {
+                if let Some(prop) = extract_property(&child, sdk_path, &name, skipped_symbols) {
                     properties.push(prop);
                 }
             }
@@ -362,6 +466,7 @@ fn extract_category(
     framework_name: &str,
     category_methods: &mut HashMap<String, Vec<ir::CategoryGroup>>,
     category_properties: &mut HashMap<String, Vec<ir::Property>>,
+    skipped_symbols: &mut Vec<ir::SkippedSymbol>,
 ) {
     // Get the class this category extends
     let class_name = entity
@@ -382,12 +487,14 @@ fn extract_category(
     entity.visit_children(|child, _parent| {
         match child.get_kind() {
             EntityKind::ObjCInstanceMethodDecl | EntityKind::ObjCClassMethodDecl => {
-                if let Some(method) = extract_method(&child, sdk_path) {
+                if let Some(method) = extract_method(&child, sdk_path, &class_name, skipped_symbols)
+                {
                     methods.push(method);
                 }
             }
             EntityKind::ObjCPropertyDecl => {
-                if let Some(prop) = extract_property(&child, sdk_path) {
+                if let Some(prop) = extract_property(&child, sdk_path, &class_name, skipped_symbols)
+                {
                     properties.push(prop);
                 }
             }
@@ -492,11 +599,45 @@ fn extract_struct(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Struct> {
 // Function extraction
 // ---------------------------------------------------------------------------
 
-fn extract_function(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Function> {
+fn extract_function(
+    entity: &Entity<'_>,
+    sdk_path: &Path,
+    skipped_symbols: &mut Vec<ir::SkippedSymbol>,
+) -> Option<ir::Function> {
     let name = entity.get_name()?;
 
-    // Skip compiler intrinsics and internal functions
+    // Skip compiler intrinsics and internal functions. These names are
+    // reserved by the toolchain and are not part of the public API
+    // surface; they never warrant an audit entry.
     if name.starts_with("__") || name.starts_with("_Block_") {
+        return None;
+    }
+
+    // Skip declarations with non-external linkage (`static`, `static inline`).
+    // They have no dylib symbol, so downstream `dlsym`-based bindings
+    // would fail at runtime with `could not find export from foreign library`.
+    if matches!(entity.get_linkage(), Some(Linkage::Internal)) {
+        record_skip(
+            skipped_symbols,
+            name,
+            "function",
+            skipped_symbol_reason::INTERNAL_LINKAGE,
+        );
+        return None;
+    }
+
+    // Skip declarations explicitly marked unavailable on macOS — e.g.
+    // `API_UNAVAILABLE(macos)` or visionOS-only symbols. These have
+    // `Linkage::External` (so the check above does not catch them) but
+    // no export in the macOS variant of the framework dylib, so `dlsym`
+    // fails at runtime. See `filter_platform_unavailable.rs`.
+    if is_unavailable_on_macos(entity) {
+        record_skip(
+            skipped_symbols,
+            name,
+            "function",
+            skipped_symbol_reason::PLATFORM_UNAVAILABLE_MACOS,
+        );
         return None;
     }
 
@@ -528,11 +669,51 @@ fn extract_function(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Function
 // Constant extraction
 // ---------------------------------------------------------------------------
 
-fn extract_constant(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Constant> {
+fn extract_constant(
+    entity: &Entity<'_>,
+    sdk_path: &Path,
+    skipped_symbols: &mut Vec<ir::SkippedSymbol>,
+) -> Option<ir::Constant> {
     let name = entity.get_name()?;
 
-    // Skip internal/private constants
+    // Skip internal/private constants — toolchain-reserved names, never
+    // part of the public API surface.
     if name.starts_with("__") {
+        return None;
+    }
+
+    // Skip declarations with non-external linkage (`static const`). They
+    // are inlined at use sites and have no dylib symbol, so downstream
+    // `dlsym`-based bindings would fail at runtime with
+    // `could not find export from foreign library`.
+    //
+    // Note: preprocessor `#define` macros arrive as `EntityKind::MacroDefinition`
+    // cursors, not `VarDecl`, so they never reach this function. They are
+    // filtered in `extract-swift/src/declaration_mapping.rs` instead, where
+    // `swift-api-digester` surfaces clang-imported macros as `Var` nodes with
+    // `c:@macro@…` USRs — see `non_c_linkable_skip_reason`.
+    if matches!(entity.get_linkage(), Some(Linkage::Internal)) {
+        record_skip(
+            skipped_symbols,
+            name,
+            "constant",
+            skipped_symbol_reason::INTERNAL_LINKAGE,
+        );
+        return None;
+    }
+
+    // Skip declarations explicitly marked unavailable on macOS — e.g.
+    // `API_UNAVAILABLE(macos)` on a visionOS-only `extern const`. These
+    // have `Linkage::External` but no export in the macOS variant of
+    // the framework dylib. See `filter_platform_unavailable.rs` and the
+    // AudioToolbox `kAudioServicesDetailIntendedSpatialExperience` case.
+    if is_unavailable_on_macos(entity) {
+        record_skip(
+            skipped_symbols,
+            name,
+            "constant",
+            skipped_symbol_reason::PLATFORM_UNAVAILABLE_MACOS,
+        );
         return None;
     }
 
@@ -584,6 +765,31 @@ fn extract_provenance(entity: &Entity<'_>, sdk_path: &Path) -> SourceProvenance 
     }
 }
 
+/// Return true if the declaration is explicitly marked unavailable on
+/// macOS via a clang availability attribute (`API_UNAVAILABLE(macos)`
+/// or `__attribute__((availability(macos, unavailable)))`).
+///
+/// Declarations in this state have `Linkage::External` — they look like
+/// normal exported symbols — but the macOS variant of the framework
+/// dylib does not actually export them. They live in a sibling platform
+/// dylib (visionOS, iOS, etc.). Any `dlsym`-based FFI target that
+/// references the symbol dies at load time with
+/// `could not find export from foreign library`.
+///
+/// The authoritative source is libclang's `PlatformAvailability` table
+/// (via `get_platform_availability()`); clang records both `"macos"`
+/// and the legacy `"macosx"` platform spelling, so check both. Missing
+/// availability metadata is treated as "available by default" — the
+/// absence of an entry for macos is not evidence of unavailability.
+fn is_unavailable_on_macos(entity: &Entity<'_>) -> bool {
+    let Some(platforms) = entity.get_platform_availability() else {
+        return false;
+    };
+    platforms
+        .iter()
+        .any(|p| (p.platform == "macos" || p.platform == "macosx") && p.unavailable)
+}
+
 /// Extract availability attributes from a declaration.
 fn extract_availability(entity: &Entity<'_>) -> Option<Availability> {
     let platforms = entity.get_platform_availability()?;
@@ -630,23 +836,16 @@ fn construct_apple_doc_url(usr: &str) -> Option<String> {
     // Apple doc URL construction requires knowledge of the documentation
     // slug mapping, which we can build incrementally.
     // A basic heuristic: class-level USRs like `c:objc(cs)NSString`
-    if usr.starts_with("c:objc(cs)") {
-        let rest = &usr["c:objc(cs)".len()..];
-        // Extract class name
-        if let Some(paren_pos) = rest.find('(') {
-            let class_name = &rest[..paren_pos];
-            return Some(format!(
-                "https://developer.apple.com/documentation/foundation/{}",
-                class_name.to_lowercase()
-            ));
-        } else {
-            return Some(format!(
-                "https://developer.apple.com/documentation/foundation/{}",
-                rest.to_lowercase()
-            ));
-        }
-    }
-    None
+    let rest = usr.strip_prefix("c:objc(cs)")?;
+    // Extract class name
+    let class_name = match rest.find('(') {
+        Some(paren_pos) => &rest[..paren_pos],
+        None => rest,
+    };
+    Some(format!(
+        "https://developer.apple.com/documentation/foundation/{}",
+        class_name.to_lowercase()
+    ))
 }
 
 // ---------------------------------------------------------------------------

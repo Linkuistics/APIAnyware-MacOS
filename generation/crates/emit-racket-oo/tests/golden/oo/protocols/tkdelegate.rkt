@@ -9,10 +9,12 @@
 ;;   id-returning (1):
 ;;     managerWillReturnResult:  (manager:TKManager)
 
-(require "../../../../runtime/delegate.rkt")
+(require racket/contract
+         "../../../../runtime/delegate.rkt")
 
-(provide make-tkdelegate
-         tkdelegate-selectors)
+(provide/contract
+  [make-tkdelegate (->* () () #:rest (listof (or/c string? procedure?)) any/c)]
+  [tkdelegate-selectors (listof string?)])
 
 ;; All selectors in this protocol
 (define tkdelegate-selectors

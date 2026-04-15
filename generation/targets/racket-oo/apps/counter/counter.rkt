@@ -8,15 +8,15 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
-         "../../../generated/oo/appkit/nsapplication.rkt"
-         "../../../generated/oo/appkit/nswindow.rkt"
-         "../../../generated/oo/appkit/nsbutton.rkt"
-         "../../../generated/oo/appkit/nstextfield.rkt"
-         "../../../generated/oo/appkit/nsview.rkt"
-         "../../../generated/oo/appkit/nsfont.rkt"
-         "../../../runtime/objc-base.rkt"
-         "../../../runtime/type-mapping.rkt"
-         "../../../runtime/delegate.rkt")
+         "../../generated/oo/appkit/nsapplication.rkt"
+         "../../generated/oo/appkit/nswindow.rkt"
+         "../../generated/oo/appkit/nsbutton.rkt"
+         "../../generated/oo/appkit/nstextfield.rkt"
+         "../../generated/oo/appkit/nsview.rkt"
+         "../../generated/oo/appkit/nsfont.rkt"
+         "../../runtime/objc-base.rkt"
+         "../../runtime/type-mapping.rkt"
+         "../../runtime/delegate.rkt")
 
 ;; --- Constants (not yet extracted by collector) ---
 ;; NSWindowStyleMask

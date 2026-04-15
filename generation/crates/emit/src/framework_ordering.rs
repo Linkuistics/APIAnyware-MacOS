@@ -101,7 +101,6 @@ mod tests {
             name: String::new(),
             sdk_version: None,
             collected_at: None,
-            ir_level: None,
             depends_on: vec![],
             skipped_symbols: vec![],
             classes: vec![],

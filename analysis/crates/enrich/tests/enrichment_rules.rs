@@ -66,7 +66,6 @@ fn empty_framework() -> Framework {
         api_patterns: vec![],
         enrichment: None,
         verification: None,
-        ir_level: None,
     }
 }
 
@@ -76,7 +75,8 @@ fn enrich(
     EnrichmentData,
     apianyware_macos_types::enrichment::VerificationReport,
 ) {
-    let enriched = apianyware_macos_enrich::enrich_loaded_frameworks(&[fw.clone()]).unwrap();
+    let enriched =
+        apianyware_macos_enrich::enrich_loaded_frameworks(std::slice::from_ref(fw)).unwrap();
     let e = enriched[0].enrichment.clone().unwrap();
     let v = enriched[0].verification.clone().unwrap();
     (e, v)
@@ -606,8 +606,7 @@ fn verification_violations_are_per_framework_not_global() {
         all_properties: vec![],
     }];
 
-    let enriched =
-        apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
+    let enriched = apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
     assert_eq!(enriched.len(), 2);
 
     let v_a = enriched[0].verification.as_ref().unwrap();
@@ -686,8 +685,7 @@ fn enrichment_data_is_per_framework_not_global() {
         all_properties: vec![],
     }];
 
-    let enriched =
-        apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
+    let enriched = apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
 
     let e_a = enriched[0].enrichment.as_ref().unwrap();
     let e_b = enriched[1].enrichment.as_ref().unwrap();
@@ -700,5 +698,529 @@ fn enrichment_data_is_per_framework_not_global() {
         e_b.main_thread_classes.is_empty(),
         "FrameworkB should have no main-thread classes, but got: {:?}",
         e_b.main_thread_classes
+    );
+}
+
+// -----------------------------------------------------------------------
+// Multi-framework: cross-framework delegate protocol attribution
+// -----------------------------------------------------------------------
+
+/// Delegate protocol detection relies on a class having `setDelegate:` and
+/// conforming to a protocol ending in "Delegate". When the class is in FW_A
+/// but the protocol is declared in FW_B, the delegate_protocol relation should
+/// be attributed to FW_B (where the protocol is declared), not FW_A.
+#[test]
+fn cross_framework_delegate_protocol_attributed_to_protocol_framework() {
+    // FW_A: class with setDelegate: that conforms to FW_B's protocol
+    let mut fw_a = empty_framework();
+    fw_a.name = "AppKit".to_string();
+    fw_a.classes = vec![Class {
+        name: "NSTableView".to_string(),
+        superclass: "NSView".to_string(),
+        protocols: vec!["NSTableViewDelegate".to_string()],
+        properties: vec![],
+        methods: vec![make_method(
+            "setDelegate:",
+            vec![],
+            TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        )],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+    // FW_A does NOT declare the protocol
+    fw_a.protocols = vec![];
+
+    // FW_B: declares the delegate protocol
+    let mut fw_b = empty_framework();
+    fw_b.name = "AppKitProtocols".to_string();
+    fw_b.classes = vec![];
+    fw_b.protocols = vec![Protocol {
+        name: "NSTableViewDelegate".to_string(),
+        inherits: vec![],
+        required_methods: vec![],
+        optional_methods: vec![make_method(
+            "tableView:shouldSelectRow:",
+            vec![],
+            TypeRefKind::Primitive {
+                name: "BOOL".to_string(),
+            },
+        )],
+        properties: vec![],
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }];
+
+    let enriched = apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
+
+    let e_a = enriched[0].enrichment.as_ref().unwrap();
+    let e_b = enriched[1].enrichment.as_ref().unwrap();
+
+    // Protocol is attributed to FW_B (where it's declared)
+    assert!(
+        e_b.delegate_protocols
+            .contains(&"NSTableViewDelegate".to_string()),
+        "delegate protocol should appear in the framework that declares it, got: {:?}",
+        e_b.delegate_protocols
+    );
+
+    // FW_A should NOT have the delegate protocol (it doesn't declare it)
+    assert!(
+        !e_a.delegate_protocols
+            .contains(&"NSTableViewDelegate".to_string()),
+        "delegate protocol should NOT appear in framework that only uses it, got: {:?}",
+        e_a.delegate_protocols
+    );
+}
+
+// -----------------------------------------------------------------------
+// Multi-framework: block classification with mixed violations
+// -----------------------------------------------------------------------
+
+/// Both frameworks have block params. FW_A classifies its blocks; FW_B does not.
+/// Violations should only appear in FW_B. This is more thorough than the existing
+/// test because both frameworks contribute block facts to the global program.
+#[test]
+fn multi_framework_block_violations_scoped_correctly() {
+    // FW_A: classified block (async)
+    let mut fw_a = empty_framework();
+    fw_a.name = "Foundation".to_string();
+    fw_a.classes = vec![Class {
+        name: "NSOperationQueue".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![make_method(
+            "addOperationWithBlock:",
+            vec![block_param("block")],
+            TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        )],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+    fw_a.class_annotations = vec![ClassAnnotations {
+        class_name: "NSOperationQueue".to_string(),
+        methods: vec![MethodAnnotation {
+            selector: "addOperationWithBlock:".to_string(),
+            is_instance: true,
+            parameter_ownership: vec![],
+            block_parameters: vec![BlockParamAnnotation {
+                param_index: 0,
+                invocation: BlockInvocationStyle::AsyncCopied,
+            }],
+            threading: None,
+            error_pattern: None,
+            source: AnnotationSource::Heuristic,
+        }],
+    }];
+
+    // FW_B: unclassified block — should produce violation
+    let mut fw_b = empty_framework();
+    fw_b.name = "CoreAnimation".to_string();
+    fw_b.classes = vec![Class {
+        name: "CATransaction".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![make_method(
+            "setCompletionBlock:",
+            vec![block_param("completion")],
+            TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        )],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+    // No annotations → unclassified
+
+    let enriched = apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
+
+    let v_a = enriched[0].verification.as_ref().unwrap();
+    let v_b = enriched[1].verification.as_ref().unwrap();
+    let e_a = enriched[0].enrichment.as_ref().unwrap();
+    let e_b = enriched[1].enrichment.as_ref().unwrap();
+
+    // FW_A should pass verification (its block is classified)
+    assert!(
+        v_a.passed,
+        "Foundation should pass, got: {:?}",
+        v_a.violations
+    );
+    assert_eq!(e_a.async_block_methods.len(), 1);
+    assert_eq!(
+        e_a.async_block_methods[0].selector,
+        "addOperationWithBlock:"
+    );
+
+    // FW_B should fail verification (unclassified block)
+    assert!(!v_b.passed, "CoreAnimation should have violations");
+    assert_eq!(v_b.violations.len(), 1);
+    assert_eq!(v_b.violations[0].class, "CATransaction");
+    assert_eq!(v_b.violations[0].selector, "setCompletionBlock:");
+
+    // FW_B should have no enrichment block methods (none classified)
+    assert!(e_b.sync_block_methods.is_empty());
+    assert!(e_b.async_block_methods.is_empty());
+    assert!(e_b.stored_block_methods.is_empty());
+}
+
+// -----------------------------------------------------------------------
+// Multi-framework: collection iterable isolation
+// -----------------------------------------------------------------------
+
+/// Two frameworks with different iterable patterns: FW_A uses NSFastEnumeration
+/// conformance, FW_B uses count+objectAtIndex:. Each should only see its own.
+#[test]
+fn cross_framework_collection_iterables_isolated() {
+    // FW_A: iterable via NSFastEnumeration
+    let mut fw_a = empty_framework();
+    fw_a.name = "Foundation".to_string();
+    fw_a.classes = vec![Class {
+        name: "NSSet".to_string(),
+        superclass: String::new(),
+        protocols: vec!["NSFastEnumeration".to_string()],
+        properties: vec![],
+        methods: vec![],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+
+    // FW_B: iterable via count + objectAtIndex:
+    let mut fw_b = empty_framework();
+    fw_b.name = "UIKit".to_string();
+    fw_b.classes = vec![Class {
+        name: "UICollectionView".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![Property {
+            name: "count".to_string(),
+            property_type: TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "NSUInteger".to_string(),
+                },
+            },
+            readonly: true,
+            class_property: false,
+            deprecated: false,
+            source: None,
+            provenance: None,
+            doc_refs: None,
+            origin: None,
+        }],
+        methods: vec![make_method("objectAtIndex:", vec![], TypeRefKind::Id)],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+
+    let enriched = apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
+
+    let e_a = enriched[0].enrichment.as_ref().unwrap();
+    let e_b = enriched[1].enrichment.as_ref().unwrap();
+
+    // FW_A: only NSSet
+    assert_eq!(e_a.collection_iterables, vec!["NSSet".to_string()]);
+    assert!(
+        !e_a.collection_iterables
+            .contains(&"UICollectionView".to_string()),
+        "FW_A should not contain FW_B's iterable"
+    );
+
+    // FW_B: only UICollectionView
+    assert_eq!(
+        e_b.collection_iterables,
+        vec!["UICollectionView".to_string()]
+    );
+    assert!(
+        !e_b.collection_iterables.contains(&"NSSet".to_string()),
+        "FW_B should not contain FW_A's iterable"
+    );
+}
+
+// -----------------------------------------------------------------------
+// Multi-framework: comprehensive isolation of all relation types
+// -----------------------------------------------------------------------
+
+/// Three frameworks, each with a different enrichment relation. Verifies that
+/// all relation types are correctly scoped when enriched together.
+#[test]
+fn three_framework_comprehensive_enrichment_isolation() {
+    // FW_A: error method + main thread class
+    let mut fw_a = empty_framework();
+    fw_a.name = "Foundation".to_string();
+    fw_a.classes = vec![Class {
+        name: "NSFileManager".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![
+            make_method("removeItemAtPath:error:", vec![], TypeRefKind::Id),
+            make_method(
+                "setUbiquitous:",
+                vec![],
+                TypeRefKind::Primitive {
+                    name: "void".to_string(),
+                },
+            ),
+        ],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+    fw_a.class_annotations = vec![ClassAnnotations {
+        class_name: "NSFileManager".to_string(),
+        methods: vec![
+            MethodAnnotation {
+                selector: "removeItemAtPath:error:".to_string(),
+                is_instance: true,
+                parameter_ownership: vec![],
+                block_parameters: vec![],
+                threading: None,
+                error_pattern: Some(ErrorPattern::ErrorOutParam),
+                source: AnnotationSource::Heuristic,
+            },
+            MethodAnnotation {
+                selector: "setUbiquitous:".to_string(),
+                is_instance: true,
+                parameter_ownership: vec![],
+                block_parameters: vec![],
+                threading: Some(ThreadingConstraint::MainThreadOnly),
+                error_pattern: None,
+                source: AnnotationSource::Heuristic,
+            },
+        ],
+    }];
+
+    // FW_B: sync block + stored block
+    let mut fw_b = empty_framework();
+    fw_b.name = "CoreData".to_string();
+    fw_b.classes = vec![Class {
+        name: "NSManagedObjectContext".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![
+            make_method(
+                "performBlockAndWait:",
+                vec![block_param("block")],
+                TypeRefKind::Primitive {
+                    name: "void".to_string(),
+                },
+            ),
+            make_method(
+                "setMergePolicy:",
+                vec![block_param("policy")],
+                TypeRefKind::Primitive {
+                    name: "void".to_string(),
+                },
+            ),
+        ],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+    fw_b.class_annotations = vec![ClassAnnotations {
+        class_name: "NSManagedObjectContext".to_string(),
+        methods: vec![
+            MethodAnnotation {
+                selector: "performBlockAndWait:".to_string(),
+                is_instance: true,
+                parameter_ownership: vec![],
+                block_parameters: vec![BlockParamAnnotation {
+                    param_index: 0,
+                    invocation: BlockInvocationStyle::Synchronous,
+                }],
+                threading: None,
+                error_pattern: None,
+                source: AnnotationSource::Heuristic,
+            },
+            MethodAnnotation {
+                selector: "setMergePolicy:".to_string(),
+                is_instance: true,
+                parameter_ownership: vec![],
+                block_parameters: vec![BlockParamAnnotation {
+                    param_index: 0,
+                    invocation: BlockInvocationStyle::Stored,
+                }],
+                threading: None,
+                error_pattern: None,
+                source: AnnotationSource::Heuristic,
+            },
+        ],
+    }];
+
+    // FW_C: collection iterable + scoped resource
+    let mut fw_c = empty_framework();
+    fw_c.name = "AppKit".to_string();
+    fw_c.classes = vec![Class {
+        name: "NSArrayController".to_string(),
+        superclass: String::new(),
+        protocols: vec!["NSFastEnumeration".to_string()],
+        properties: vec![],
+        methods: vec![],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+    fw_c.api_patterns = vec![apianyware_macos_types::annotation::ApiPattern {
+        stereotype: PatternStereotype::PairedState,
+        name: "NSGraphicsContext save/restore".to_string(),
+        participants: serde_json::json!({
+            "open": { "class": "NSGraphicsContext", "selector": "saveGraphicsState" },
+            "close": { "class": "NSGraphicsContext", "selector": "restoreGraphicsState" }
+        }),
+        constraints: vec![],
+        source: AnnotationSource::Heuristic,
+        doc_ref: None,
+    }];
+
+    let enriched = apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b, fw_c]).unwrap();
+
+    let e_a = enriched[0].enrichment.as_ref().unwrap();
+    let e_b = enriched[1].enrichment.as_ref().unwrap();
+    let e_c = enriched[2].enrichment.as_ref().unwrap();
+    let v_a = enriched[0].verification.as_ref().unwrap();
+    let v_b = enriched[1].verification.as_ref().unwrap();
+    let v_c = enriched[2].verification.as_ref().unwrap();
+
+    // FW_A: error method + main thread, nothing else
+    assert_eq!(e_a.convenience_error_methods.len(), 1);
+    assert_eq!(
+        e_a.convenience_error_methods[0].selector,
+        "removeItemAtPath:error:"
+    );
+    assert_eq!(e_a.main_thread_classes, vec!["NSFileManager".to_string()]);
+    assert!(e_a.sync_block_methods.is_empty());
+    assert!(e_a.stored_block_methods.is_empty());
+    assert!(e_a.collection_iterables.is_empty());
+    assert!(e_a.scoped_resources.is_empty());
+    assert!(v_a.passed);
+
+    // FW_B: sync + stored blocks, nothing else
+    assert_eq!(e_b.sync_block_methods.len(), 1);
+    assert_eq!(e_b.sync_block_methods[0].selector, "performBlockAndWait:");
+    assert_eq!(e_b.stored_block_methods.len(), 1);
+    assert_eq!(e_b.stored_block_methods[0].selector, "setMergePolicy:");
+    assert!(e_b.convenience_error_methods.is_empty());
+    assert!(e_b.main_thread_classes.is_empty());
+    assert!(e_b.collection_iterables.is_empty());
+    assert!(e_b.scoped_resources.is_empty());
+    assert!(v_b.passed);
+
+    // FW_C: iterable + scoped resource, nothing else
+    assert_eq!(
+        e_c.collection_iterables,
+        vec!["NSArrayController".to_string()]
+    );
+    assert_eq!(e_c.scoped_resources.len(), 1);
+    assert_eq!(e_c.scoped_resources[0].class, "NSGraphicsContext");
+    assert_eq!(e_c.scoped_resources[0].open_selector, "saveGraphicsState");
+    assert_eq!(
+        e_c.scoped_resources[0].close_selector,
+        "restoreGraphicsState"
+    );
+    assert!(e_c.sync_block_methods.is_empty());
+    assert!(e_c.convenience_error_methods.is_empty());
+    assert!(e_c.main_thread_classes.is_empty());
+    assert!(v_c.passed);
+}
+
+// -----------------------------------------------------------------------
+// Multi-framework: flag mismatch violation scoped to correct framework
+// -----------------------------------------------------------------------
+
+/// Returns-retained flag mismatch violations should only appear in the
+/// framework whose class triggers the mismatch, not in sibling frameworks.
+///
+/// Uses "copy" family (retained for both instance and class methods per Cocoa
+/// naming) with `returns_retained = Some(false)` to trigger the mismatch rule.
+#[test]
+fn flag_mismatch_violation_scoped_to_owning_framework() {
+    // FW_A: instance method "copyItems" — naming says retained (copy family),
+    // but resolve says NOT retained → mismatch
+    let mut fw_a = empty_framework();
+    fw_a.name = "ProblemFramework".to_string();
+    fw_a.classes = vec![Class {
+        name: "Factory".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![{
+            let mut m = make_method("copyItems", vec![], TypeRefKind::Id);
+            // Resolve explicitly processed this method and says NOT retained,
+            // but naming convention ("copy" family) says retained → mismatch
+            m.returns_retained = Some(false);
+            m
+        }],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+
+    // FW_B: clean framework with no issues
+    let mut fw_b = empty_framework();
+    fw_b.name = "CleanFramework".to_string();
+    fw_b.classes = vec![Class {
+        name: "Helper".to_string(),
+        superclass: String::new(),
+        protocols: vec![],
+        properties: vec![],
+        methods: vec![make_method(
+            "doSomething",
+            vec![],
+            TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        )],
+        category_methods: vec![],
+        ancestors: vec![],
+        all_methods: vec![],
+        all_properties: vec![],
+    }];
+
+    let enriched = apianyware_macos_enrich::enrich_loaded_frameworks(&[fw_a, fw_b]).unwrap();
+
+    let v_a = enriched[0].verification.as_ref().unwrap();
+    let v_b = enriched[1].verification.as_ref().unwrap();
+
+    // FW_A should have the flag_mismatch violation
+    assert!(!v_a.passed, "ProblemFramework should have violations");
+    let mismatch_violations: Vec<_> = v_a
+        .violations
+        .iter()
+        .filter(|v| v.rule == "flag_mismatch")
+        .collect();
+    assert!(
+        !mismatch_violations.is_empty(),
+        "ProblemFramework should have flag_mismatch violation, got: {:?}",
+        v_a.violations
+    );
+    assert_eq!(mismatch_violations[0].class, "Factory");
+    assert_eq!(mismatch_violations[0].selector, "copyItems");
+
+    // FW_B should be clean
+    assert!(
+        v_b.passed,
+        "CleanFramework should pass, got: {:?}",
+        v_b.violations
     );
 }

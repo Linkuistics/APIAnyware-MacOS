@@ -21,6 +21,8 @@
          make-nssize
          make-nsrect
          _NSPoint _NSSize _NSRect _NSRange
+         _NSEdgeInsets _NSDirectionalEdgeInsets
+         _NSAffineTransformStruct _CGAffineTransform _CGVector
          NSPoint-x NSPoint-y
          NSSize-width NSSize-height
          NSRect-origin NSRect-size
@@ -120,6 +122,21 @@
 
 ;; NSRange: {location: uint64, length: uint64}
 (define-cstruct _NSRange ([location _uint64] [length _uint64]))
+
+;; NSEdgeInsets: {top: double, left: double, bottom: double, right: double}
+(define-cstruct _NSEdgeInsets ([top _double] [left _double] [bottom _double] [right _double]))
+
+;; NSDirectionalEdgeInsets: {top: double, leading: double, bottom: double, trailing: double}
+(define-cstruct _NSDirectionalEdgeInsets ([top _double] [leading _double] [bottom _double] [trailing _double]))
+
+;; NSAffineTransformStruct: {m11: double, m12: double, m21: double, m22: double, tX: double, tY: double}
+(define-cstruct _NSAffineTransformStruct ([m11 _double] [m12 _double] [m21 _double] [m22 _double] [tX _double] [tY _double]))
+
+;; CGAffineTransform: {a: double, b: double, c: double, d: double, tx: double, ty: double}
+(define-cstruct _CGAffineTransform ([a _double] [b _double] [c _double] [d _double] [tx _double] [ty _double]))
+
+;; CGVector: {dx: double, dy: double}
+(define-cstruct _CGVector ([dx _double] [dy _double]))
 
 ;; Convenience constructors
 (define (make-nspoint x y)

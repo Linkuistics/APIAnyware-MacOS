@@ -2,7 +2,7 @@
 ;; test-runtime-load.rkt — Verify all runtime modules load successfully
 ;;
 ;; Tests that:
-;;   1. All 7 runtime modules can be required without errors
+;;   1. All 8 runtime modules can be required without errors
 ;;   2. swift-available? is #t (dylib loaded successfully)
 ;;   3. Key exports are present and non-#f
 
@@ -14,7 +14,8 @@
          "../runtime/block.rkt"
          "../runtime/delegate.rkt"
          "../runtime/type-mapping.rkt"
-         "../runtime/variadic-helpers.rkt")
+         "../runtime/variadic-helpers.rkt"
+         "../runtime/main-thread.rkt")
 
 (define runtime-load-tests
   (test-suite
@@ -73,6 +74,11 @@
      (check-true (procedure? nsarray->list))
      (check-true (procedure? make-nspoint))
      (check-true (procedure? make-nssize))
-     (check-true (procedure? make-nsrect)))))
+     (check-true (procedure? make-nsrect)))
+
+   (test-case "main-thread.rkt exports are functional"
+     (check-true (procedure? on-main-thread?))
+     (check-true (procedure? call-on-main-thread))
+     (check-true (procedure? call-on-main-thread-after)))))
 
 (run-tests runtime-load-tests)

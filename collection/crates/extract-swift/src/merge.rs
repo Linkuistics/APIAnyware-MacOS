@@ -61,6 +61,12 @@ pub fn merge_swift_into_objc(objc: &mut ir::Framework, swift: ir::Framework) {
     extend_if_absent(&mut objc.functions, swift.functions, |f| &f.name);
     extend_if_absent(&mut objc.constants, swift.constants, |c| &c.name);
 
+    // Carry Swift-side skipped_symbols forward. Both pipelines (extract-objc
+    // and extract-swift) record their own filter decisions here; preserving
+    // both makes the checkpoint the single place to audit what was dropped
+    // and why.
+    objc.skipped_symbols.extend(swift.skipped_symbols);
+
     // Merge imports
     let existing_deps: std::collections::HashSet<String> =
         objc.depends_on.iter().cloned().collect();
@@ -185,7 +191,6 @@ mod tests {
             api_patterns: vec![],
             enrichment: None,
             verification: None,
-            ir_level: None,
         }
     }
 
@@ -308,6 +313,32 @@ mod tests {
         assert_eq!(objc.protocols.len(), 2);
         assert!(objc.protocols.iter().any(|p| p.name == "ExistingProto"));
         assert!(objc.protocols.iter().any(|p| p.name == "SwiftProto"));
+    }
+
+    #[test]
+    fn merge_carries_forward_skipped_symbols_from_both_sides() {
+        let mut objc = empty_framework("TestKit");
+        objc.skipped_symbols.push(ir::SkippedSymbol {
+            name: "NSInternalStatic".to_string(),
+            kind: "constant".to_string(),
+            reason: "internal linkage".to_string(),
+        });
+
+        let mut swift = empty_framework("TestKit");
+        swift.skipped_symbols.push(ir::SkippedSymbol {
+            name: "NSLocalizedString".to_string(),
+            kind: "function".to_string(),
+            reason: "swift-native top-level declaration".to_string(),
+        });
+
+        merge_swift_into_objc(&mut objc, swift);
+
+        let names: Vec<&str> = objc
+            .skipped_symbols
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["NSInternalStatic", "NSLocalizedString"]);
     }
 
     #[test]

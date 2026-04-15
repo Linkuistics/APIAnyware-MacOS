@@ -17,6 +17,7 @@
 //! taking precedence.
 
 pub mod heuristics;
+pub mod llm;
 pub mod pattern_detection;
 pub mod validate;
 
@@ -33,12 +34,13 @@ use apianyware_macos_types::ir::Framework;
 /// Annotate all resolved frameworks: load, run heuristics, merge with existing LLM annotations.
 ///
 /// Loads resolved frameworks from `input_dir`, runs heuristic classification on all methods,
-/// merges with existing LLM annotations from `output_dir` (if present), and writes annotated
-/// checkpoints to `output_dir`.
+/// merges with LLM annotations (from `llm_dir` if provided, otherwise from existing annotated
+/// checkpoints in `output_dir`), and writes annotated checkpoints to `output_dir`.
 pub fn annotate_frameworks(
     input_dir: &Path,
     output_dir: &Path,
     only: Option<&[String]>,
+    llm_dir: Option<&Path>,
 ) -> Result<Vec<Framework>> {
     let frameworks = loading::load_all_frameworks(input_dir, only)?;
     if frameworks.is_empty() {
@@ -57,10 +59,24 @@ pub fn annotate_frameworks(
     let mut annotated = Vec::with_capacity(frameworks.len());
 
     for framework in &frameworks {
-        // Load existing LLM annotations if present
-        let existing_annotations = load_existing_annotations(output_dir, &framework.name);
+        // Load LLM annotations: prefer dedicated llm_dir, fall back to existing checkpoints
+        let llm_annotations = if let Some(dir) = llm_dir {
+            match llm::load_llm_annotations(dir, &framework.name) {
+                Ok(ann) => ann,
+                Err(e) => {
+                    tracing::warn!(
+                        framework = %framework.name,
+                        error = %e,
+                        "failed to load LLM annotations, using heuristics only"
+                    );
+                    None
+                }
+            }
+        } else {
+            load_existing_annotations(output_dir, &framework.name)
+        };
 
-        let result = annotate_framework(framework, existing_annotations.as_ref());
+        let result = annotate_framework(framework, llm_annotations.as_ref());
         write_annotated_checkpoint(&result, output_dir)?;
         annotated.push(result);
     }
@@ -119,10 +135,10 @@ pub fn annotate_framework(
 }
 
 /// Run heuristics on a method, merge with LLM annotation if available, and push to results.
-fn annotate_and_push<'a>(
+fn annotate_and_push(
     class_name: &str,
     method: &apianyware_macos_types::ir::Method,
-    llm_index: &HashMap<(&str, &str), &'a MethodAnnotation>,
+    llm_index: &HashMap<(&str, &str), &MethodAnnotation>,
     results: &mut Vec<MethodAnnotation>,
 ) {
     let heuristic = heuristics::annotate_method_heuristic(class_name, method);
@@ -180,9 +196,9 @@ fn load_existing_annotations(
 }
 
 /// Build a lookup index from existing LLM/human annotations: (class_name, selector) → MethodAnnotation.
-fn build_llm_annotation_index<'a>(
-    annotations: Option<&'a FrameworkAnnotations>,
-) -> HashMap<(&'a str, &'a str), &'a MethodAnnotation> {
+fn build_llm_annotation_index(
+    annotations: Option<&FrameworkAnnotations>,
+) -> HashMap<(&str, &str), &MethodAnnotation> {
     let mut index = HashMap::new();
     if let Some(fa) = annotations {
         for class in &fa.classes {

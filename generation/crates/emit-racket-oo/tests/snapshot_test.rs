@@ -1,8 +1,9 @@
 //! Snapshot (golden-file) regression tests for the Racket emitter.
 //!
-//! Two test suites:
+//! Three test suites:
 //!   1. TestKit (synthetic) — full directory comparison, exercises all emitter code paths
 //!   2. Foundation (real IR) — curated subset of ~18 representative files
+//!   3. AppKit (real IR) — curated subset of ~20 representative files (views, controls, delegates)
 //!
 //! To update golden files after intentional changes:
 //!   UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket-oo --test snapshot_test
@@ -27,6 +28,11 @@ fn golden_dir() -> PathBuf {
 /// Golden files directory for Foundation subset.
 fn golden_foundation_dir() -> PathBuf {
     crate_root().join("tests").join("golden-foundation")
+}
+
+/// Golden files directory for AppKit subset.
+fn golden_appkit_dir() -> PathBuf {
+    crate_root().join("tests").join("golden-appkit")
 }
 
 /// Curated subset of Foundation files for golden comparison.
@@ -55,6 +61,37 @@ const FOUNDATION_GOLDEN_FILES: &[&str] = &[
     "protocols/nslocking.rkt",
 ];
 
+/// Curated subset of AppKit files for golden comparison.
+/// Covers: view hierarchy (NSResponder→NSView→NSControl→NSButton),
+/// window management, table view with data source/delegate protocols,
+/// text input, menus, application lifecycle, layout, images, colors,
+/// status bar (for Menu Bar Tool app pattern), and split views.
+const APPKIT_GOLDEN_FILES: &[&str] = &[
+    "main.rkt",
+    "constants.rkt",
+    "enums.rkt",
+    "nsresponder.rkt",
+    "nsview.rkt",
+    "nscontrol.rkt",
+    "nsbutton.rkt",
+    "nswindow.rkt",
+    "nswindowcontroller.rkt",
+    "nstableview.rkt",
+    "nstextfield.rkt",
+    "nstextview.rkt",
+    "nsmenu.rkt",
+    "nsmenuitem.rkt",
+    "nsapplication.rkt",
+    "nsstackview.rkt",
+    "nsimage.rkt",
+    "nscolor.rkt",
+    "nsstatusbar.rkt",
+    "nssplitview.rkt",
+    "protocols/nstableviewdelegate.rkt",
+    "protocols/nstableviewdatasource.rkt",
+    "protocols/nswindowdelegate.rkt",
+];
+
 #[test]
 fn snapshot_racket_oo_testkit() {
     let framework = build_snapshot_test_framework();
@@ -73,6 +110,7 @@ fn snapshot_racket_oo_testkit() {
     assert_eq!(result.classes_emitted, 5);
     assert_eq!(result.protocols_emitted, 2);
     assert_eq!(result.enums_emitted, 1);
+    assert_eq!(result.functions_emitted, 4); // 6 total minus 1 variadic, 1 inline
     assert_eq!(result.constants_emitted, 2);
 
     // The emitter writes to {output_dir}/{lowercase_framework_name}/
@@ -93,26 +131,26 @@ fn snapshot_racket_oo_testkit() {
     }
 }
 
-/// Load the real Foundation enriched IR from the analysis pipeline output.
-fn load_foundation_framework() -> Option<apianyware_macos_types::ir::Framework> {
+/// Load a real enriched IR framework from the analysis pipeline output.
+fn load_enriched_framework(name: &str) -> Option<apianyware_macos_types::ir::Framework> {
     let enriched_dir = crate_root()
         .parent() // emit-racket-oo → crates
         .and_then(|p| p.parent()) // crates → generation
         .and_then(|p| p.parent()) // generation → project root
         .map(|p| p.join("analysis").join("ir").join("enriched"))?;
 
-    let foundation_path = enriched_dir.join("Foundation.json");
-    if !foundation_path.exists() {
+    let framework_path = enriched_dir.join(format!("{name}.json"));
+    if !framework_path.exists() {
         return None;
     }
 
-    let json = std::fs::read_to_string(&foundation_path).ok()?;
+    let json = std::fs::read_to_string(&framework_path).ok()?;
     serde_json::from_str(&json).ok()
 }
 
 #[test]
 fn snapshot_racket_oo_foundation_subset() {
-    let framework = match load_foundation_framework() {
+    let framework = match load_enriched_framework("Foundation") {
         Some(fw) => fw,
         None => {
             eprintln!(
@@ -154,6 +192,61 @@ fn snapshot_racket_oo_foundation_subset() {
     {
         panic!(
             "Racket OO Foundation snapshot mismatch.\n\
+             Run `UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket-oo --test snapshot_test` \
+             to accept.\n\n{mismatch}"
+        );
+    }
+}
+
+#[test]
+fn snapshot_racket_oo_appkit_subset() {
+    let framework = match load_enriched_framework("AppKit") {
+        Some(fw) => fw,
+        None => {
+            eprintln!(
+                "SKIPPED: AppKit enriched IR not found. \
+                 Run the analysis pipeline first: \
+                 cargo run --bin apianyware-macos-analyze"
+            );
+            return;
+        }
+    };
+
+    // Generate AppKit to a temp directory
+    let temp_dir = tempfile::tempdir().unwrap();
+    let emitter = RacketEmitter;
+    let result = emitter
+        .emit_framework(&framework, temp_dir.path(), BindingStyle::ObjectOriented)
+        .expect("AppKit emission should succeed");
+
+    assert!(
+        result.files_written > 100,
+        "AppKit should generate many files (got {})",
+        result.files_written
+    );
+    assert!(
+        result.classes_emitted >= 200,
+        "AppKit should emit 200+ classes (got {})",
+        result.classes_emitted
+    );
+    assert!(
+        result.protocols_emitted >= 50,
+        "AppKit should emit 50+ protocols (got {})",
+        result.protocols_emitted
+    );
+
+    // Compare curated subset against golden files
+    let generated_dir = temp_dir.path().join("appkit");
+    assert!(generated_dir.exists(), "Expected appkit/ directory");
+
+    let golden_test = GoldenTest::new(
+        &golden_appkit_dir(),
+        "racket-oo",
+        BindingStyle::ObjectOriented,
+    );
+    if let Err(mismatch) = golden_test.assert_subset_matches(&generated_dir, APPKIT_GOLDEN_FILES) {
+        panic!(
+            "Racket OO AppKit snapshot mismatch.\n\
              Run `UPDATE_GOLDEN=1 cargo test -p apianyware-macos-emit-racket-oo --test snapshot_test` \
              to accept.\n\n{mismatch}"
         );

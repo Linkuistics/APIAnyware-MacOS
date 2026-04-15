@@ -10,9 +10,11 @@ FFI return types now match the IR — void methods and `_id`-typed property sett
 emit `(tell #:type _void ...)` directly, closing the calling-convention gap that
 neither snapshot tests nor the runtime load harness can observe. **Runtime load
 verification harness now in place** (`generation/crates/emit-racket-oo/tests/runtime_load_test.rs`):
-6 library `dynamic-require` checks across class wrapper, protocol file, Foundation
-+ CoreGraphics + CoreText functions/constants, plus `raco make` of all 3 sample apps,
-gated on `RUNTIME_LOAD_TEST=1` (~47s end-to-end). All three recent core filter fixes
+7 library `dynamic-require` checks across class wrapper, protocol file, Foundation
++ CoreGraphics + CoreText functions/constants, AppKit `nsmenuitem.rkt`
+(class-property canary), plus `raco make` of all 3 sample apps,
+gated on `RUNTIME_LOAD_TEST=1` (~40s end-to-end). Class-property setter
+arity bug fixed (2026-04-15) — setters now omit self for class properties. All three recent core filter fixes
 (extract-objc internal-linkage, extract-swift `s:` family, extract-swift `c:@macro@`
 family) validated end-to-end against fresh IR. Self-parameter contracts tightened to
 `objc-object?` in every class wrapper — the biggest single misuse vector is now
@@ -41,6 +43,23 @@ Runtime location: generation/targets/racket-oo/runtime/
   the remaining four apps because the delegate/data-source plumbing it exercises
   is a precondition for Text Editor's more demanding callback patterns.
   See `knowledge/apps/file-lister/spec.md` and `test-strategy.md`.
+- **Results:** _pending_
+
+### Commit accumulated emitter changes `[emission]`
+- **Status:** not_started
+- **Priority:** high — blocks the "Fix stale golden files" task and is
+  the largest body of uncommitted work in the working tree.
+- **Dependencies:** none
+- **Description:** The working tree contains a substantial uncommitted
+  emitter rewrite (visible as ~1,659-line drift in `constants.rkt`
+  golden output vs HEAD, plus modifications across multiple
+  `emit-racket-oo/src/` files). This work has accumulated across
+  sessions but has no dedicated backlog entry. Review the accumulated
+  changes, verify they are coherent, run `cargo test -p
+  apianyware-macos-emit-racket-oo` (unit + snapshot + runtime load),
+  and commit. Once committed, the "Fix stale golden files" task
+  unblocks — golden regeneration can land as a clean follow-up commit
+  without conflating two independent changes.
 - **Results:** _pending_
 
 ### Tighten `_id` parameter contracts with nullable marking `[emission]`
@@ -144,30 +163,47 @@ Runtime location: generation/targets/racket-oo/runtime/
   out to be stale downstream checkpoints). Audiotoolbox sibling split
   out into its own unblocked task above._
 
-### Investigate pre-existing `snapshot_racket_oo_foundation_subset` golden drift `[testing]`
-- **Status:** not_started
-- **Priority:** medium — not a runtime blocker (the harness and all
-  runtime load checks pass), but it's a failing workspace test at HEAD.
-  A red test in the default `cargo test` run erodes the signal on every
-  future change and masks genuine emitter regressions.
+### Fix stale `snapshot_racket_oo_foundation_subset` golden files `[testing]`
+- **Status:** investigated — availability-filter delta confirmed clean;
+  regeneration deferred until emitter rewrite WIP commits.
+- **Dependencies:** "Commit accumulated emitter changes" — golden
+  regeneration should land as a follow-up commit after the emitter
+  changes are committed, not conflated with them.
+- **Priority:** high — a failing workspace test at HEAD. A red test in
+  the default `cargo test` run erodes the signal on every future change
+  and masks genuine emitter regressions. Promoted from medium after the
+  root cause was identified.
+- **Root cause:** The 2026-04-14 core pipeline cycle completed the
+  platform-availability filter for ObjC classes, protocols, and methods.
+  This removed 450 classes, 151 protocols, 2,982 class methods, and 414
+  protocol methods across 53 frameworks from the collected IR (heaviest:
+  Intents, AVFoundation, SensorKit, MediaPlayer, CoreMotion, CallKit —
+  mostly iOS-flavored frameworks). Foundation's IR has changed as a
+  result, making the golden snapshot stale.
 - **Surfaced by:** 2026-04-14 core triage. The 2026-04-13 core task
   "Constants flagged in `skipped_symbols` still reach final IR" explicitly
   noted this test was already failing at HEAD and was out-of-scope for
   that task. Lifted to its own racket-oo backlog entry so the work phase
   can pick it up independently.
-- **Description:** `snapshot_racket_oo_foundation_subset` in
-  `generation/crates/emit-racket-oo/tests/` was observed failing against
-  HEAD during the 2026-04-13 pipeline regeneration (full `cargo test`
-  pass). Determine whether the drift is legitimate emitter output change
-  (→ `UPDATE_GOLDEN=1` regenerate the foundation subset files and commit)
-  or a genuine regression (→ diagnose and fix). Check git log on the
-  relevant emitter crates against the snapshot file mtimes first; if the
-  emitter output shape changed recently without a corresponding golden
-  update, the fix is probably a regenerate. If the emitter source hasn't
-  moved but the snapshot still diverges, something upstream in collection
-  or analysis has shifted the IR for Foundation and the divergence is
-  real signal.
-- **Results:** _pending_
+- **Description:** The drift is a legitimate upstream IR change (platform-
+  availability filter), not an emitter regression. Fix is to regenerate
+  the golden files: run `UPDATE_GOLDEN=1 cargo test -p emit-racket-oo
+  snapshot_racket_oo_foundation_subset` and commit the updated golden
+  files. Follow up with a `RUNTIME_LOAD_TEST=1` harness pass to confirm
+  the regenerated output still loads cleanly.
+- **Investigation (2026-04-14):** The availability-filter slice of the
+  golden delta is confirmed clean: 13 pure deletions in `constants.rkt`
+  (iOS/tvOS-only symbols) and 1 removal in `main.rkt`
+  (`nsbundleresourcerequest.rkt`), all correct. However, the working tree
+  also contains a much larger uncommitted emitter rewrite (~1,659-line
+  `constants.rkt` drift vs HEAD) that dwarfs the availability changes.
+  Committing the golden regeneration now would conflate two independent
+  changes. **Action:** regenerate and commit golden files when the emitter
+  rewrite lands — the availability-filter slice won't need
+  re-investigation. `cargo test --workspace` is green in the current
+  working tree.
+- **Results:** _pending commit — blocked on "Commit accumulated emitter
+  changes" task above_
 
 ### Class-specific runtime predicates `[emission]` _(stretch)_
 - **Status:** not_started
@@ -258,13 +294,10 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 ## Completed Tasks
 
-_None pending capture. The three cleanups from the 2026-04-13 cycle (stale
-`memory.md` entry prune, stale `apps/hello-window.rkt` delete, `needs_structs`
-helper consolidation) and the parent "Tighten per-class method wrapper
-contracts" task (self-tightening completed, residual sub-items split into
-independent tasks above) have been captured in session-log and memory and
-are removed from the backlog entirely. The "Non-linkable symbol leaks beyond
-the `c:@macro@` filter" task has been moved to `LLM_STATE/core/backlog.md`
-since it is a cross-target collection/extract concern, not racket-oo-specific;
-see the "Extend runtime load harness" task above for the racket-oo follow-up
-that depends on the core fix._
+### Class-method property accessors drop self-arg in contract but not impl `[emission]`
+- **Completed:** 2026-04-15
+- **Summary:** Class-property setter impls were hard-wired to take `self`
+  but contracts omitted it, causing `provide/contract` arity failures at
+  load time. Fixed in `emit_class.rs::emit_property` (option 2 — make impl
+  match contract). Getters were already correct. Added 2 unit tests and
+  `nsmenuitem.rkt` runtime load canary. Surfaced from Modaliser-Racket.

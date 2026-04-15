@@ -7,6 +7,7 @@
 use apianyware_macos_types::{
     ir,
     provenance::{Availability, DeclarationSource, DocRefs, SourceProvenance},
+    skipped_symbol_reason,
 };
 
 use crate::abi_types::{AbiDocument, AbiNode};
@@ -21,6 +22,7 @@ pub fn map_abi_to_framework(doc: &AbiDocument, sdk_version: &str) -> ir::Framewo
     let mut structs = Vec::new();
     let mut functions = Vec::new();
     let mut constants = Vec::new();
+    let mut skipped_symbols = Vec::new();
 
     for child in &root.children {
         let decl_kind = child.decl_kind.as_deref().unwrap_or("");
@@ -48,16 +50,30 @@ pub fn map_abi_to_framework(doc: &AbiDocument, sdk_version: &str) -> ir::Framewo
             }
             "Func" => {
                 if child.kind == "Function" {
-                    if let Some(f) = map_top_level_function(child) {
+                    if let Some(reason) = non_c_linkable_skip_reason(child) {
+                        // Record with the printed name (e.g. `pointwiseMin(_:_:)`)
+                        // so that Swift overloads with identical simple names become
+                        // distinct `skipped_symbols` entries. Mirrors how extract-objc
+                        // qualifies methods with their owner class.
+                        skipped_symbols.push(ir::SkippedSymbol {
+                            name: child.printed_name.clone(),
+                            kind: "function".to_string(),
+                            reason: reason.to_string(),
+                        });
+                    } else if let Some(f) = map_top_level_function(child) {
                         functions.push(f);
                     }
                 }
             }
             "Var" => {
-                if child.kind == "Var" && child.children.is_empty() {
-                    // Top-level variables without type children are constants
-                } else if child.kind == "Var" {
-                    if let Some(c) = map_top_level_constant(child) {
+                if child.kind == "Var" && !child.children.is_empty() {
+                    if let Some(reason) = non_c_linkable_skip_reason(child) {
+                        skipped_symbols.push(ir::SkippedSymbol {
+                            name: child.name.clone(),
+                            kind: "constant".to_string(),
+                            reason: reason.to_string(),
+                        });
+                    } else if let Some(c) = map_top_level_constant(child) {
                         constants.push(c);
                     }
                 }
@@ -74,7 +90,7 @@ pub fn map_abi_to_framework(doc: &AbiDocument, sdk_version: &str) -> ir::Framewo
         sdk_version: Some(sdk_version.to_string()),
         collected_at: Some(chrono::Utc::now().to_rfc3339()),
         depends_on: extract_imports(&root.children),
-        skipped_symbols: vec![],
+        skipped_symbols,
         classes,
         protocols,
         enums,
@@ -85,7 +101,55 @@ pub fn map_abi_to_framework(doc: &AbiDocument, sdk_version: &str) -> ir::Framewo
         api_patterns: vec![],
         enrichment: None,
         verification: None,
-        ir_level: None,
+    }
+}
+
+/// Classify a top-level declaration node by its USR prefix and return a skip
+/// reason if the node is not reachable via `dlsym` from the framework dylib.
+///
+/// The Swift API digester stamps declarations with Unified Symbol Resolution
+/// identifiers whose prefix identifies the producing cursor:
+///
+/// - `s:…` — Swift-mangled USR: declaration native to the Swift module,
+///   reachable only via the Swift ABI. **Not C-linkable.**
+/// - `c:@F@<name>` — clang `FunctionDecl` cursor: a real C function
+///   re-exported from the clang-imported module. Linkable.
+/// - `c:@<Name>` — clang `VarDecl` / enum cursor. Linkable.
+/// - `c:@macro@…` — clang preprocessor macro cursor. The C compiler inlines
+///   `#define` values at use sites and emits no dylib symbol, so any FFI
+///   binding that references the name will fail at load time with
+///   `get-ffi-obj: could not find export from foreign library`. **Not
+///   C-linkable.**
+/// - `c:@Ea@<dummy>@<Member>` — member of an *anonymous* enum. The second
+///   USR segment is libclang's synthetic disambiguator for enums with no
+///   tag (conventionally the first member's name). **Not C-linkable.** The
+///   C compiler inlines enum members' integer values at every use site, so
+///   they never receive a dylib symbol. Members of *named* enums use the
+///   `c:@E@<Enum>@<Member>` shape and reach the IR through the dedicated
+///   `Enum` → `EnumElement` mapping path, not the top-level `Var` / `Func`
+///   cursors filtered here.
+/// - `c:@EA@<typedef>@<Member>` — same as above for the typedef'd anonymous
+///   enum shape (`typedef enum { … } Name_t`). The second segment is the
+///   typedef name. **Not C-linkable** for the same reason.
+/// - `So<mangled>` — clang-imported Obj-C declaration. Linkable via the
+///   Obj-C runtime (not handled here; Obj-C extraction lives in
+///   `extract-objc`).
+///
+/// Nodes without a USR are treated as linkable — missing metadata is not
+/// evidence of non-linkability, and every real digester node carries one.
+/// New USR families discovered in future SDK releases should be added here
+/// so that the filter remains the single source of truth for "is this
+/// `dlsym`-able from the framework dylib?".
+fn non_c_linkable_skip_reason(node: &AbiNode) -> Option<&'static str> {
+    let usr = node.usr.as_deref()?;
+    if usr.starts_with("s:") {
+        Some(skipped_symbol_reason::SWIFT_NATIVE)
+    } else if usr.starts_with("c:@macro@") {
+        Some(skipped_symbol_reason::PREPROCESSOR_MACRO)
+    } else if usr.starts_with("c:@Ea@") || usr.starts_with("c:@EA@") {
+        Some(skipped_symbol_reason::ANONYMOUS_ENUM_MEMBER)
+    } else {
+        None
     }
 }
 

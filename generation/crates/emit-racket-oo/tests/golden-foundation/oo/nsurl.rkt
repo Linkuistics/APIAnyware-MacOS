@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt")
 
@@ -11,7 +12,78 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib _msg-0 _msg-1 _msg-2 _msg-3 _msg-4 _msg-5 _msg-6 _msg-7 _msg-8 _msg-9 _msg-10 _msg-11 _msg-12 _msg-13))
+(provide NSURL)
+(provide/contract
+  [make-nsurl-init-with-data-representation-relative-to-url (c-> any/c any/c any/c)]
+  [make-nsurl-init-with-string (c-> any/c any/c)]
+  [make-nsurl-init-with-string-encoding-invalid-characters (c-> any/c boolean? any/c)]
+  [make-nsurl-init-with-string-relative-to-url (c-> any/c any/c any/c)]
+  [nsurl-url-by-deleting-last-path-component (c-> objc-object? any/c)]
+  [nsurl-url-by-deleting-path-extension (c-> objc-object? any/c)]
+  [nsurl-url-by-resolving-symlinks-in-path (c-> objc-object? any/c)]
+  [nsurl-url-by-standardizing-path (c-> objc-object? any/c)]
+  [nsurl-absolute-string (c-> objc-object? any/c)]
+  [nsurl-absolute-url (c-> objc-object? any/c)]
+  [nsurl-base-url (c-> objc-object? any/c)]
+  [nsurl-custom-playground-quick-look (c-> objc-object? any/c)]
+  [nsurl-data-representation (c-> objc-object? any/c)]
+  [nsurl-file-path-url (c-> objc-object? any/c)]
+  [nsurl-file-system-representation (c-> objc-object? (or/c cpointer? #f))]
+  [nsurl-file-url (c-> objc-object? boolean?)]
+  [nsurl-fragment (c-> objc-object? any/c)]
+  [nsurl-has-directory-path (c-> objc-object? boolean?)]
+  [nsurl-host (c-> objc-object? any/c)]
+  [nsurl-last-path-component (c-> objc-object? any/c)]
+  [nsurl-parameter-string (c-> objc-object? any/c)]
+  [nsurl-password (c-> objc-object? any/c)]
+  [nsurl-path (c-> objc-object? any/c)]
+  [nsurl-path-components (c-> objc-object? any/c)]
+  [nsurl-path-extension (c-> objc-object? any/c)]
+  [nsurl-port (c-> objc-object? any/c)]
+  [nsurl-query (c-> objc-object? any/c)]
+  [nsurl-relative-path (c-> objc-object? any/c)]
+  [nsurl-relative-string (c-> objc-object? any/c)]
+  [nsurl-resource-specifier (c-> objc-object? any/c)]
+  [nsurl-scheme (c-> objc-object? any/c)]
+  [nsurl-standardized-url (c-> objc-object? any/c)]
+  [nsurl-user (c-> objc-object? any/c)]
+  [nsurl-bookmark-data-with-options-including-resource-values-for-keys-relative-to-url-error (c-> objc-object? exact-nonnegative-integer? any/c any/c (or/c cpointer? #f) any/c)]
+  [nsurl-file-reference-url (c-> objc-object? any/c)]
+  [nsurl-get-file-system-representation-max-length (c-> objc-object? (or/c cpointer? #f) exact-nonnegative-integer? boolean?)]
+  [nsurl-get-resource-value-for-key-error (c-> objc-object? (or/c cpointer? #f) any/c (or/c cpointer? #f) boolean?)]
+  [nsurl-init-absolute-url-with-data-representation-relative-to-url (c-> objc-object? any/c any/c any/c)]
+  [nsurl-init-by-resolving-bookmark-data-options-relative-to-url-bookmark-data-is-stale-error (c-> objc-object? any/c exact-nonnegative-integer? any/c (or/c cpointer? #f) (or/c cpointer? #f) any/c)]
+  [nsurl-init-file-url-with-file-system-representation-is-directory-relative-to-url (c-> objc-object? (or/c cpointer? #f) boolean? any/c any/c)]
+  [nsurl-init-file-url-with-path (c-> objc-object? any/c any/c)]
+  [nsurl-init-file-url-with-path-is-directory (c-> objc-object? any/c boolean? any/c)]
+  [nsurl-init-file-url-with-path-is-directory-relative-to-url (c-> objc-object? any/c boolean? any/c any/c)]
+  [nsurl-init-file-url-with-path-relative-to-url (c-> objc-object? any/c any/c any/c)]
+  [nsurl-is-file-reference-url (c-> objc-object? boolean?)]
+  [nsurl-is-file-url (c-> objc-object? boolean?)]
+  [nsurl-remove-all-cached-resource-values! (c-> objc-object? void?)]
+  [nsurl-remove-cached-resource-value-for-key! (c-> objc-object? any/c void?)]
+  [nsurl-resource-values-for-keys-error (c-> objc-object? any/c (or/c cpointer? #f) any/c)]
+  [nsurl-set-resource-value-for-key-error! (c-> objc-object? any/c any/c (or/c cpointer? #f) boolean?)]
+  [nsurl-set-resource-values-error! (c-> objc-object? any/c (or/c cpointer? #f) boolean?)]
+  [nsurl-set-temporary-resource-value-for-key! (c-> objc-object? any/c any/c void?)]
+  [nsurl-start-accessing-security-scoped-resource (c-> objc-object? boolean?)]
+  [nsurl-stop-accessing-security-scoped-resource (c-> objc-object? void?)]
+  [nsurl-url-by-resolving-alias-file-at-url-options-error (c-> any/c exact-nonnegative-integer? (or/c cpointer? #f) any/c)]
+  [nsurl-url-by-resolving-bookmark-data-options-relative-to-url-bookmark-data-is-stale-error (c-> any/c exact-nonnegative-integer? any/c (or/c cpointer? #f) (or/c cpointer? #f) any/c)]
+  [nsurl-url-with-data-representation-relative-to-url (c-> any/c any/c any/c)]
+  [nsurl-url-with-string (c-> any/c any/c)]
+  [nsurl-url-with-string-encoding-invalid-characters (c-> any/c boolean? any/c)]
+  [nsurl-url-with-string-relative-to-url (c-> any/c any/c any/c)]
+  [nsurl-absolute-url-with-data-representation-relative-to-url (c-> any/c any/c any/c)]
+  [nsurl-bookmark-data-with-contents-of-url-error (c-> any/c (or/c cpointer? #f) any/c)]
+  [nsurl-file-url-with-file-system-representation-is-directory-relative-to-url (c-> (or/c cpointer? #f) boolean? any/c any/c)]
+  [nsurl-file-url-with-path (c-> any/c any/c)]
+  [nsurl-file-url-with-path-is-directory (c-> any/c boolean? any/c)]
+  [nsurl-file-url-with-path-is-directory-relative-to-url (c-> any/c boolean? any/c any/c)]
+  [nsurl-file-url-with-path-relative-to-url (c-> any/c any/c any/c)]
+  [nsurl-resource-values-for-keys-from-bookmark-data (c-> any/c any/c any/c)]
+  [nsurl-write-bookmark-data-to-url-options-error (c-> any/c any/c exact-nonnegative-integer? (or/c cpointer? #f) boolean?)]
+  )
 
 ;; --- Class reference ---
 (import-class NSURL)
@@ -97,7 +169,8 @@
   (wrap-objc-object
    (tell (coerce-arg self) baseURL)))
 (define (nsurl-custom-playground-quick-look self)
-  (tell #:type _pointer (coerce-arg self) customPlaygroundQuickLook))
+  (wrap-objc-object
+   (tell (coerce-arg self) customPlaygroundQuickLook)))
 (define (nsurl-data-representation self)
   (wrap-objc-object
    (tell (coerce-arg self) dataRepresentation)))
@@ -204,9 +277,9 @@
 (define (nsurl-is-file-url self)
   (_msg-0 (coerce-arg self) (sel_registerName "isFileURL")))
 (define (nsurl-remove-all-cached-resource-values! self)
-  (tell (coerce-arg self) removeAllCachedResourceValues))
+  (tell #:type _void (coerce-arg self) removeAllCachedResourceValues))
 (define (nsurl-remove-cached-resource-value-for-key! self key)
-  (tell (coerce-arg self) removeCachedResourceValueForKey: (coerce-arg key)))
+  (tell #:type _void (coerce-arg self) removeCachedResourceValueForKey: (coerce-arg key)))
 (define (nsurl-resource-values-for-keys-error self keys error)
   (wrap-objc-object
    (_msg-7 (coerce-arg self) (sel_registerName "resourceValuesForKeys:error:") (coerce-arg keys) error)
@@ -216,11 +289,11 @@
 (define (nsurl-set-resource-values-error! self keyed-values error)
   (_msg-6 (coerce-arg self) (sel_registerName "setResourceValues:error:") (coerce-arg keyed-values) error))
 (define (nsurl-set-temporary-resource-value-for-key! self value key)
-  (tell (coerce-arg self) setTemporaryResourceValue: (coerce-arg value) forKey: (coerce-arg key)))
+  (tell #:type _void (coerce-arg self) setTemporaryResourceValue: (coerce-arg value) forKey: (coerce-arg key)))
 (define (nsurl-start-accessing-security-scoped-resource self)
   (_msg-0 (coerce-arg self) (sel_registerName "startAccessingSecurityScopedResource")))
 (define (nsurl-stop-accessing-security-scoped-resource self)
-  (tell (coerce-arg self) stopAccessingSecurityScopedResource))
+  (tell #:type _void (coerce-arg self) stopAccessingSecurityScopedResource))
 
 ;; --- Class methods ---
 (define (nsurl-url-by-resolving-alias-file-at-url-options-error url options error)

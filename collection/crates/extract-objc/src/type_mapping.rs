@@ -52,8 +52,15 @@ fn map_type_kind(clang_type: &Type<'_>) -> TypeRefKind {
         // Block pointer
         TypeKind::BlockPointer => map_block_type(clang_type),
 
-        // C pointer types
-        TypeKind::Pointer => TypeRefKind::Pointer,
+        // C pointer types: check for function pointer (void (*)(int, ...))
+        TypeKind::Pointer => {
+            if let Some(pointee) = clang_type.get_pointee_type() {
+                if pointee.get_kind() == TypeKind::FunctionPrototype {
+                    return map_function_pointer_type(&pointee, None);
+                }
+            }
+            TypeRefKind::Pointer
+        }
 
         // Typedef (alias)
         TypeKind::Typedef => map_typedef(clang_type),
@@ -263,8 +270,15 @@ fn map_typedef(clang_type: &Type<'_>) -> TypeRefKind {
         // Object pointer typedefs (NSImageName → NSString *, etc.) → resolve to id/class
         TypeKind::ObjCObjectPointer => map_objc_object_pointer(&canonical),
 
-        // Pointer typedefs → resolve to pointer
-        TypeKind::Pointer => TypeRefKind::Pointer,
+        // Pointer typedefs: check for function pointer (e.g., CGEventTapCallBack)
+        TypeKind::Pointer => {
+            if let Some(pointee) = canonical.get_pointee_type() {
+                if pointee.get_kind() == TypeKind::FunctionPrototype {
+                    return map_function_pointer_type(&pointee, Some(name));
+                }
+            }
+            TypeRefKind::Pointer
+        }
 
         // Struct typedefs (NSRect → CGRect, etc.) → keep as Alias for geometry
         // struct matching in the FFI mapper
@@ -306,6 +320,33 @@ fn map_typedef(clang_type: &Type<'_>) -> TypeRefKind {
             name,
             framework: None,
         },
+    }
+}
+
+/// Map a `FunctionPrototype` clang type to a `FunctionPointer` TypeRefKind.
+///
+/// Extracts the return type and all parameter types from the function prototype.
+/// The optional `name` carries the typedef name (e.g., `"CGEventTapCallBack"`)
+/// when the function pointer was reached through a typedef; absent for anonymous
+/// function pointers in parameter positions.
+fn map_function_pointer_type(func_type: &Type<'_>, name: Option<String>) -> TypeRefKind {
+    let return_type = match func_type.get_result_type() {
+        Some(rt) => Box::new(map_type(&rt)),
+        None => Box::new(TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Primitive {
+                name: "void".to_string(),
+            },
+        }),
+    };
+
+    let arg_types = func_type.get_argument_types().unwrap_or_default();
+    let params: Vec<TypeRef> = arg_types.iter().map(|t| map_type(t)).collect();
+
+    TypeRefKind::FunctionPointer {
+        name,
+        params,
+        return_type,
     }
 }
 

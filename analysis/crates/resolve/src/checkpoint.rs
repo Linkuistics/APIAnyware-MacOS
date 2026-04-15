@@ -24,15 +24,24 @@ pub fn write_resolved_checkpoint(framework: &Framework, output_dir: &Path) -> Re
 
 /// Build a resolved framework from collected IR + Datalog results.
 ///
+/// `all_frameworks` provides the full set of loaded frameworks so that
+/// cross-framework inherited methods/properties can be looked up with full
+/// metadata (params, return types, etc.) instead of falling back to minimal
+/// stubs.
+///
 /// Clones the collected framework and populates resolved-phase fields:
 /// - `checkpoint` → `"resolved"`
 /// - `Class::ancestors` — transitive ancestor list
 /// - `Class::all_methods` — inheritance-flattened methods with `origin`, `returns_retained`, `satisfies_protocol`
 /// - `Class::all_properties` — inheritance-flattened properties with `origin`
-pub fn build_resolved_framework(collected: &Framework, prog: &ResolutionProgram) -> Framework {
-    // Index methods and properties by (class, selector/name) for lookup
-    let method_index = build_method_index(collected, prog);
-    let property_index = build_property_index(collected, prog);
+pub fn build_resolved_framework(
+    collected: &Framework,
+    prog: &ResolutionProgram,
+    all_frameworks: &[Framework],
+) -> Framework {
+    // Index methods and properties across ALL frameworks for cross-framework lookup
+    let method_index = build_method_index(all_frameworks);
+    let property_index = build_property_index(all_frameworks);
 
     // Index returns_retained results: (class, selector, is_class_method)
     let retained_set: HashSet<(&str, &str, bool)> = prog
@@ -84,22 +93,22 @@ pub fn build_resolved_framework(collected: &Framework, prog: &ResolutionProgram)
 type MethodKey<'a> = (&'a str, &'a str, bool);
 
 /// Build an index from (class, selector, is_class_method) → Method
-/// across all classes in the framework AND all loaded frameworks' Datalog facts.
-fn build_method_index<'a>(
-    framework: &'a Framework,
-    _prog: &ResolutionProgram,
-) -> HashMap<MethodKey<'a>, &'a Method> {
+/// across all classes in all loaded frameworks, so cross-framework inherited
+/// methods retain full metadata (params, return type, etc.).
+fn build_method_index<'a>(all_frameworks: &'a [Framework]) -> HashMap<MethodKey<'a>, &'a Method> {
     let mut index = HashMap::new();
-    for class in &framework.classes {
-        for method in &class.methods {
-            index.insert(
-                (
-                    class.name.as_str(),
-                    method.selector.as_str(),
-                    method.class_method,
-                ),
-                method,
-            );
+    for framework in all_frameworks {
+        for class in &framework.classes {
+            for method in &class.methods {
+                index.insert(
+                    (
+                        class.name.as_str(),
+                        method.selector.as_str(),
+                        method.class_method,
+                    ),
+                    method,
+                );
+            }
         }
     }
     index
@@ -109,14 +118,17 @@ fn build_method_index<'a>(
 type PropertyKey<'a> = (&'a str, &'a str);
 
 /// Build an index from (class, property_name) → Property
+/// across all classes in all loaded frameworks, so cross-framework inherited
+/// properties retain full metadata (type, readonly, etc.).
 fn build_property_index<'a>(
-    framework: &'a Framework,
-    _prog: &ResolutionProgram,
+    all_frameworks: &'a [Framework],
 ) -> HashMap<PropertyKey<'a>, &'a Property> {
     let mut index = HashMap::new();
-    for class in &framework.classes {
-        for prop in &class.properties {
-            index.insert((class.name.as_str(), prop.name.as_str()), prop);
+    for framework in all_frameworks {
+        for class in &framework.classes {
+            for prop in &class.properties {
+                index.insert((class.name.as_str(), prop.name.as_str()), prop);
+            }
         }
     }
     index

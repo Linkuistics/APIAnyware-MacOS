@@ -4,6 +4,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
+         (rename-in racket/contract [-> c->])
          "../../../runtime/objc-base.rkt"
          "../../../runtime/coerce.rkt")
 
@@ -11,7 +12,11 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/TestKit.framework/TestKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
-(provide (except-out (all-defined-out) _fw-lib _objc-lib))
+(provide TKHelper)
+(provide/contract
+  [tkhelper-dealloc (c-> objc-object? void?)]
+  [tkhelper-description (c-> objc-object? any/c)]
+  )
 
 ;; --- Class reference ---
 (import-class TKHelper)
@@ -20,7 +25,7 @@
 
 ;; --- Instance methods ---
 (define (tkhelper-dealloc self)
-  (tell (coerce-arg self) dealloc))
+  (tell #:type _void (coerce-arg self) dealloc))
 (define (tkhelper-description self)
   (wrap-objc-object
    (tell (coerce-arg self) description)))

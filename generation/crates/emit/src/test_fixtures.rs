@@ -9,7 +9,7 @@
 //! branches.
 
 use apianyware_macos_types::ir::{
-    Class, Constant, Enum, EnumValue, Framework, Method, Param, Property, Protocol,
+    Class, Constant, Enum, EnumValue, Framework, Function, Method, Param, Property, Protocol,
 };
 use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 
@@ -25,6 +25,8 @@ use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 /// - `TKDelegate` protocol — optional callbacks with void/bool/id return types
 /// - `TKAlignment` enum — 3 values
 /// - 2 constants: `TKVersionString`, `TKDefaultTimeout`
+/// - 4 C functions: `TKComputeDistance`, `TKTransformPoint`, `TKReset`, `TKCreateBuffer`
+///   (plus 1 variadic and 1 inline function to test filtering)
 pub fn build_snapshot_test_framework() -> Framework {
     Framework {
         format_version: "1.0".to_string(),
@@ -44,13 +46,19 @@ pub fn build_snapshot_test_framework() -> Framework {
         protocols: vec![build_tkcopying_protocol(), build_tkdelegate_protocol()],
         enums: vec![build_tkalignment_enum()],
         structs: vec![],
-        functions: vec![],
+        functions: vec![
+            build_tk_compute_distance(),
+            build_tk_transform_point(),
+            build_tk_reset(),
+            build_tk_create_buffer(),
+            build_tk_log_variadic(),
+            build_tk_fast_hash_inline(),
+        ],
         constants: vec![build_version_constant(), build_timeout_constant()],
         class_annotations: vec![],
         api_patterns: vec![],
         enrichment: None,
         verification: None,
-        ir_level: None,
     }
 }
 
@@ -399,6 +407,125 @@ fn build_tkhelper() -> Class {
 }
 
 // ---------------------------------------------------------------------------
+// Functions
+// ---------------------------------------------------------------------------
+
+/// `TKComputeDistance` — simple function: (double, double) -> double.
+fn build_tk_compute_distance() -> Function {
+    Function {
+        name: "TKComputeDistance".to_string(),
+        params: vec![param("x", type_double()), param("y", type_double())],
+        return_type: type_double(),
+        inline: false,
+        variadic: false,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+/// `TKTransformPoint` — function with struct param and return: (NSPoint) -> NSPoint.
+fn build_tk_transform_point() -> Function {
+    Function {
+        name: "TKTransformPoint".to_string(),
+        params: vec![param(
+            "point",
+            TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Alias {
+                    name: "NSPoint".to_string(),
+                    framework: None,
+                },
+            },
+        )],
+        return_type: TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Alias {
+                name: "NSPoint".to_string(),
+                framework: None,
+            },
+        },
+        inline: false,
+        variadic: false,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+/// `TKReset` — void-returning function with no params: () -> void.
+fn build_tk_reset() -> Function {
+    Function {
+        name: "TKReset".to_string(),
+        params: vec![],
+        return_type: type_void(),
+        inline: false,
+        variadic: false,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+/// `TKCreateBuffer` — function returning a pointer with object param: (NSString, uint32) -> pointer.
+fn build_tk_create_buffer() -> Function {
+    Function {
+        name: "TKCreateBuffer".to_string(),
+        params: vec![
+            param("name", type_class("NSString")),
+            param(
+                "size",
+                TypeRef {
+                    nullable: false,
+                    kind: TypeRefKind::Primitive {
+                        name: "uint32".to_string(),
+                    },
+                },
+            ),
+        ],
+        return_type: type_pointer(),
+        inline: false,
+        variadic: false,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+/// `TKLog` — variadic function (should be skipped by emitter).
+fn build_tk_log_variadic() -> Function {
+    Function {
+        name: "TKLog".to_string(),
+        params: vec![param("format", type_class("NSString"))],
+        return_type: type_void(),
+        inline: false,
+        variadic: true,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+/// `TKFastHash` — inline function (should be skipped by emitter).
+fn build_tk_fast_hash_inline() -> Function {
+    Function {
+        name: "TKFastHash".to_string(),
+        params: vec![param("data", type_pointer())],
+        return_type: TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Primitive {
+                name: "uint64".to_string(),
+            },
+        },
+        inline: true,
+        variadic: false,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Protocols
 // ---------------------------------------------------------------------------
 
@@ -536,6 +663,7 @@ mod tests {
         assert_eq!(fw.classes.len(), 5);
         assert_eq!(fw.protocols.len(), 2);
         assert_eq!(fw.enums.len(), 1);
+        assert_eq!(fw.functions.len(), 6);
         assert_eq!(fw.constants.len(), 2);
     }
 
