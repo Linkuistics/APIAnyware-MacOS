@@ -229,11 +229,22 @@ const SELF_CONTRACT: &str = "objc-object?";
 /// Unlike `map_contract` (for C FFI boundaries), this accounts for
 /// `coerce-arg` flexibility (accepts strings, objc-objects, pointers)
 /// and block wrapping (accepts Racket procedures).
+///
+/// Object-shaped params (`Class`/`Id`/`Instancetype`) emit a union that
+/// exactly mirrors `coerce-arg`'s accepted set in `runtime/coerce.rkt`:
+/// `string?`, `objc-object?`, `cpointer?`, plus `#f` when the IR marks
+/// the param nullable. The tight union replaces the old `any/c` so
+/// numbers, symbols, and lists are rejected at the wrapper boundary
+/// with caller blame instead of surfacing as a deeper `coerce-arg`
+/// error.
 fn map_param_contract(type_ref: &TypeRef) -> String {
     match &type_ref.kind {
-        // Object types go through coerce-arg which accepts various types
         TypeRefKind::Class { .. } | TypeRefKind::Id | TypeRefKind::Instancetype => {
-            "any/c".to_string()
+            if type_ref.nullable {
+                "(or/c string? objc-object? cpointer? #f)".to_string()
+            } else {
+                "(or/c string? objc-object? cpointer?)".to_string()
+            }
         }
         // Block params receive Racket procedures (or #f for nil)
         TypeRefKind::Block { .. } => "(or/c procedure? #f)".to_string(),
@@ -1341,9 +1352,11 @@ mod tests {
             all_properties: vec![],
         };
         let output = generate_class_file(&cls, "TestKit");
-        // Object setter: (-> objc-object? any/c void?) — self + coerced value
+        // Object setter: self + coerce-arg-matched union for the value.
         assert!(
-            output.contains("[tkview-set-title! (c-> objc-object? any/c void?)]"),
+            output.contains(
+                "[tkview-set-title! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]"
+            ),
             "Object property setter contract. Output:\n{output}"
         );
         // Typed setter: (-> objc-object? exact-integer? void?)
@@ -1392,7 +1405,9 @@ mod tests {
             "Class-property primitive setter contract must omit receiver. Output:\n{output}"
         );
         assert!(
-            output.contains("[tkwindow-set-default-title! (c-> any/c void?)]"),
+            output.contains(
+                "[tkwindow-set-default-title! (c-> (or/c string? objc-object? cpointer?) void?)]"
+            ),
             "Class-property _id setter contract must omit receiver. Output:\n{output}"
         );
 
@@ -1634,8 +1649,12 @@ mod tests {
 
     #[test]
     fn test_map_param_contract_coercion() {
-        // Object types → any/c (coerce-arg is permissive)
-        assert_eq!(map_param_contract(&type_id()), "any/c");
+        // Non-nullable `Id` → union matching coerce-arg's accepted set
+        // (string, objc-object, cpointer — but not #f).
+        assert_eq!(
+            map_param_contract(&type_id()),
+            "(or/c string? objc-object? cpointer?)"
+        );
         // Block → procedure? or #f
         let block = TypeRef {
             nullable: false,
@@ -1648,6 +1667,68 @@ mod tests {
         // Primitive → delegates to map_contract
         assert_eq!(map_param_contract(&type_double()), "real?");
         assert_eq!(map_param_contract(&type_bool()), "boolean?");
+    }
+
+    #[test]
+    fn test_map_param_contract_nullable_id() {
+        let nullable_id = TypeRef {
+            nullable: true,
+            kind: TypeRefKind::Id,
+        };
+        assert_eq!(
+            map_param_contract(&nullable_id),
+            "(or/c string? objc-object? cpointer? #f)"
+        );
+    }
+
+    #[test]
+    fn test_map_param_contract_class_types() {
+        let non_null = TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Class {
+                name: "NSString".into(),
+                framework: None,
+                params: vec![],
+            },
+        };
+        assert_eq!(
+            map_param_contract(&non_null),
+            "(or/c string? objc-object? cpointer?)"
+        );
+
+        let nullable = TypeRef {
+            nullable: true,
+            kind: TypeRefKind::Class {
+                name: "NSString".into(),
+                framework: None,
+                params: vec![],
+            },
+        };
+        assert_eq!(
+            map_param_contract(&nullable),
+            "(or/c string? objc-object? cpointer? #f)"
+        );
+    }
+
+    #[test]
+    fn test_map_param_contract_instancetype() {
+        let non_null = TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Instancetype,
+        };
+        assert_eq!(
+            map_param_contract(&non_null),
+            "(or/c string? objc-object? cpointer?)"
+        );
+
+        let nullable = TypeRef {
+            nullable: true,
+            kind: TypeRefKind::Instancetype,
+        };
+        assert_eq!(
+            map_param_contract(&nullable),
+            "(or/c string? objc-object? cpointer? #f)"
+        );
     }
 
     #[test]

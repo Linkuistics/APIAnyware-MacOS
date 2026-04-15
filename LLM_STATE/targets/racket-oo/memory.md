@@ -95,17 +95,18 @@ The harness uses `(dynamic-require \`(file ,p) #f)`, not `(dynamic-require p #f)
 `raco --version` exits non-zero. The reliable probe is `raco help`. The harness uses `binary_on_path("racket", "--version")` and `binary_on_path("raco", "help")`.
 
 ### Contract-based API boundaries
-Every FFI boundary uses `provide/contract`. Three contract mappers in `emit_functions.rs` (reused by functions, constants, and class wrappers):
-- `map_contract` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, geometry structs → `any/c`, void → `void?`. Note: `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
-- `map_param_contract` (class wrapper params): `any/c` for objects, `(or/c procedure? #f)` for blocks, delegates to `map_contract` for primitives
-- `map_return_contract` (class wrapper returns): `any/c` for objects, delegates to `map_contract` for void/primitives
+Every FFI boundary uses `provide/contract`. Three contract mappers:
+- `map_contract` in `emit_functions.rs` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, geometry structs → `any/c`, void → `void?`. Reused by functions, constants, and class wrappers. Note: `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
+- `map_param_contract` in `emit_class.rs` (class wrapper params): `Id`/`Class`/`Instancetype` → nullable-aware union mirroring `coerce-arg`'s accepted set (non-nullable: 3-element, nullable: 4-element with `#f`), `(or/c procedure? #f)` for blocks, delegates to `map_contract` for primitives. `type_ref.nullable` selects the variant.
+- `map_return_contract` in `emit_class.rs` (class wrapper returns): `any/c` for objects, delegates to `map_contract` for void/primitives.
 Protocol files use fixed contracts (see "Protocol file contract shape is fixed").
 
-### Class wrapper self uses `objc-object?`, objects use `any/c`
-Self uses `SELF_CONTRACT` (`"objc-object?"`) in `emit_class.rs` — routed through instance methods and instance property getters/setters. Object params/returns remain `any/c`.
-- **Self is always a wrapped instance** — rejecting non-`objc-object` values catches misuse (string, number, `#f`, stale cpointer) with caller blame instead of segfaulting in `objc_msgSend`.
-- **Object params/returns stay `any/c`** — `coerce-arg` accepts strings, `objc-object` structs, and raw pointers; strict `cpointer?` would break auto-coercion.
-`objc-object?` is in scope via the require chain: `coerce.rkt` re-exports from `runtime/objc-base.rkt`. Class-property methods omit `self` (see "Class-property methods omit `self`"). Tightening object params (nullable) and class-specific predicates are queued follow-ups.
+### Class wrapper self uses `objc-object?`, params use typed unions
+Self uses `SELF_CONTRACT` (`"objc-object?"`) in `emit_class.rs` — routed through instance methods and instance property getters/setters.
+- **Self** is always a wrapped instance — rejecting non-`objc-object` values catches misuse with caller blame instead of segfaulting in `objc_msgSend`.
+- **Object params** (`Id`/`Class`/`Instancetype`) use a nullable-aware union matching `coerce-arg`'s accepted set. `type_ref.nullable` selects between 3-element (non-nullable) and 4-element (includes `#f`) variants. Errors surface at the wrapper with caller blame, not deep in `coerce-arg`.
+- **Object returns** stay `any/c` via `map_return_contract`. Class-specific return predicates are a queued follow-up.
+`objc-object?` is in scope via the require chain: `coerce.rkt` re-exports from `runtime/objc-base.rkt`. Class-property methods omit `self` (see "Class-property methods omit `self`").
 
 ### Class-property methods omit `self`
 Class-property getters/setters have no `self` parameter. `build_export_contracts` drops `self` for `prop.class_property`. `emit_property`'s setter branches substitute `class_name` for `(coerce-arg self)` as the target. TestKit has no class-method properties, so arity divergence is only caught by the real-framework canary (`nsmenuitem.rkt` in `LIBRARY_LOAD_CHECKS`).
@@ -157,7 +158,101 @@ The platform-availability filter operates at classes, protocols, methods, and pr
 ### Wire-format JSON changes need golden file regeneration
 Serde annotations on core IR structs define the JSON wire format. Field name/alias/removal changes update Rust source across all crates but do not automatically update golden files — those require `UPDATE_GOLDEN=1`. Design-doc examples and tests asserting on `serde_json::to_string` output are tightly coupled to serde annotations.
 
+### `_cprocedure` callbacks unsafe from foreign OS threads
+Racket CS SIGILLs (exit 132) when a `_cprocedure` callback is invoked from an OS thread not registered with the Racket VM (e.g., GCD worker pool threads from libdispatch). `#:async-apply` converts the crash to a deadlock under `nsapplication-run` because the async-apply queue drains on the main Racket thread, which is stuck in the Cocoa run loop. The CGEvent tap callback is NOT a counterexample — it fires on the main OS thread via `CFRunLoopGetMain`, not on a foreign thread. Implication for generated bindings: any binding exposing a C callback type should document this constraint and warn against installing the callback on a non-main GCD queue or libdispatch worker. Discovered empirically in Modaliser-Racket.
+
+### `call-in-os-thread` safe for pure Racket/file-I/O only
+`ffi/unsafe/os-thread` (`call-in-os-thread`) works for closures, list/hash ops, `parameterize`, file I/O (`open-input-file`, etc.). Segfaults on `tcp-connect`, `subprocess`/`system`, and anything using Racket's place scheduler I/O event pump. `net/url` uses TCP, transitively unsafe. Useful for CPU-bound work (fuzzy matching, serialization).
+
+### `dynamic-place` for I/O off the main thread
+Each `dynamic-place` is a separate Racket VM on its own OS thread with its own scheduler. `net/url`, `tcp-connect`, `subprocess` all work correctly. Place-channel semantics: `place-channel-put` is fully buffered (non-blocking sender), `place-channel-get` blocks (fatal on main thread under `nsapplication-run`), `sync/timeout 0` on a place-channel is a non-blocking try-receive (empirically scheduler-independent — the only `sync`-family form safe under `nsapplication-run`). The "place-backed async facade with main-thread polling tick" pattern (Modaliser `services/http.rkt`) generalizes: place does I/O, main thread polls via `place-channel-try-get` on a `call-on-main-thread-after` timer. Main thread never blocks.
+
 ### macOS widget quirks (Racket apps)
 - Radio button mutual exclusion requires manual target-action delegate
 - NSStepper requires `setContinuous: YES` to fire target-action
 - NSStepper inside plain NSView in NSStackView may not receive clicks — add directly to stack view
+
+### `only-in` import pattern for generated C-function bindings (confirmed 2026-04-15)
+When a consuming file needs a subset of generated bindings from `functions.rkt` or `constants.rkt`, use `only-in` rather than a wholesale `require`:
+
+    (only-in "../bindings/generated/oo/coregraphics/functions.rkt"
+             CGEventSourceCreate CGEventCreateKeyboardEvent ...)
+    (only-in "../bindings/generated/oo/corefoundation/functions.rkt" CFRelease)
+    (only-in "../bindings/generated/oo/corefoundation/constants.rkt" kCFRunLoopCommonModes)
+
+Rationale: documents exactly which generated names the consumer uses; prevents `racket/contract` re-exports from leaking through into the consuming module. Global-variable constants (e.g. `kCFRunLoopCommonModes`) are emitted as `(get-ffi-obj 'name lib _pointer)` and resolve correctly at runtime via `dlsym` — the `only-in` path is confirmed end-to-end. Validated by Modaliser-Racket Task #7 Phase 1 (`ffi/cgevent-emitter.rkt` migration, 26/26 tests green).
+
+### Sample-app bundling via bundle-racket-oo (2026-04-15)
+Racket-OO sample apps ship as `.app` bundles built by
+`apianyware-macos-bundle-racket-oo`, which wraps the language-agnostic
+`apianyware-macos-stub-launcher` with racket-oo conventions: require-tree
+walk for dependency discovery, spec.md first-H1 for the display name,
+`Resources/racket-app/<rel>` layout mirroring the source tree so
+relative requires resolve at runtime, optional `lib/libAPIAnywareRacket.dylib`
+copy. CLI: `cargo run --example bundle_app -p apianyware-macos-bundle-racket-oo -- <script>` or `-- --all`. Built bundles land at
+`apps/<name>/build/<App Name>.app` (gitignored). The bold menu-bar app
+name only appears when launched via the bundle — `racket script.rkt`
+directly still shows "racket". Every sample app's `<name>.rkt` installs
+the standard menu via `(install-standard-app-menu! app "<Display>")`
+from `runtime/app-menu.rkt`.
+
+### `runtime/app-menu.rkt` uses raw typed `objc_msgSend` (2026-04-15)
+`tell` from `ffi/unsafe/objc` fails on selectors with SEL parameters
+(`id->C: argument is not 'id' pointer`) — a Racket SEL is a plain
+`cpointer`, not `_id`-tagged, and `tell`'s per-argument coercion
+rejects it. `addItemWithTitle:action:keyEquivalent:` and
+`initWithTitle:action:keyEquivalent:` both hit this. `app-menu.rkt`
+works around it by defining a small set of explicitly-typed
+`objc_msgSend` aliases (`_msg-init-with-title-action-key`,
+`_msg-add-item-with-title-action-key`, `_msg-set-modifier-mask`,
+`_msg-id->void`, ...) and calling them with raw `sel_registerName`
+selectors. This is the same pattern the generated framework
+bindings use for non-id-parameter methods, and it avoids any
+runtime→generated dependency.
+
+### `as-id` cast bug in `objc-base.rkt` (fixed 2026-04-15)
+`as-id` in `runtime/objc-base.rkt` claims to "Ensure an ObjC reference
+is `_id`-tagged for use with `tell`", but until 2026-04-15 the
+`(objc-object? obj)` branch returned `(objc-object-ptr obj)`
+**unwrapped** — a plain cpointer, not `_id`. The `cpointer?` branch
+did the cast. Only the second branch was right. Anything calling
+`(as-id some-wrapped-object)` and passing the result to `tell` got
+`id->C: argument is not 'id' pointer`. Fixed so both branches
+`(cast … _pointer _id)`. Caught when `install-standard-app-menu!`'s
+final `setMainMenu:` call tried to pass the NSApplication wrapper
+through `as-id` and crashed the launch.
+
+### Accessibility menu drill-down needs a mouse click
+`guivision agent snapshot --window "Menu Bar"` only surfaces the
+top-level menu items (Apple, app-name). The submenu is not in the
+accessibility tree until the menu opens. To verify the full menu
+content, click the menu title via VNC (`guivision input click --connect
+spec.json X Y`) then `screenshot` the region. The agent's `press --role
+menu-item --label "Counter"` query returns `No element found matching
+query` because accessibility doesn't treat menu bar items as
+directly-pressable in the default snapshot mode.
+
+### GUIVisionVMDriver VNC password recovery
+`vm-start.sh --viewer` exports `GUIVISION_VNC_PASSWORD` but the value
+does NOT survive pipeline subshells (`source … | tail`) — the sourced
+env vars only exist in the pipeline-subshell scope. Source the script
+with output redirected to a file (`source vm-start.sh > /tmp/start.log
+2>&1`) so the env ends up in the parent shell. Persist
+`$GUIVISION_VNC`, `$GUIVISION_VNC_PASSWORD`, and `$GUIVISION_AGENT` to
+`/tmp/gv_*` files plus a `/tmp/gv_connect.json` connect spec; later
+`guivision` calls read them via `--connect /tmp/gv_connect.json` for
+authenticated VNC (screenshot, find-text, input click). The password
+is generated fresh per `tart run`, so recovery after a lost sourcing
+requires re-booting the VM.
+
+### Auto-terminating Cocoa-loop test pattern (confirmed 2026-04-15)
+Tests that must enter `nsapplication-run` (CGEvent tap, delegate reentry, full lifecycle) need a structured exit strategy to avoid hanging the test runner. Established by Modaliser-Racket:
+
+1. Inside `applicationDidFinishLaunching:` body, register a **safety-net** first:
+   `(call-on-main-thread-after 5.0 (lambda () (eprintf "safety net: test timed out\n") (exit 1)))`
+   — fires even if an assertion exception is caught by the delegate's `with-handlers` boundary.
+2. Run assertions inside the existing `with-handlers` boundary.
+3. Schedule a **normal-path exit**: `(call-on-main-thread-after 0.5 (lambda () ... (exit 0)))`.
+4. File ends with `(nsapplication-run app)`.
+
+Outcomes: assertions pass → `(exit 0)` → `[OK]`. Assertion raises (caught by `with-handlers`) → safety net fires → `(exit 1)` → `[FAIL]`. Genuine hang → test runner's `timeout -k 1 30` → `[TIMEOUT]`. Lets integration tests that exercise real Cocoa/NSApp behaviour run in fully automated CI. The safety-net timeout (5 s) must be longer than the normal-path delay (0.5 s).

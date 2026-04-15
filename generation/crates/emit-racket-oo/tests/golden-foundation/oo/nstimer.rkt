@@ -15,10 +15,10 @@
 
 (provide NSTimer)
 (provide/contract
-  [make-nstimer-init-with-fire-date-interval-repeats-block (c-> any/c real? boolean? (or/c procedure? #f) any/c)]
-  [make-nstimer-init-with-fire-date-interval-target-selector-user-info-repeats (c-> any/c real? any/c cpointer? any/c boolean? any/c)]
+  [make-nstimer-init-with-fire-date-interval-repeats-block (c-> (or/c string? objc-object? cpointer?) real? boolean? (or/c procedure? #f) any/c)]
+  [make-nstimer-init-with-fire-date-interval-target-selector-user-info-repeats (c-> (or/c string? objc-object? cpointer?) real? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) boolean? any/c)]
   [nstimer-fire-date (c-> objc-object? any/c)]
-  [nstimer-set-fire-date! (c-> objc-object? any/c void?)]
+  [nstimer-set-fire-date! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
   [nstimer-time-interval (c-> objc-object? real?)]
   [nstimer-tolerance (c-> objc-object? real?)]
   [nstimer-set-tolerance! (c-> objc-object? real? void?)]
@@ -27,12 +27,12 @@
   [nstimer-fire (c-> objc-object? void?)]
   [nstimer-invalidate (c-> objc-object? void?)]
   [nstimer-is-valid (c-> objc-object? boolean?)]
-  [nstimer-scheduled-timer-with-time-interval-invocation-repeats (c-> real? any/c boolean? any/c)]
+  [nstimer-scheduled-timer-with-time-interval-invocation-repeats (c-> real? (or/c string? objc-object? cpointer?) boolean? any/c)]
   [nstimer-scheduled-timer-with-time-interval-repeats-block (c-> real? boolean? (or/c procedure? #f) any/c)]
-  [nstimer-scheduled-timer-with-time-interval-target-selector-user-info-repeats (c-> real? any/c cpointer? any/c boolean? any/c)]
-  [nstimer-timer-with-time-interval-invocation-repeats (c-> real? any/c boolean? any/c)]
+  [nstimer-scheduled-timer-with-time-interval-target-selector-user-info-repeats (c-> real? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) boolean? any/c)]
+  [nstimer-timer-with-time-interval-invocation-repeats (c-> real? (or/c string? objc-object? cpointer?) boolean? any/c)]
   [nstimer-timer-with-time-interval-repeats-block (c-> real? boolean? (or/c procedure? #f) any/c)]
-  [nstimer-timer-with-time-interval-target-selector-user-info-repeats (c-> real? any/c cpointer? any/c boolean? any/c)]
+  [nstimer-timer-with-time-interval-target-selector-user-info-repeats (c-> real? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) boolean? any/c)]
   )
 
 ;; --- Class reference ---

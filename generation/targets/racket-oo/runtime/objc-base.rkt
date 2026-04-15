@@ -102,10 +102,13 @@
     [else (error 'unwrap-objc-object "expected objc-object or cpointer, got ~a" obj)]))
 
 ;; Ensure an ObjC reference is _id-tagged for use with `tell`.
+;; Both branches must cast — a raw cpointer pulled out of an objc-object
+;; struct is *not* automatically _id-tagged, and `tell` rejects it with
+;; "id->C: argument is not `id` pointer".
 (define (as-id obj)
   (cond
     [(not obj) #f]
-    [(objc-object? obj) (objc-object-ptr obj)]
+    [(objc-object? obj) (cast (objc-object-ptr obj) _pointer _id)]
     [(cpointer? obj) (cast obj _pointer _id)]
     [else (error 'as-id "expected objc-object or cpointer, got ~a" obj)]))
 

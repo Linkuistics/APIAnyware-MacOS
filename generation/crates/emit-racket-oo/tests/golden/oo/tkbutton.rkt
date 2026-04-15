@@ -16,7 +16,7 @@
 (provide TKButton)
 (provide/contract
   [tkbutton-title (c-> objc-object? any/c)]
-  [tkbutton-set-title! (c-> objc-object? any/c void?)]
+  [tkbutton-set-title! (c-> objc-object? (or/c string? objc-object? cpointer? #f) void?)]
   [tkbutton-hidden (c-> objc-object? boolean?)]
   [tkbutton-set-hidden! (c-> objc-object? boolean? void?)]
   [tkbutton-tag (c-> objc-object? any/c)]

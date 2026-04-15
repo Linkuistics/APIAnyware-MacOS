@@ -37,6 +37,7 @@ use apianyware_macos_emit_racket_oo::emit_framework::RacketEmitter;
 use apianyware_macos_types::ir::Framework;
 
 const RUNTIME_FILES: &[&str] = &[
+    "app-menu.rkt",
     "block.rkt",
     "coerce.rkt",
     "delegate.rkt",
@@ -49,7 +50,7 @@ const RUNTIME_FILES: &[&str] = &[
 
 const REQUIRED_FRAMEWORKS: &[&str] = &["Foundation", "AppKit", "CoreGraphics", "CoreText"];
 
-const APPS: &[&str] = &["hello-window", "counter", "ui-controls-gallery"];
+const APPS: &[&str] = &["hello-window", "counter", "ui-controls-gallery", "file-lister"];
 
 /// Library files exercised via `dynamic-require`. Each entry is a path
 /// under the harness tempdir root, chosen to cover one distinct dimension:

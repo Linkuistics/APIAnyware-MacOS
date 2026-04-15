@@ -15,7 +15,7 @@
 
 (provide NSError)
 (provide/contract
-  [make-nserror-init-with-domain-code-user-info (c-> any/c exact-integer? any/c any/c)]
+  [make-nserror-init-with-domain-code-user-info (c-> (or/c string? objc-object? cpointer?) exact-integer? (or/c string? objc-object? cpointer?) any/c)]
   [nserror-code (c-> objc-object? exact-integer?)]
   [nserror-domain (c-> objc-object? any/c)]
   [nserror-help-anchor (c-> objc-object? any/c)]
@@ -26,9 +26,9 @@
   [nserror-recovery-attempter (c-> objc-object? any/c)]
   [nserror-underlying-errors (c-> objc-object? any/c)]
   [nserror-user-info (c-> objc-object? any/c)]
-  [nserror-error-with-domain-code-user-info (c-> any/c exact-integer? any/c any/c)]
-  [nserror-set-user-info-value-provider-for-domain-provider! (c-> any/c (or/c procedure? #f) void?)]
-  [nserror-user-info-value-provider-for-domain (c-> any/c any/c any/c (or/c cpointer? #f))]
+  [nserror-error-with-domain-code-user-info (c-> (or/c string? objc-object? cpointer?) exact-integer? (or/c string? objc-object? cpointer?) any/c)]
+  [nserror-set-user-info-value-provider-for-domain-provider! (c-> (or/c string? objc-object? cpointer?) (or/c procedure? #f) void?)]
+  [nserror-user-info-value-provider-for-domain (c-> (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c cpointer? #f))]
   )
 
 ;; --- Class reference ---

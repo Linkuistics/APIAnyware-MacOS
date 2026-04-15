@@ -18,7 +18,7 @@
   [nsstatusbar-thickness (c-> objc-object? real?)]
   [nsstatusbar-vertical (c-> objc-object? boolean?)]
   [nsstatusbar-is-vertical (c-> objc-object? boolean?)]
-  [nsstatusbar-remove-status-item! (c-> objc-object? any/c void?)]
+  [nsstatusbar-remove-status-item! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
   [nsstatusbar-status-item-with-length (c-> objc-object? real? any/c)]
   )
 

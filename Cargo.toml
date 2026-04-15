@@ -22,6 +22,7 @@ members = [
     # "generation/crates/emit-gerbil",
     # Tooling
     "generation/crates/stub-launcher",
+    "generation/crates/bundle-racket-oo",
 ]
 
 [workspace.package]
@@ -53,6 +54,7 @@ apianyware-macos-emit = { path = "generation/crates/emit" }
 apianyware-macos-emit-racket-oo = { path = "generation/crates/emit-racket-oo" }
 apianyware-macos-emit-racket-functional = { path = "generation/crates/emit-racket-functional" }
 apianyware-macos-stub-launcher = { path = "generation/crates/stub-launcher" }
+apianyware-macos-bundle-racket-oo = { path = "generation/crates/bundle-racket-oo" }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

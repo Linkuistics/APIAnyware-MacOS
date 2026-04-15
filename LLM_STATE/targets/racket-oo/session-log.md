@@ -888,3 +888,123 @@
     (adjust the impl) was the only non-regressive choice — option 1
     would have introduced a pointless `self` slot where the getter
     didn't have one.
+
+### Session N (2026-04-15T00:16:06Z) — Commit accumulated WIP
+
+- **Attempted:** "Commit accumulated emitter changes" task. Verified WIP
+  coherence, ran `cargo test -p apianyware-macos-emit-racket-oo`, ran
+  `RUNTIME_LOAD_TEST=1` harness (~40s), ran full `cargo test --workspace`,
+  staged, committed, pushed to origin/main.
+
+- **What worked:**
+  - All workspace tests green before commit (emit-racket-oo alone: 79
+    unit + 3 snapshot + 2 runtime-load tests; foundation subset now
+    green at HEAD).
+  - `RUNTIME_LOAD_TEST=1 cargo test --test runtime_load_test` green —
+    7 library `dynamic-require` checks plus `raco make` of 3 sample
+    apps. Harness actually ran (not the trivial pass-through you get
+    when the env var is absent).
+  - Commit f7a906c landed cleanly, pushed 3e13d37..f7a906c to
+    origin/main.
+  - Added two `.gitignore` rules up front so `compiled/` bytecode
+    caches and `LLM_STATE/**/compact-baseline` scratch files stayed
+    out of the commit.
+  - "Fix stale foundation goldens" task resolved as a free side effect
+    — the availability-filter delta and the emitter rewrite drift
+    regenerated together in one pass, making the previously-anticipated
+    follow-up commit unnecessary.
+
+- **What didn't:** Nothing broke. One friction point: the backlog task
+  was framed as "emitter changes" but the actual WIP spanned 120 files
+  across collection, analysis, generation, runtime, apps, goldens,
+  tests, docs, and LLM_STATE rotation. The honest scope of the commit
+  message reflects this. Slicing into smaller commits was considered
+  and rejected: `types/ir.rs`, the new `skipped_symbol_reason` enum,
+  and `shared_signatures` drift thread through all three phases, so
+  any partial slice would either break compilation or leave coupled
+  changes in separate commits.
+
+- **Suggests trying next:**
+  - **File Lister app** is the next high-value task — it's the first
+    of the 4 remaining sample apps and the delegate-pattern precondition
+    for Text Editor. The working tree is now clean so any golden drift
+    from app work surfaces without noise.
+  - **Alternative: Tighten `_id` parameter contracts** (nullable
+    marking) — lower scope, but forces another `UPDATE_GOLDEN=1` cycle
+    and would churn every class-wrapper snapshot. Worth scheduling
+    back-to-back with "Class-specific runtime predicates" so one
+    regeneration pass absorbs both.
+  - **Low-hanging:** "Add `audiotoolbox/constants.rkt` to runtime load
+    harness" (~1 hour of focused work, closes one canary gap on the
+    open `c:@<name>` leak class).
+
+- **Key learnings:**
+  - The 2026-04-14 work phase's investigation of "stale foundation
+    goldens" correctly predicted that the availability-filter delta
+    was the clean slice, but was wrong to anticipate splitting it off
+    as a follow-up commit. The cross-cutting type changes made
+    slicing harder than it looked.
+  - The run-backlog-plan.sh harness produces two new kinds of
+    untracked state per run: `compiled/` caches inside any app the
+    harness `raco make`s, and `LLM_STATE/**/compact-baseline` scratch
+    files. Both should be gitignored (now are).
+  - `ctx_read` and native `Read` have separate file-state tracking in
+    the harness — editing after `ctx_read` requires an explicit native
+    `Read` first. Noted for future work phases.
+
+### Session N (2026-04-15T00:35:56Z) — Tighten `_id` param contracts with nullable marking
+
+- **Attempted:** Replace the `any/c` fall-through in `map_param_contract`
+  for `TypeRefKind::Class | Id | Instancetype` with a union that mirrors
+  `coerce-arg`'s accepted set in `runtime/coerce.rkt`, consulting
+  `type_ref.nullable` to choose between the 3-element non-nullable
+  variant and the 4-element nullable variant.
+- **Worked:**
+  - TDD unit tests landed first (4 new + 1 updated): nullable `Id`,
+    non-nullable/nullable `Class`, and `Instancetype` all produce the
+    expected union strings.
+  - Implementation in `emit_class.rs` is a single match-arm rewrite;
+    blocks and primitives delegate unchanged.
+  - Two pre-existing tests (`test_property_setter_contract`,
+    `test_class_property_setter_impl_and_contract_agree`) needed their
+    expected strings updated — both caught by the unit-test pass
+    before snapshot rerun.
+  - `UPDATE_GOLDEN=1` regenerated 25 golden files (2 TestKit + 12
+    Foundation + 11 AppKit). Spot-checked tkview and nsbutton
+    diffs — nullable variant appears on `_id` setters where the
+    extractor marked the property nullable, non-nullable variant on
+    constructor params like `make-nsbutton-init-with-coder`.
+  - `RUNTIME_LOAD_TEST=1` harness green in ~40s: 7 library
+    `dynamic-require` checks + `raco make` of all 3 sample apps.
+    Contract tightening loads cleanly end-to-end.
+  - Full `cargo test -p apianyware-macos-emit-racket-oo`: 82 lib + 3
+    snapshot + 2 runtime-load, all green.
+- **Didn't work / surprises:**
+  - The backlog description said the function lives in
+    `emit_functions.rs`, but `map_param_contract` actually lives in
+    `emit_class.rs` (emit_functions has its own `map_contract` for C
+    FFI boundaries). Easy fix, but worth noting in the backlog entry.
+  - Initial snapshot rerun before updating the two pre-existing tests
+    surfaced them — the lib test stage would have caught them anyway,
+    so order didn't matter, but the correct workflow is lib-test first
+    to get a fast signal before the 1.3s snapshot pass.
+- **Suggests next:**
+  - The stretch "Class-specific runtime predicates" task is the
+    natural follow-on: it touches `map_return_contract` (currently
+    `any/c` for object returns) and would benefit from running soon
+    so its snapshot churn can amortise against the freshly-updated
+    goldens rather than collecting drift from unrelated changes.
+  - The small unblocked "Add `audiotoolbox/constants.rkt` to runtime
+    load harness" task is still sitting — zero-risk, ~1 min of
+    real work, high signal on the remaining `c:@<name>` macro filter
+    class.
+- **Key learnings:**
+  - Fresh AppKit IR already carries correct `_Nullable`/`_Nonnull`
+    flags from the extractor — the tightening exercises real SDK
+    annotations end-to-end, not just synthetic TestKit.
+  - Getters stayed on `any/c` because `map_return_contract` is a
+    separate function; scoping the change to params only kept the
+    diff clean and leaves a clear follow-on task for returns.
+  - Contract boundary catches that used to surface as deep
+    `coerce-arg` errors now surface at the wrapper with caller blame —
+    the ergonomics-neutral framing in the task description held up.

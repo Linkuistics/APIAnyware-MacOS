@@ -32,7 +32,8 @@
          "../../generated/oo/foundation/nsdate.rkt"
          "../../runtime/objc-base.rkt"
          "../../runtime/type-mapping.rkt"
-         "../../runtime/delegate.rkt")
+         "../../runtime/delegate.rkt"
+         "../../runtime/app-menu.rkt")
 
 ;; --- Constants (not yet extracted by collector) ---
 
@@ -70,6 +71,11 @@
 ;; --- Application setup ---
 (define app (nsapplication-shared-application))
 (nsapplication-set-activation-policy! app 0) ; NSApplicationActivationPolicyRegular
+
+;; Standard macOS app menu (About / Hide / Quit). Bold app-name slot
+;; in the menu bar comes from CFBundleName when launched as a .app
+;; bundle (see `apianyware-macos-bundle-racket-oo`).
+(install-standard-app-menu! app "UI Controls Gallery")
 
 ;; --- Window (500x600, centered, resizable) ---
 (define window

@@ -16,5 +16,8 @@ generation/targets/*/generated/
 generation/targets/*/runtime/compiled/
 generation/targets/*/apps/*/compiled/
 
+# Built sample-app .app bundles (regenerable via bundle-racket-oo)
+generation/targets/*/apps/*/build/
+
 # Run-phase scratch baseline files maintained by run-backlog-plan.sh
 LLM_STATE/**/compact-baseline

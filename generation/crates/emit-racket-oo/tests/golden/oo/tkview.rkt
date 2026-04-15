@@ -15,7 +15,7 @@
 (provide TKView)
 (provide/contract
   [tkview-title (c-> objc-object? any/c)]
-  [tkview-set-title! (c-> objc-object? any/c void?)]
+  [tkview-set-title! (c-> objc-object? (or/c string? objc-object? cpointer? #f) void?)]
   [tkview-hidden (c-> objc-object? boolean?)]
   [tkview-set-hidden! (c-> objc-object? boolean? void?)]
   [tkview-tag (c-> objc-object? any/c)]

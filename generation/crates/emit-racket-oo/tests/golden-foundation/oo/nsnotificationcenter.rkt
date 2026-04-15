@@ -16,13 +16,13 @@
 (provide NSNotificationCenter)
 (provide/contract
   [nsnotificationcenter-default-center (c-> any/c)]
-  [nsnotificationcenter-add-observer-selector-name-object! (c-> objc-object? any/c cpointer? any/c any/c void?)]
-  [nsnotificationcenter-add-observer-for-name-object-queue-using-block! (c-> objc-object? any/c any/c any/c (or/c procedure? #f) any/c)]
-  [nsnotificationcenter-post-notification (c-> objc-object? any/c void?)]
-  [nsnotificationcenter-post-notification-name-object (c-> objc-object? any/c any/c void?)]
-  [nsnotificationcenter-post-notification-name-object-user-info (c-> objc-object? any/c any/c any/c void?)]
-  [nsnotificationcenter-remove-observer! (c-> objc-object? any/c void?)]
-  [nsnotificationcenter-remove-observer-name-object! (c-> objc-object? any/c any/c any/c void?)]
+  [nsnotificationcenter-add-observer-selector-name-object! (c-> objc-object? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
+  [nsnotificationcenter-add-observer-for-name-object-queue-using-block! (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c procedure? #f) any/c)]
+  [nsnotificationcenter-post-notification (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsnotificationcenter-post-notification-name-object (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
+  [nsnotificationcenter-post-notification-name-object-user-info (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
+  [nsnotificationcenter-remove-observer! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsnotificationcenter-remove-observer-name-object! (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
   )
 
 ;; --- Class reference ---

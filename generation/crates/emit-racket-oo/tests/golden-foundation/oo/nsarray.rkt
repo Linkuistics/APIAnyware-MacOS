@@ -14,7 +14,7 @@
 
 (provide NSArray)
 (provide/contract
-  [make-nsarray-init-with-coder (c-> any/c any/c)]
+  [make-nsarray-init-with-coder (c-> (or/c string? objc-object? cpointer?) any/c)]
   [make-nsarray-init-with-objects-count (c-> (or/c cpointer? #f) exact-nonnegative-integer? any/c)]
   [nsarray-count (c-> objc-object? exact-nonnegative-integer?)]
   [nsarray-custom-mirror (c-> objc-object? any/c)]

@@ -13,7 +13,7 @@ The full three-phase pipeline (Collection, Analysis, Generation) is implemented 
 - **Collection** extracts 218 ObjC frameworks and 151 Swift modules from the macOS SDK, merging ObjC and Swift declarations into a unified IR.
 - **Analysis** runs Datalog-based inheritance resolution, heuristic + LLM semantic annotation (block lifecycle, ownership, threading, error patterns), API pattern recognition (10 stereotype categories, 36+ pattern instances in Foundation alone), and enrichment with verification.
 - **Generation** produces Racket OO bindings for all 283 discovered frameworks (312 files for Foundation alone, ~7,500 total), with a 7-file Racket runtime library and a Swift helper dylib providing C-callable ObjC runtime access.
-- **3 of 7 sample apps** are implemented for Racket OO: hello-window, counter, and ui-controls-gallery.
+- **4 of 7 sample apps** are implemented for Racket OO: hello-window, counter, ui-controls-gallery, and file-lister. Sample apps can be packaged as proper macOS `.app` bundles (with correct `CFBundleName` and per-app TCC identity) via `apianyware-macos-bundle-racket-oo`.
 - **Racket Functional** emitter crate exists as a registered stub; not yet implemented.
 - **Snapshot tests** use a synthetic TestKit framework plus a curated Foundation subset for regression testing.
 - **249 Rust tests** and **64 Swift tests** cover the pipeline.
@@ -198,11 +198,77 @@ GC prevention).
 
 ### App Bundling
 
-Sample apps can be packaged as macOS `.app` bundles using
-`apianyware-macos-stub-launcher`. This is required for apps that need
-per-app TCC permissions (Accessibility, Camera, etc.) -- without a unique
-binary per app, macOS TCC shares permission grants across all processes
-using the same runtime binary.
+Sample apps need to be packaged as proper macOS `.app` bundles for two
+reasons:
+
+1. **Menu bar app name.** Cocoa reads the bold app name in the menu bar
+   from `CFBundleName` in `Info.plist`. An unbundled `racket script.rkt`
+   process shows up as "racket"; a bundled process shows the real app
+   name. `NSProcessInfo setProcessName:` is filtered by modern macOS and
+   doesn't help.
+2. **Per-app TCC permissions** (Accessibility, Camera, Screen Recording,
+   etc.). macOS TCC keys permission grants on the binary's CDHash. Without
+   a unique stub binary per app, every Racket app shares one TCC entry
+   under `/opt/homebrew/bin/racket`.
+
+The bundling story is layered: a language-agnostic primitive
+(`stub-launcher`) plus a per-language convention crate
+(`bundle-racket-oo` for Racket OO).
+
+#### Per-language convention: `apianyware-macos-bundle-racket-oo`
+
+For racket-oo sample apps, use `apianyware-macos-bundle-racket-oo`. It
+walks the entry script's transitive `(require ...)` tree to discover
+exactly which runtime modules and generated bindings are needed, and
+copies that subset into the bundle's `Resources/` preserving the source
+layout so the script's relative `../../runtime` and `../../generated/oo/...`
+paths still resolve at runtime.
+
+```sh
+cargo run --example bundle_app -p apianyware-macos-bundle-racket-oo -- file-lister
+# → generation/targets/racket-oo/apps/file-lister/build/File Lister.app
+```
+
+The `file-lister` argument is the script name (the `apps/<name>/<name>.rkt`
+identifier). Display name (`File Lister`) and bundle id
+(`com.apianyware.FileLister`) are derived from the kebab-case form. Full
+API:
+
+```rust
+use apianyware_macos_bundle_racket_oo::{bundle_app, AppSpec};
+
+let spec = AppSpec::from_script_name("file-lister");
+let source_root = Path::new("generation/targets/racket-oo");
+let output_dir = Path::new("generation/targets/racket-oo/apps/file-lister/build");
+let app_path = bundle_app(&spec, source_root, output_dir)?;
+```
+
+Resulting bundle layout (Resources mirrors the source tree so relative
+requires keep working):
+
+```
+File Lister.app/
+  Contents/
+    MacOS/File Lister                 <- Swift stub, execvs into racket
+    Info.plist                        <- CFBundleName = "File Lister"
+    Resources/racket-app/
+      apps/file-lister/file-lister.rkt
+      runtime/*.rkt                   <- only files the entry transitively requires
+      generated/oo/{appkit,foundation}/...
+      lib/libAPIAnywareRacket.dylib   <- if present in the source tree
+```
+
+The walker only copies what the script actually requires — frameworks
+the script doesn't import (CoreText, WebKit, etc.) stay out of the
+bundle. Built bundles live under `apps/<name>/build/` and are
+gitignored.
+
+#### Language-agnostic primitive: `apianyware-macos-stub-launcher`
+
+The lower-level crate handles the parts that are not Racket-specific:
+generating the Swift launcher source, compiling it via `swiftc`,
+producing `Info.plist`, and assembling the `.app` skeleton. New language
+targets get their own bundle convention crate that wraps it.
 
 ```rust
 use apianyware_macos_stub_launcher::{StubConfig, create_app_bundle};
@@ -217,49 +283,62 @@ let config = StubConfig {
     bundle_identifier: "com.example.Counter".into(), // CFBundleIdentifier
 };
 let app_path = create_app_bundle(&config, Path::new("output/"))?;
-// Now populate: output/Counter.app/Contents/Resources/racket-app/
-//   with main.rkt, runtime/*.rkt, lib/*.dylib, generated/**/*.rkt
-```
-
-The resulting `.app` bundle structure:
-
-```
-Counter.app/
-  Contents/
-    MacOS/Counter          <- compiled Swift stub (~50KB, unique CDHash)
-    Info.plist             <- generated from StubConfig
-    Resources/
-      racket-app/          <- caller populates this
-        main.rkt
-        runtime/
-        lib/
-        generated/
+// Caller populates: output/Counter.app/Contents/Resources/racket-app/
+// (Use bundle-racket-oo to do this automatically for Racket OO apps.)
 ```
 
 Lower-level API: `generate_stub_source()` and `compile_stub()` for custom
 workflows, `generate_info_plist()` for standalone plist generation.
 
-### GUI Testing with TestAnyware
+### GUI Testing with GUIVisionVMDriver
 
-Sample apps are tested in a macOS VM via `{{DEV_ROOT}}/TestAnyware/`. Never
-run GUI apps directly from the CLI -- always use TestAnyware for visual
-verification. Use the release build:
-`{{DEV_ROOT}}/TestAnyware/.build/release/testanyware`.
+Sample apps are tested in a macOS VM via `{{DEV_ROOT}}/GUIVisionVMDriver/`
+(the successor to TestAnyware). Never run GUI apps directly from the CLI
+-- always use the VM for visual verification. Two channels per VM:
+
+- **Agent** (HTTP on port 8648): exec, file upload/download, accessibility
+  snapshot/inspect, UI actions
+- **VNC**: screenshots, OCR via `find-text`, keyboard/mouse input
 
 Key workflow:
 
 ```bash
-{{DEV_ROOT}}/TestAnyware/.build/release/testanyware vm start --share ./generation/targets/racket-oo:racket-oo
-{{DEV_ROOT}}/TestAnyware/.build/release/testanyware exec "brew install minimal-racket"
-# Copy files to VM local storage (VirtioFS can serve stale content):
-# base64-encode on host, decode in VM via testanyware exec
-{{DEV_ROOT}}/TestAnyware/.build/release/testanyware exec "pkill -9 -f racket"  # Always kill before relaunch
-{{DEV_ROOT}}/TestAnyware/.build/release/testanyware vm stop
+GVD={{DEV_ROOT}}/GUIVisionVMDriver
+GV=$GVD/cli/macos/.build/release/guivision
+
+# Boot a fresh VM with a viewer attached
+source $GVD/scripts/macos/vm-start.sh --viewer
+# After sourcing, $GUIVISION_AGENT and $GUIVISION_VNC are set.
+# (They DO NOT survive shell boundaries — re-derive in subsequent calls
+# from `tart ip guivision-default`, or save the values to /tmp.)
+
+# Install Racket once per fresh clone (~5 min cold)
+$GV exec --agent "$GUIVISION_AGENT" "/opt/homebrew/bin/brew install minimal-racket"
+
+# Build and ship a sample app as a .app bundle
+cargo run --example bundle_app -p apianyware-macos-bundle-racket-oo -- file-lister
+APP="generation/targets/racket-oo/apps/file-lister/build/File Lister.app"
+tar -C "$(dirname "$APP")" -czf /tmp/app.tgz "$(basename "$APP")"
+$GV upload --agent "$GUIVISION_AGENT" /tmp/app.tgz /Users/admin/app.tgz
+$GV exec --agent "$GUIVISION_AGENT" "tar -xzf /Users/admin/app.tgz -C /Users/admin/ && open '/Users/admin/File Lister.app'"
+
+# Verify visually
+$GV agent snapshot --agent "$GUIVISION_AGENT" --window "File Lister"
+$GV screenshot --connect /tmp/gv_connect.json -o /tmp/screen.png
+$GV find-text --connect /tmp/gv_connect.json "File Lister"
+
+# Always kill before relaunch
+$GV exec --agent "$GUIVISION_AGENT" "pkill -9 -f racket"
+
+# Tear down
+source $GVD/scripts/macos/vm-stop.sh
 ```
 
-Workflow docs at `knowledge/testanyware/general.md`. App specs at
-`knowledge/apps/{app}/spec.md`, validation checklists at
-`knowledge/apps/{app}/test-strategy.md`.
+App specs at `knowledge/apps/{app}/spec.md`, validation checklists at
+`knowledge/apps/{app}/test-strategy.md`. The bundling step is required
+for menu-bar app names and per-app TCC permissions — running the script
+directly via `racket file-lister.rkt` shows up as "racket" in the menu
+bar.
 
 ## Workspace Structure
 
@@ -291,9 +370,11 @@ APIAnyware-MacOS/
   generation/
     crates/
       emit/                # apianyware-macos-emit              — shared emitter framework
-      emit-racket-oo/      # apianyware-macos-emit-racket-oo   — Racket OO emitter
-      emit-racket-functional/  # (stub)                        — Racket functional emitter
+      emit-racket-oo/      # apianyware-macos-emit-racket-oo    — Racket OO emitter
+      emit-racket-functional/  # (stub)                         — Racket functional emitter
       cli/                 # apianyware-macos-generate          — generation CLI
+      stub-launcher/       # apianyware-macos-stub-launcher     — Swift stub + Info.plist + .app skeleton (language-agnostic)
+      bundle-racket-oo/    # apianyware-macos-bundle-racket-oo  — racket-oo bundling: require walker + resource layout
     targets/
       racket-oo/           # Racket OO: runtime, generated bindings, sample apps, tests
       racket-functional/   # Racket functional: placeholder
@@ -310,7 +391,7 @@ APIAnyware-MacOS/
 
 | Language | Style(s) | Status |
 |---|---|---|
-| Racket OO | OO (classes) | Emitter complete, 283 frameworks generated, 3/7 sample apps, snapshot tests |
+| Racket OO | OO (classes) | Emitter complete, 283 frameworks generated, 4/7 sample apps, snapshot tests, app bundling |
 | Racket Functional | Functional (procedures) | Crate registered, stub emitter |
 | Chez Scheme | Functional | Planned (Swift dylib stub exists) |
 | Gerbil Scheme | OO + functional | Planned (Swift dylib stub exists) |

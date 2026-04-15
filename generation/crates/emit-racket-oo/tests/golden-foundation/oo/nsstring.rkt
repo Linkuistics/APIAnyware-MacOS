@@ -14,7 +14,7 @@
 
 (provide NSString)
 (provide/contract
-  [make-nsstring-init-with-coder (c-> any/c any/c)]
+  [make-nsstring-init-with-coder (c-> (or/c string? objc-object? cpointer?) any/c)]
   [nsstring-utf8-string (c-> objc-object? (or/c cpointer? #f))]
   [nsstring-absolute-path (c-> objc-object? boolean?)]
   [nsstring-available-string-encodings (c-> (or/c cpointer? #f))]
