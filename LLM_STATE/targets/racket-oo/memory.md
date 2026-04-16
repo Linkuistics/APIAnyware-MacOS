@@ -23,7 +23,7 @@ be called via `objc_msgSend`. The extractor or emitter must exclude these.
 
 ### Collection-time type resolution
 - Category property deduplication by name required (HashSet filter in `extract_declarations.rs`)
-- Typedef aliases must resolve to canonical types at collection time — object pointer typedefs → `Id`/`Class`, primitive typedefs → `Primitive`
+- Typedef aliases must resolve to canonical types at collection time — object pointer typedefs → `Id`/`Class`, primitive typedefs → `Primitive` (including `Boolean` → `bool`), record typedefs → `TypeRefKind::Struct`
 
 ### Non-linkable-symbol filters in extractors
 Non-linkable symbols (preprocessor macros, internal-linkage decls, Swift-native identifiers) leak into the IR as `get-ffi-obj` calls that fail at `dlsym` time. All filters route through `non_c_linkable_skip_reason` in the collection crates.
@@ -75,7 +75,7 @@ Header-declared symbols absent from the live dylib are filtered at emit time, no
 Geometry struct constants (`NSZeroPoint`/`NSZeroRect`) map correctly via alias handling in `RacketFfiTypeMapper`.
 
 ### Require block shape for functions/constants
-Both files always require `ffi/unsafe`, `ffi/unsafe/objc`, and `racket/contract` (renamed to dodge the `->` conflict), regardless of whether any binding uses `_id`. Unconditional is cheaper than per-binding Id-detection drift. `type-mapping.rkt` is the only conditional require — emitted only when `any_struct_type` (in `shared_signatures.rs`) returns true — because it pulls in geometry cstructs. Forgetting `ffi/unsafe/objc` is invisible until a file with an `_id`-typed binding is loaded.
+Both files always require `ffi/unsafe`, `ffi/unsafe/objc`, and `racket/contract` (renamed to dodge the `->` conflict), regardless of whether any binding uses `_id`. Unconditional is cheaper than per-binding Id-detection drift. `type-mapping.rkt` is a conditional require for `functions.rkt` only — emitted when `any_struct_type` (in `shared_signatures.rs`) returns true. `constants.rkt` never requires `type-mapping.rkt` — struct-typed globals use `ffi-obj-ref`, so no cstruct type is needed. Forgetting `ffi/unsafe/objc` is invisible until a file with an `_id`-typed binding is loaded.
 
 ### Framework subsets differ for functions vs classes
 The set of frameworks with emittable C functions (non-variadic, non-inline) is a strict subset of the class emission set, which covers all frameworks. WebKit has classes but no C functions — a common source of confusion when cross-referencing log lines.
@@ -277,7 +277,7 @@ Hash mapping selectors to lists of type symbols (`'object`, `'long`, `'int`, `'b
 `dispatch_queue_t`, `dispatch_group_t`, etc. resolve to `id` in the IR (under `OS_OBJECT_USE_OBJC=1`), but no wrapper classes exist in the generated bindings. The emitter maps `_id` → `_pointer` in libdispatch's `functions.rkt` so consumers can pass raw cpointers (from `ffi-obj-ref`, `dlsym`, etc.) without a `(cast ... _pointer _id)` ceremony. The ABI is identical. This override is scoped to `framework == "libdispatch"` in `generate_functions_file`. Non-libdispatch frameworks keep `_id`. If future frameworks gain the same OS-object pattern (e.g. `xpc_object_t`), extend the same override.
 
 ### Struct-typed global constants use `ffi-obj-ref`
-Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dispatch_source_type_*`) are emitted as `(define sym (ffi-obj-ref 'sym lib))` — returning the symbol's address. Non-struct constants keep `(get-ffi-obj 'sym lib type)` — dereferencing the symbol. The distinction is in `generate_constants_file` via `is_struct_data_symbol()`. Contract for struct globals is `cpointer?`.
+Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dispatch_source_type_*`, `kCFTypeDictionaryKeyCallBacks`, geometry zero-constants) are emitted as `(define sym (ffi-obj-ref 'sym lib))` — returning the symbol's address. Non-struct constants keep `(get-ffi-obj 'sym lib type)` — dereferencing the symbol. The distinction is in `generate_constants_file` via `is_struct_data_symbol()`. Contract for struct globals is `cpointer?`. `constants.rkt` does not require `type-mapping.rkt` — struct globals use `ffi-obj-ref`, not a typed getter needing a cstruct.
 
 ### `wkwebview.rkt` requires `type-mapping.rkt` for `_NSEdgeInsets`
 `wkwebview.rkt` references `_NSEdgeInsets` (used in `WKWebView` geometry properties).
@@ -292,3 +292,17 @@ to verify provide coverage before declaring the struct done.
 ### `make-dynamic-subclass` guards against duplicate registration
 `objc_allocateClassPair` returns NULL for a name already registered — subsequent `class_addMethod` would crash. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. Required for modules that register a subclass at load time and may be required twice in the same Racket VM.
 
+### Record typedefs extract to `TypeRefKind::Struct`
+`map_typedef` in `extract-objc` emits `TypeRefKind::Struct { name }` (not `Alias`) for `TypeKind::Record` typedefs. Enables `is_struct_data_symbol` in the constants emitter to recognize CF struct globals (`kCFTypeDictionaryKeyCallBacks`, `NSInt*CallBacks`, geometry zero-constants like `NSZeroPoint`/`NSEdgeInsetsZero`) and emit `ffi-obj-ref` instead of `get-ffi-obj`. Requires re-collect to propagate.
+
+### `const char *` maps to `TypeRefKind::CString`, emits `_string`/`string?`
+`is_c_string_pointee()` in `extract-objc` accepts `CharS | CharU` pointees only — excludes `signed char` / `unsigned char`. IR carries `TypeRefKind::CString`; FFI mapper emits `_string`; contract mapper emits `string?`. Requires re-collect to propagate to generated files.
+
+### Property dedup uses Racket getter name, not IR name
+ObjC/Swift dual-extracted properties can differ only in casing (e.g., `CGDirectDisplayID` vs `cgDirectDisplayID`), which kebab-cases to the same Racket identifier. `effective_properties` must deduplicate by generated Racket getter name; IR-name dedup leaves duplicate `define` forms in emitted class files.
+
+### `is_generic_type_param` identifies ObjC generic params by case pattern
+Single uppercase letter followed by lowercase chars (e.g., `ObjectType`, `KeyType`) identifies ObjC generic type parameters; framework-prefixed aliases have 2+ uppercase chars (e.g., `AXValueType`). Used in `emit/src/ffi_type_mapping.rs` to prevent mapping framework-defined type aliases as `_uint64`. Replaces a maintained allowlist of 15+ framework prefixes in `map_contract`.
+
+### Property/method collision sets must partition by class vs instance
+`PropertyNameSets` in `emit_class.rs` separates `class_property_names` and `instance_property_names`. A flat merged set causes cross-level false positives — e.g., an instance bool-property getter name suppressing a same-named class factory method. Class methods collide only with class property names; instance properties whose getter name matches a class method name are suppressed (class method wins).
