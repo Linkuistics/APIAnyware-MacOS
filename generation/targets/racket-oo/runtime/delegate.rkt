@@ -26,7 +26,8 @@
          ffi/unsafe/objc
          racket/string
          racket/list
-         "swift-helpers.rkt")
+         "swift-helpers.rkt"
+         "objc-base.rkt")
 
 (provide make-delegate
          delegate-set!
@@ -72,6 +73,44 @@
     [(long) "long"]
     [else   "void"]))
 
+;; --- Param-type coercion for delegate callback args ---
+
+;; Coerce a single callback arg based on its declared param-type symbol.
+;; Called by the trampoline wrapper before passing args to the user's handler.
+;;
+;; The Swift/Racket trampoline delivers ALL params as _pointer. Coercion
+;; reinterprets the bits according to the declared IR type:
+;;   'object  → borrow-objc-object (no retain, satisfies objc-object? contract)
+;;   'long    → cast _pointer → _int64 (same width on 64-bit, lossless)
+;;   'int     → cast _pointer → _int32 (truncates upper 32 bits)
+;;   'bool    → null-pointer test (#f → #f, non-null → #t)
+;;   'pointer → identity (raw _pointer, no wrapping)
+;;   else     → identity (unknown type, pass through)
+(define (coerce-callback-arg type-sym raw-arg)
+  (case type-sym
+    [(object)  (borrow-objc-object raw-arg)]
+    [(long)    (cast raw-arg _pointer _int64)]
+    [(int)     (cast raw-arg _pointer _int32)]
+    [(bool)    (and raw-arg (not (ptr-equal? raw-arg #f)))]
+    [else raw-arg]))
+
+;; Wrap a handler with param-type coercion. If param-types is #f or empty,
+;; return the handler unchanged. Otherwise, coerce each arg positionally.
+(define (wrap-handler-with-param-types handler param-types)
+  (if (or (not param-types) (null? param-types))
+      handler
+      (lambda args
+        (define coerced
+          (for/list ([arg (in-list args)]
+                     [type-sym (in-list param-types)]
+                     [_i (in-naturals)])
+            (coerce-callback-arg type-sym arg)))
+        ;; Pass any extra args beyond param-types unchanged
+        (define extra (if (> (length args) (length param-types))
+                         (drop args (length param-types))
+                         '()))
+        (apply handler (append coerced extra)))))
+
 ;; --- Swift-backed implementation ---
 
 ;; GC prevention for Swift delegate callbacks.
@@ -82,6 +121,11 @@
 ;; Maps delegate-key → hash(selector → return-kind symbol).
 ;; Used by delegate-set! to create callbacks with the correct return type.
 (define swift-delegate-ret-types (make-hash))
+
+;; Param-type tracking for all delegates (shared by Swift and Racket paths).
+;; Maps delegate-key → hash(selector → (listof symbol)).
+;; Used by delegate-set! to wrap new handlers with the same coercion.
+(define delegate-param-types (make-hash))
 
 (define (make-delegate/swift return-types handlers-alist)
   (define selectors (map car handlers-alist))
@@ -313,14 +357,26 @@
 ;;
 ;; Arguments: alternating selector-string and handler-procedure pairs.
 ;; Optional keyword args:
-;;   #:return-types — hash of selector -> 'void/'bool/'id (overrides auto-detection)
+;;   #:return-types — hash of selector -> 'void/'bool/'id/'int/'long
+;;                    (overrides auto-detection)
+;;   #:param-types  — hash of selector -> (listof symbol) describing each
+;;                    callback parameter's type. Supported type symbols:
+;;                      'object  — auto-wrap via borrow-objc-object
+;;                      'bool    — pass through (trampoline delivers _bool)
+;;                      'int     — pass through (trampoline delivers _int32)
+;;                      'long    — pass through (trampoline delivers _int64)
+;;                      'pointer — pass through (raw _pointer)
+;;                    When provided, the trampoline auto-coerces callback args
+;;                    so handlers receive wrapped objects instead of raw pointers.
 ;;
 ;; Returns: an ObjC object pointer (pass to setDelegate: etc.)
-(define (make-delegate #:return-types [return-types #hash()] . args)
+(define (make-delegate #:return-types [return-types #hash()]
+                       #:param-types  [param-types  #hash()]
+                       . args)
   (unless (even? (length args))
     (error 'make-delegate "expected alternating selector handler pairs"))
 
-  ;; Parse into alist
+  ;; Parse into alist, wrapping handlers with param-type coercion
   (define handlers-alist
     (let loop ([rest args] [result '()])
       (if (null? rest)
@@ -331,24 +387,44 @@
               (error 'make-delegate "expected selector string, got ~a" sel))
             (unless (procedure? handler)
               (error 'make-delegate "expected procedure for ~a, got ~a" sel handler))
-            (loop (cddr rest) (cons (cons sel handler) result))))))
+            (define types (hash-ref param-types sel #f))
+            (define wrapped (wrap-handler-with-param-types handler types))
+            (loop (cddr rest) (cons (cons sel wrapped) result))))))
 
-  (if swift-available?
-      (make-delegate/swift return-types handlers-alist)
-      (make-delegate/racket return-types handlers-alist)))
+  (define instance
+    (if swift-available?
+        (make-delegate/swift return-types handlers-alist)
+        (make-delegate/racket return-types handlers-alist)))
+
+  ;; Store param-types for delegate-set! to use on future handler updates
+  (unless (hash-empty? param-types)
+    (define key (cast instance _pointer _intptr))
+    (hash-set! delegate-param-types key param-types))
+
+  ;; Return as objc-object so the delegate satisfies objc-object? contracts
+  ;; when passed to wrappers like nsbutton-set-target!. No retain/finalizer
+  ;; — the delegate's lifetime is managed by the app holding this reference.
+  (borrow-objc-object instance))
 
 ;; Update a handler on a live delegate instance.
 (define (delegate-set! delegate selector handler)
+  (define raw (unwrap-objc-object delegate))
+  ;; Apply param-type wrapping if registered for this delegate
+  (define delegate-key (cast raw _pointer _intptr))
+  (define stored-param-types (hash-ref delegate-param-types delegate-key #hash()))
+  (define types-for-sel (hash-ref stored-param-types selector #f))
+  (define wrapped-handler (wrap-handler-with-param-types handler types-for-sel))
+
   (if swift-available?
       ;; Swift mode: update callback in Swift dispatch table
       (let ()
-        (define instance-ptr (cast delegate _pointer _pointer))
+        (define instance-ptr (cast raw _pointer _pointer))
         (define key (cast instance-ptr _pointer _intptr))
         (define n-params (selector-param-count selector))
         ;; Look up the return type from registration
         (define ret-types (hash-ref swift-delegate-ret-types key #hash()))
         (define ret-kind (hash-ref ret-types selector 'void))
-        (define param-types (make-list n-params _pointer))
+        (define ffi-param-types (make-list n-params _pointer))
         (define ret-type
           (case ret-kind
             [(void) _void]
@@ -358,8 +434,8 @@
             [(long) _int64]
             [else   _void]))
         (define callback-proc
-          (lambda args (apply handler (take args (min (length args) n-params)))))
-        (define callback-ctype (_cprocedure param-types ret-type))
+          (lambda args (apply wrapped-handler (take args (min (length args) n-params)))))
+        (define callback-ctype (_cprocedure ffi-param-types ret-type))
         (define callback-fptr (function-ptr callback-proc callback-ctype))
 
         (swift:set-method instance-ptr selector callback-fptr)
@@ -371,29 +447,33 @@
                    (cons (list callback-fptr gc-handle callback-proc) existing)))
       ;; Racket fallback mode
       (let ()
-        (define key (cast delegate _pointer _intptr))
+        (define key (cast raw _pointer _intptr))
         (define handlers (hash-ref dispatch-table key #f))
         (unless handlers
           (error 'delegate-set! "not a managed delegate: ~a" delegate))
-        (hash-set! handlers selector handler))))
+        (hash-set! handlers selector wrapped-handler))))
 
 ;; Remove a handler (method will use default return).
 (define (delegate-remove! delegate selector)
+  (define raw (unwrap-objc-object delegate))
   (if swift-available?
       (let ()
-        (define instance-ptr (cast delegate _pointer _pointer))
+        (define instance-ptr (cast raw _pointer _pointer))
         (swift:set-method instance-ptr selector #f))
       (let ()
-        (define key (cast delegate _pointer _intptr))
+        (define key (cast raw _pointer _intptr))
         (define handlers (hash-ref dispatch-table key #f))
         (when handlers
           (hash-remove! handlers selector)))))
 
 ;; Release a delegate's dispatch table entry.
 (define (free-delegate delegate)
+  (define raw (unwrap-objc-object delegate))
+  (define delegate-key (cast raw _pointer _intptr))
+  (hash-remove! delegate-param-types delegate-key)
   (if swift-available?
       (let ()
-        (define instance-ptr (cast delegate _pointer _pointer))
+        (define instance-ptr (cast raw _pointer _pointer))
         (define key (cast instance-ptr _pointer _intptr))
         ;; Release GC prevention handles
         (for ([entry (in-list (hash-ref swift-gc-handles key '()))])
@@ -402,7 +482,7 @@
         (hash-remove! swift-delegate-ret-types key)
         (swift:free-delegate instance-ptr))
       (let ()
-        (define key (cast delegate _pointer _intptr))
+        (define key (cast raw _pointer _intptr))
         (hash-remove! dispatch-table key))))
 
 ;; Return the number of delegate classes created (for testing).

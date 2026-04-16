@@ -57,7 +57,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 ### FFI Surface Elimination
 
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (derived from research above).
 - **Dependencies:** none (self-contained across runtime + emitter).
 - **Description:** Implement the 3-phase solution architecture from the
@@ -66,22 +66,79 @@ Runtime location: generation/targets/racket-oo/runtime/
   cleanup) follow. Each phase is independently valuable — partial
   completion still improves the API surface.
 
-  **Phase 1 sub-tasks (runtime + emitter):**
-  - 1a: `borrow-objc-object` in `objc-base.rkt` (no retain, no finalizer)
-  - 1b: `#:param-types` in `delegate.rkt` (auto-wrap/cast callback args)
-  - 1c: Fix `method_return_kind` in `emit_protocol.rs` (int/long returns)
-  - 1d: Emit `#:param-types` + return coercion in protocol factories
-  - 1e: Fix slider/stepper latent bugs in `ui-controls-gallery.rkt`
+  **Phase 1 sub-tasks (runtime + emitter) — COMPLETE (2026-04-16):**
+  - 1a: ✓ `borrow-objc-object` in `objc-base.rkt` (no retain, no finalizer)
+  - 1b: ✓ `#:param-types` in `delegate.rkt` (auto-wrap/cast callback args)
+  - 1c: ✓ Fix `method_return_kind` in `emit_protocol.rs` (int/long returns)
+  - 1d: ✓ Emit `#:param-types` + return coercion in protocol factories
+  - 1e: ✓ Fix slider/stepper latent bugs in `ui-controls-gallery.rkt`
 
-  **Phase 2 sub-tasks (emitter):**
-  - 2a: Selector params accept strings (emit `sel_registerName` in wrapper body)
-  - 2b: Drop `cpointer?` from `map_param_contract`
-  - 2c: `->string` helper in runtime
+  **Phase 2 sub-tasks (emitter) — COMPLETE (2026-04-16):**
+  - 2a: ✓ Selector params accept strings (emit `sel_registerName` in wrapper body)
+  - 2b: ✓ Drop `cpointer?` from `map_param_contract`
+  - 2c: ✓ `->string` helper in runtime
 
-  **Phase 3 sub-tasks (apps):**
-  - 3a: Rewrite sample apps (remove `ffi/unsafe`, use new APIs)
-  - 3b: Harness + VM verification
-- **Results:** _pending_
+  **Phase 3 sub-tasks (apps) — COMPLETE (2026-04-16):**
+  - 3a: ✓ Rewrite sample apps (remove `ffi/unsafe`, use new APIs)
+  - 3b: ✓ Harness + VM verification
+- **Results:**
+  Phase 1 landed 2026-04-16. Five changes:
+  (1) `borrow-objc-object` in `objc-base.rkt` — lightweight struct wrapping
+  without retain/release, satisfies `objc-object?` contracts for borrowed
+  delegate callback args.
+  (2) `#:param-types` keyword on `make-delegate` in `delegate.rkt` — hash
+  mapping selectors to lists of type symbols (`'object`, `'long`, `'int`,
+  `'bool`, `'pointer`). The trampoline wrapper auto-coerces each callback
+  arg: objects → `borrow-objc-object`, integers → `cast _pointer → _int64/_int32`,
+  bools → null-pointer test. Stored per-delegate so `delegate-set!` also wraps.
+  (3) `method_return_kind` in `emit_protocol.rs` — added int32→`'int` and
+  int64→`'long` branches. `numberOfRowsInTableView:` (NSTableViewDataSource)
+  and `tableView:nextTypeSelectMatchFromRow:toRow:forString:` (NSTableViewDelegate)
+  correctly classified as `'long` instead of `'void`. 6 new unit tests.
+  (4) `generate_protocol_file` emits `#:param-types` hash from IR param types
+  via new `param_type_symbol` function. All generated protocol factories now
+  pass type metadata to `make-delegate`. 5 new unit tests.
+  (5) `ui-controls-gallery.rkt` — slider, stepper, and radio button callbacks
+  use `#:param-types '(object)` instead of manual `wrap-objc-object` + `cast`.
+  Radio button callback simplified from 4-line ceremony to direct `sender` use.
+  `ffi/unsafe` require dropped (only `ffi/unsafe/objc` remains for `sel_registerName`).
+  All 105 emitter tests pass, 3 snapshot suites pass, runtime load harness (2 tests) pass.
+  Golden files updated for AppKit protocols (param-types + int/long grouping).
+  Phase 2 landed 2026-04-16. Three changes:
+  (1) SEL params accept strings — `coerce_sel_params` in `emit_class.rs` wraps
+  SEL-typed params with `(sel_registerName ...)` in the generated wrapper body.
+  `map_param_contract` maps `Selector` → `string?`. App code passes plain strings
+  like `"sliderChanged:"` instead of `(sel_registerName "sliderChanged:")`.
+  (2) `cpointer?` dropped from `map_param_contract` — object param contracts
+  narrowed from `(or/c string? objc-object? cpointer?)` to `(or/c string? objc-object?)`.
+  Raw FFI pointers no longer accepted at the contract boundary.
+  (3) `->string` helper in `type-mapping.rkt` — accepts `objc-object`, raw `cpointer`,
+  `string?`, or `#f`; extracts a Racket string via `nsstring->string`. Idempotent on
+  strings. Provided through `coerce.rkt` re-export chain.
+  `ui-controls-gallery.rkt` updated: all `sel_registerName` calls replaced with plain
+  strings, both `ffi/unsafe` and `ffi/unsafe/objc` requires dropped — **zero FFI imports**.
+  All 107 emitter tests pass, 3 snapshot suites pass, runtime load harness (2 tests) pass.
+  Golden files updated across 16+ AppKit class wrappers and TestKit.
+  Phase 3 landed 2026-04-16. VM-validated all 4 apps:
+  (1) All 4 sample apps rewritten to zero FFI imports (`hello-window`, `counter`,
+  `ui-controls-gallery`, `file-lister`). No `ffi/unsafe` or `ffi/unsafe/objc` requires
+  in any app.
+  (2) VM validation: all 4 apps bundled, uploaded to GUIVisionVMDriver VM, launched,
+  and visually verified. Hello Window: window + label. Counter: buttons + display.
+  UI Controls Gallery: all 8 control sections render. File Lister: 3-column table
+  with directory listing, correct sizes/dates.
+  (3) Two runtime bugs discovered and fixed during VM testing:
+  - Object param contracts always include `#f` (nil) — ObjC nil messaging is no-op,
+    many APIs accept nil without explicit _Nullable annotation. Previous contract
+    rejected `#f` for non-nullable params (`makeKeyAndOrderFront:` crash).
+  - `make-delegate` returns `borrow-objc-object` — delegates satisfy `objc-object?`
+    contract when passed to wrappers like `nsbutton-set-target!`.
+  - SEL-typed property setters wrap value with `(sel_registerName value)` — previously
+    only methods had this, properties were missed (`setAction:` crash).
+  (4) New runtime helpers: `objc-autorelease` (autorelease a +1 pointer, returns it),
+  `->string` (NSString → Racket string from any input type).
+  All 107 emitter tests pass, runtime load harness pass.
+  **FFI Surface Elimination is complete across all three phases.**
 
 ### Sample Apps
 

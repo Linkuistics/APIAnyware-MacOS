@@ -8,9 +8,7 @@
 ;;
 ;; Run with: racket ui-controls-gallery.rkt
 
-(require ffi/unsafe
-         ffi/unsafe/objc
-         "../../generated/oo/appkit/nsapplication.rkt"
+(require "../../generated/oo/appkit/nsapplication.rkt"
          "../../generated/oo/appkit/nswindow.rkt"
          "../../generated/oo/appkit/nsview.rkt"
          "../../generated/oo/appkit/nsscrollview.rkt"
@@ -192,21 +190,19 @@
 (define radio-target
   (make-delegate
    #:return-types (hash "selectRadio:" 'void)
+   #:param-types  (hash "selectRadio:" '(object))
    "selectRadio:" (lambda (sender)
                     ;; Deselect all via the wrapper (radio-a/b/c are objc-object structs).
                     (nsbutton-set-int-value! radio-a 0)
                     (nsbutton-set-int-value! radio-b 0)
                     (nsbutton-set-int-value! radio-c 0)
-                    ;; sender is a raw cpointer from the Swift trampoline.
-                    ;; Wrap it as an objc-object struct to satisfy the wrapper's
-                    ;; objc-object? contract. Default #:retained #f adds a
-                    ;; balanced retain/release pair (safe for borrowed refs).
-                    (nsbutton-set-int-value!
-                     (wrap-objc-object (cast sender _pointer _id)) 1))))
+                    ;; sender is auto-wrapped by #:param-types as borrow-objc-object,
+                    ;; satisfying the wrapper's objc-object? contract.
+                    (nsbutton-set-int-value! sender 1))))
 
 (for ([btn (list radio-a radio-b radio-c)])
   (nsbutton-set-target! btn radio-target)
-  (nsbutton-set-action! btn (sel_registerName "selectRadio:")))
+  (nsbutton-set-action! btn "selectRadio:"))
 
 (nsstackview-add-arranged-subview! stack-view radio-container)
 
@@ -230,6 +226,7 @@
 (define slider-target
   (make-delegate
    #:return-types (hash "sliderChanged:" 'void)
+   #:param-types  (hash "sliderChanged:" '(object))
    "sliderChanged:" (lambda (sender)
                       (let ([val (nsslider-double-value sender)])
                         (nstextfield-set-string-value!
@@ -237,7 +234,7 @@
                          (format "Value: ~a" (inexact->exact (round val))))))))
 
 (nsslider-set-target! slider slider-target)
-(nsslider-set-action! slider (sel_registerName "sliderChanged:"))
+(nsslider-set-action! slider "sliderChanged:")
 
 ;; ===================================================================
 ;; Section 4: Popup & Combo
@@ -315,6 +312,7 @@
 (define stepper-target
   (make-delegate
    #:return-types (hash "stepperChanged:" 'void)
+   #:param-types  (hash "stepperChanged:" '(object))
    "stepperChanged:" (lambda (sender)
                        (let ([val (nsstepper-int-value sender)])
                          (nstextfield-set-string-value!
@@ -322,7 +320,7 @@
                           (format "Value: ~a" val))))))
 
 (nsstepper-set-target! stepper stepper-target)
-(nsstepper-set-action! stepper (sel_registerName "stepperChanged:"))
+(nsstepper-set-action! stepper "stepperChanged:")
 
 ;; ===================================================================
 ;; Section 8: Color & Image

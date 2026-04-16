@@ -14,10 +14,10 @@
 
 (provide NSMenuItem)
 (provide/contract
-  [make-nsmenuitem-init-with-coder (c-> (or/c string? objc-object? cpointer?) any/c)]
-  [make-nsmenuitem-init-with-title-action-key-equivalent (c-> (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) any/c)]
+  [make-nsmenuitem-init-with-coder (c-> (or/c string? objc-object? #f) any/c)]
+  [make-nsmenuitem-init-with-title-action-key-equivalent (c-> (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) any/c)]
   [nsmenuitem-action (c-> objc-object? cpointer?)]
-  [nsmenuitem-set-action! (c-> objc-object? cpointer? void?)]
+  [nsmenuitem-set-action! (c-> objc-object? string? void?)]
   [nsmenuitem-allows-automatic-key-equivalent-localization (c-> objc-object? boolean?)]
   [nsmenuitem-set-allows-automatic-key-equivalent-localization! (c-> objc-object? boolean? void?)]
   [nsmenuitem-allows-automatic-key-equivalent-mirroring (c-> objc-object? boolean?)]
@@ -27,9 +27,9 @@
   [nsmenuitem-alternate (c-> objc-object? boolean?)]
   [nsmenuitem-set-alternate! (c-> objc-object? boolean? void?)]
   [nsmenuitem-attributed-title (c-> objc-object? any/c)]
-  [nsmenuitem-set-attributed-title! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-attributed-title! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-badge (c-> objc-object? any/c)]
-  [nsmenuitem-set-badge! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-badge! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-enabled (c-> objc-object? boolean?)]
   [nsmenuitem-set-enabled! (c-> objc-object? boolean? void?)]
   [nsmenuitem-has-submenu (c-> objc-object? boolean?)]
@@ -38,45 +38,45 @@
   [nsmenuitem-hidden-or-has-hidden-ancestor (c-> objc-object? boolean?)]
   [nsmenuitem-highlighted (c-> objc-object? boolean?)]
   [nsmenuitem-image (c-> objc-object? any/c)]
-  [nsmenuitem-set-image! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-image! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-indentation-level (c-> objc-object? exact-integer?)]
   [nsmenuitem-set-indentation-level! (c-> objc-object? exact-integer? void?)]
   [nsmenuitem-key-equivalent (c-> objc-object? any/c)]
-  [nsmenuitem-set-key-equivalent! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-key-equivalent! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-key-equivalent-modifier-mask (c-> objc-object? exact-nonnegative-integer?)]
   [nsmenuitem-set-key-equivalent-modifier-mask! (c-> objc-object? exact-nonnegative-integer? void?)]
   [nsmenuitem-menu (c-> objc-object? any/c)]
-  [nsmenuitem-set-menu! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-menu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-mixed-state-image (c-> objc-object? any/c)]
-  [nsmenuitem-set-mixed-state-image! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-mixed-state-image! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-off-state-image (c-> objc-object? any/c)]
-  [nsmenuitem-set-off-state-image! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-off-state-image! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-on-state-image (c-> objc-object? any/c)]
-  [nsmenuitem-set-on-state-image! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-on-state-image! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-parent-item (c-> objc-object? any/c)]
   [nsmenuitem-represented-object (c-> objc-object? any/c)]
-  [nsmenuitem-set-represented-object! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-represented-object! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-section-header (c-> objc-object? boolean?)]
   [nsmenuitem-separator-item (c-> objc-object? boolean?)]
   [nsmenuitem-state (c-> objc-object? exact-integer?)]
   [nsmenuitem-set-state! (c-> objc-object? exact-integer? void?)]
   [nsmenuitem-submenu (c-> objc-object? any/c)]
-  [nsmenuitem-set-submenu! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-submenu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-subtitle (c-> objc-object? any/c)]
-  [nsmenuitem-set-subtitle! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-subtitle! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-tag (c-> objc-object? exact-integer?)]
   [nsmenuitem-set-tag! (c-> objc-object? exact-integer? void?)]
   [nsmenuitem-target (c-> objc-object? any/c)]
-  [nsmenuitem-set-target! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-target! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-title (c-> objc-object? any/c)]
-  [nsmenuitem-set-title! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-title! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-tool-tip (c-> objc-object? any/c)]
-  [nsmenuitem-set-tool-tip! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-tool-tip! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-user-key-equivalent (c-> objc-object? any/c)]
   [nsmenuitem-uses-user-key-equivalents (c-> boolean?)]
   [nsmenuitem-set-uses-user-key-equivalents! (c-> boolean? void?)]
   [nsmenuitem-view (c-> objc-object? any/c)]
-  [nsmenuitem-set-view! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenuitem-set-view! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenuitem-writing-tools-items (c-> any/c)]
   [nsmenuitem-is-alternate (c-> objc-object? boolean?)]
   [nsmenuitem-is-enabled (c-> objc-object? boolean?)]
@@ -85,7 +85,7 @@
   [nsmenuitem-is-highlighted (c-> objc-object? boolean?)]
   [nsmenuitem-is-section-header (c-> objc-object? boolean?)]
   [nsmenuitem-is-separator-item (c-> objc-object? boolean?)]
-  [nsmenuitem-section-header-with-title (c-> (or/c string? objc-object? cpointer?) any/c)]
+  [nsmenuitem-section-header-with-title (c-> (or/c string? objc-object? #f) any/c)]
   )
 
 ;; --- Class reference ---
@@ -123,7 +123,7 @@
    (_msg-5 (tell NSMenuItem alloc)
        (sel_registerName "initWithTitle:action:keyEquivalent:")
        (coerce-arg string)
-       selector
+       (sel_registerName selector)
        (coerce-arg char-code))
    #:retained #t))
 
@@ -132,7 +132,7 @@
 (define (nsmenuitem-action self)
   (tell #:type _pointer (coerce-arg self) action))
 (define (nsmenuitem-set-action! self value)
-  (_msg-7 (coerce-arg self) (sel_registerName "setAction:") value))
+  (_msg-7 (coerce-arg self) (sel_registerName "setAction:") (sel_registerName value)))
 (define (nsmenuitem-allows-automatic-key-equivalent-localization self)
   (tell #:type _bool (coerce-arg self) allowsAutomaticKeyEquivalentLocalization))
 (define (nsmenuitem-set-allows-automatic-key-equivalent-localization! self value)

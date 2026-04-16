@@ -16,6 +16,36 @@ entry triaged during a prior cycle. Provenance is recorded per-task in the
 pending cluster is `high → medium → low`; within a priority band, the
 listing order is a suggested work order, not a hard constraint.
 
+### Fix protocol emitter `method_return_kind` missing int/long primitives `[generation]` `[high]`
+- **Surfaced by:** racket-oo development (2026-04-16); `numberOfRowsInTableView:` (NSInteger/int64) was misclassified as void-returning in generated protocol files
+- **Symptom:** `emit_protocol.rs::method_return_kind` handles only void, bool, and id returns. All other primitive types (int32, int64, uint32, uint64, etc.) fall through to the "void" default. Protocol methods returning NSInteger, NSUInteger, or any primitive appear in generated bindings as void-returning, producing incorrect or crashing call sites.
+- **Suspected root cause:** The match arms in `method_return_kind` (around line 148 of `emit_protocol.rs`) are incomplete. The ObjC path has full primitive coverage in class emitters but the protocol emitter was not updated in lockstep.
+- **Fix direction:** Add int32 → `'int`, int64 → `'long` (and their unsigned counterparts) branches to `method_return_kind`. Cross-check against the full primitive coverage in `emit_class.rs` to ensure parity.
+- **Scope:** Change confined to `emit_protocol.rs`. Affects all language targets that consume generated protocol files — not just racket-oo. Regenerate protocol bindings for Foundation, AppKit, WebKit after the fix and verify `numberOfRowsInTableView:` and similar integer-returning delegate methods have correct return types.
+
+### Fix class-method vs instance-property misclassification in IR / emitter `[generation]` `[high]`
+- **Surfaced by:** racket-oo development (2026-04-16); `NSMenuItem +separatorItem` was emitted as an instance property instead of a class method
+- **Symptom:** `nsmenuitem.rkt` (and likely other generated class files) treats `+separatorItem` as an instance property, making the generated `nsmenuitem-separator-item` accessor unusable. The workaround is `(tell NSMenuItem separatorItem)` directly.
+- **Suspected root cause:** Either (a) the IR marks the method with incorrect `is_class_method` / `is_instance_method` flags at extraction time, or (b) `emit_class.rs` misroutes a class method into the property-emission path. Investigate `extract_declarations.rs` ObjC method extraction first; if flags are correct in the IR, the bug is in the emitter routing logic.
+- **Fix direction:** Confirm which layer is wrong by inspecting the collected JSON for `NSMenuItem.separatorItem`. If the IR flag is wrong, fix in `extract_declarations.rs`. If correct, fix the emitter routing in `emit_class.rs`.
+- **Scope:** After fix, regenerate `nsmenuitem.rkt` and verify `nsmenuitem-separator-item` works as a class method accessor. Audit other well-known class-method factories (`+alloc`, `+new`, `NSArray +array`, etc.) to confirm they were not also misclassified.
+
+### Fix duplicate symbol in `nsscreen.rkt` emitter output `[generation]` `[medium]`
+- **Surfaced by:** racket-oo development (2026-04-16); `nsscreen.rkt` load error due to duplicate symbol definition
+- **Symptom:** The generated `nsscreen.rkt` file contains a duplicate symbol definition that causes a Racket load error. At least one property getter/setter or category method is being emitted twice.
+- **Suspected root cause:** A property declared on both the base class and a category, or a method inherited via category redeclaration, passes through `emit_class.rs` dedup logic without being caught. Category property dedup by name (see memory: "Category properties need dedup by name") may not be applied consistently for all paths (e.g., class properties vs instance properties vs categories).
+- **Fix direction:** Inspect the generated `nsscreen.rkt` to identify the duplicate symbol. Trace back to which emit path produces it twice — base-class property vs category, or getter vs setter collision. Add a dedup guard at the relevant point in `emit_class.rs`.
+- **Scope:** Fix is confined to `emit_class.rs`. After fix, verify `nsscreen.rkt` loads cleanly. Audit a wider set of generated files for duplicate-symbol patterns (e.g., `grep` for identical `define` lines within the same generated file) to catch other instances before they surface at runtime.
+
+### Emit inherited methods from NSView/NSControl superclasses in subclass bindings `[generation]` `[low]`
+- **Surfaced by:** racket-oo development (2026-04-16); WKWebView missing `setAutoresizingMask:` inherited from NSView
+- **Symptom:** Generated bindings only emit methods declared directly on a class, not methods inherited from superclasses. Callers must fall back to raw `tell` for any inherited method not re-declared on the subclass — defeating the purpose of generated typed bindings.
+- **Two fix options:**
+  - **(a) Emit inherited methods via IR inheritance chain:** Walk `superclass_name` in `emit_class.rs`, look up ancestor classes in the IR, and include their methods in the subclass binding. Complete coverage but potentially large generated-file size increase and risks emitting methods the dylib does not export for that subclass.
+  - **(b) Expose a generic `set-autoresizing-mask!` (and similar) on a shared NSView base:** Add a small set of universally-needed NSView methods to the runtime or a shared `nsview-base.rkt` that any NSView subclass binding can use. Lower risk, lower coverage.
+- **Recommended approach:** Start with option (b) for the highest-frequency NSView/NSControl methods (`setFrame:`, `setAutoresizingMask:`, `setBounds:`, `setHidden:`, `setNeedsDisplay`). Escalate to option (a) if the coverage gap repeatedly blocks target development.
+- **Scope:** Either option is confined to the generation layer. Regenerate affected subclass bindings and verify the previously-missing methods are callable without raw `tell`.
+
 ### Fix `make-objc-block` to treat `#f` as a no-op lambda `[runtime]` `[medium]`
 - **Surfaced by:** Modaliser-Racket development (2026-04-16); users pass `#f` for optional completion handler arguments
 - **Symptom:** `make-objc-block` in `runtime/block.rkt` does not handle `#f` as input. When `#f` is passed (e.g. for an optional completion handler the caller wants to ignore), the returned block stores `#f` as the callback procedure. On invocation the block attempts `(apply #f ...)`, which raises a Racket error and crashes the callback. Users are currently forced to pass an explicit no-op lambda (`(lambda args (void))`) every time they want to suppress a completion handler.

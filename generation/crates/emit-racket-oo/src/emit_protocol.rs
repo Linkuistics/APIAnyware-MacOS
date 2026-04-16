@@ -7,7 +7,7 @@ use apianyware_macos_emit::code_writer::CodeWriter;
 use apianyware_macos_emit::naming::camel_to_kebab;
 use apianyware_macos_emit::write_line;
 use apianyware_macos_types::ir::{Method, Protocol};
-use apianyware_macos_types::type_ref::TypeRefKind;
+use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 
 /// Contract for the protocol constructor (`make-<proto>`).
 ///
@@ -41,6 +41,14 @@ pub fn generate_protocol_file(proto: &Protocol, framework: &str) -> String {
         .iter()
         .filter(|m| method_return_kind(m) == "id")
         .collect();
+    let int_methods: Vec<&&Method> = all_methods
+        .iter()
+        .filter(|m| method_return_kind(m) == "int")
+        .collect();
+    let long_methods: Vec<&&Method> = all_methods
+        .iter()
+        .filter(|m| method_return_kind(m) == "long")
+        .collect();
 
     let helper_name = format!("make-{lower_name}");
 
@@ -71,6 +79,18 @@ pub fn generate_protocol_file(proto: &Protocol, framework: &str) -> String {
     if !id_methods.is_empty() {
         write_line!(w, ";;   id-returning ({}):", id_methods.len());
         for m in &id_methods {
+            write_line!(w, ";;     {}  ({})", m.selector, format_method_params(m));
+        }
+    }
+    if !int_methods.is_empty() {
+        write_line!(w, ";;   int-returning ({}):", int_methods.len());
+        for m in &int_methods {
+            write_line!(w, ";;     {}  ({})", m.selector, format_method_params(m));
+        }
+    }
+    if !long_methods.is_empty() {
+        write_line!(w, ";;   long-returning ({}):", long_methods.len());
+        for m in &long_methods {
             write_line!(w, ";;     {}  ({})", m.selector, format_method_params(m));
         }
     }
@@ -127,18 +147,46 @@ pub fn generate_protocol_file(proto: &Protocol, framework: &str) -> String {
         .iter()
         .map(|m| (m.selector.as_str(), "bool"))
         .chain(id_methods.iter().map(|m| (m.selector.as_str(), "id")))
+        .chain(int_methods.iter().map(|m| (m.selector.as_str(), "int")))
+        .chain(long_methods.iter().map(|m| (m.selector.as_str(), "long")))
         .collect();
 
-    if non_void.is_empty() {
+    // Build param-types hash for methods with object params
+    let has_object_params = any_method_has_object_param(&all_methods);
+
+    let has_keywords = !non_void.is_empty() || has_object_params;
+
+    if !has_keywords {
         w.line("  (apply make-delegate selector+handler-pairs))");
     } else {
         w.line("  (apply make-delegate");
-        w.line("    #:return-types");
-        w.raw("    (hash");
-        for (sel, kind) in &non_void {
-            w.raw(&format!(" \"{sel}\" '{kind}"));
+
+        if !non_void.is_empty() {
+            w.line("    #:return-types");
+            w.raw("    (hash");
+            for (sel, kind) in &non_void {
+                w.raw(&format!(" \"{sel}\" '{kind}"));
+            }
+            w.raw_line(")");
         }
-        w.raw_line(")");
+
+        if has_object_params {
+            w.line("    #:param-types");
+            w.raw("    (hash");
+            for m in &all_methods {
+                if m.params.is_empty() {
+                    continue;
+                }
+                let types: Vec<&str> = m
+                    .params
+                    .iter()
+                    .map(|p| param_type_symbol(&p.param_type))
+                    .collect();
+                w.raw(&format!(" \"{}\" '({})", m.selector, types.join(" ")));
+            }
+            w.raw_line(")");
+        }
+
         w.line("    selector+handler-pairs))");
     }
 
@@ -149,9 +197,46 @@ fn method_return_kind(method: &Method) -> &'static str {
     match &method.return_type.kind {
         TypeRefKind::Primitive { name } if name == "void" => "void",
         TypeRefKind::Primitive { name } if name == "bool" => "bool",
+        TypeRefKind::Primitive { name }
+            if matches!(
+                name.as_str(),
+                "int8" | "int16" | "int32" | "uint8" | "uint16" | "uint32"
+            ) =>
+        {
+            "int"
+        }
+        TypeRefKind::Primitive { name } if matches!(name.as_str(), "int64" | "uint64") => "long",
         TypeRefKind::Class { .. } | TypeRefKind::Id | TypeRefKind::Instancetype => "id",
         _ => "void", // default for unhandled types (structs/aliases)
     }
+}
+
+/// Map an IR param type to the delegate param-type symbol for `#:param-types`.
+fn param_type_symbol(type_ref: &TypeRef) -> &'static str {
+    match &type_ref.kind {
+        TypeRefKind::Class { .. } | TypeRefKind::Id | TypeRefKind::Instancetype => "object",
+        TypeRefKind::Primitive { name } if name == "bool" => "bool",
+        TypeRefKind::Primitive { name }
+            if matches!(
+                name.as_str(),
+                "int8" | "int16" | "int32" | "uint8" | "uint16" | "uint32"
+            ) =>
+        {
+            "int"
+        }
+        TypeRefKind::Primitive { name } if matches!(name.as_str(), "int64" | "uint64") => "long",
+        _ => "pointer",
+    }
+}
+
+/// Check if any method in the protocol has at least one object param
+/// (meaning #:param-types would add value via auto-wrapping).
+fn any_method_has_object_param(methods: &[&Method]) -> bool {
+    methods.iter().any(|m| {
+        m.params
+            .iter()
+            .any(|p| param_type_symbol(&p.param_type) == "object")
+    })
 }
 
 fn format_method_params(method: &Method) -> String {
@@ -240,6 +325,36 @@ mod tests {
 
     fn id_method(selector: &str) -> Method {
         make_method(selector, vec![], TypeRefKind::Instancetype)
+    }
+
+    fn int32_method(selector: &str, params: Vec<Param>) -> Method {
+        make_method(
+            selector,
+            params,
+            TypeRefKind::Primitive {
+                name: "int32".into(),
+            },
+        )
+    }
+
+    fn int64_method(selector: &str, params: Vec<Param>) -> Method {
+        make_method(
+            selector,
+            params,
+            TypeRefKind::Primitive {
+                name: "int64".into(),
+            },
+        )
+    }
+
+    fn uint64_method(selector: &str, params: Vec<Param>) -> Method {
+        make_method(
+            selector,
+            params,
+            TypeRefKind::Primitive {
+                name: "uint64".into(),
+            },
+        )
     }
 
     fn obj_param(name: &str, class: &str) -> Param {
@@ -351,5 +466,174 @@ mod tests {
         assert!(output.contains("(provide/contract"));
         assert!(output.contains("[make-tkempty"));
         assert!(output.contains("[tkempty-selectors (listof string?)])"));
+    }
+
+    #[test]
+    fn test_method_return_kind_int32() {
+        let m = int32_method("statusCode", vec![]);
+        assert_eq!(method_return_kind(&m), "int");
+    }
+
+    #[test]
+    fn test_method_return_kind_int64() {
+        let m = int64_method(
+            "numberOfRowsInTableView:",
+            vec![obj_param("tableView", "NSTableView")],
+        );
+        assert_eq!(method_return_kind(&m), "long");
+    }
+
+    #[test]
+    fn test_method_return_kind_uint64() {
+        let m = uint64_method("countOfItems:", vec![obj_param("view", "NSView")]);
+        assert_eq!(method_return_kind(&m), "long");
+    }
+
+    #[test]
+    fn test_protocol_int64_return_emits_return_types_hash() {
+        let proto = protocol(
+            "TKDataSource",
+            vec![
+                int64_method(
+                    "numberOfRowsInTableView:",
+                    vec![obj_param("tableView", "NSTableView")],
+                ),
+                void_method(
+                    "tableView:didSelectRow:",
+                    vec![
+                        obj_param("tableView", "NSTableView"),
+                        obj_param("row", "NSObject"),
+                    ],
+                ),
+            ],
+            vec![],
+        );
+        let output = generate_protocol_file(&proto, "TestKit");
+
+        assert!(
+            output.contains("\"numberOfRowsInTableView:\" 'long"),
+            "expected long return type in hash, got:\n{output}"
+        );
+        assert!(
+            output.contains("#:return-types"),
+            "expected return-types keyword, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_protocol_int32_return_emits_int_kind() {
+        let proto = protocol("TKStatus", vec![int32_method("statusCode", vec![])], vec![]);
+        let output = generate_protocol_file(&proto, "TestKit");
+
+        assert!(
+            output.contains("\"statusCode\" 'int"),
+            "expected int return type in hash, got:\n{output}"
+        );
+    }
+
+    fn int64_param(name: &str) -> Param {
+        Param {
+            name: name.to_string(),
+            param_type: TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "int64".into(),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn test_param_type_symbol_object() {
+        let tr = TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Id,
+        };
+        assert_eq!(param_type_symbol(&tr), "object");
+    }
+
+    #[test]
+    fn test_param_type_symbol_int64() {
+        let tr = TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Primitive {
+                name: "int64".into(),
+            },
+        };
+        assert_eq!(param_type_symbol(&tr), "long");
+    }
+
+    #[test]
+    fn test_protocol_emits_param_types_for_object_params() {
+        let proto = protocol(
+            "TKDataSource",
+            vec![int64_method(
+                "numberOfRows:",
+                vec![obj_param("tableView", "NSTableView")],
+            )],
+            vec![],
+        );
+        let output = generate_protocol_file(&proto, "TestKit");
+
+        assert!(
+            output.contains("#:param-types"),
+            "expected #:param-types keyword, got:\n{output}"
+        );
+        assert!(
+            output.contains("\"numberOfRows:\" '(object)"),
+            "expected object param type for tableView, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_protocol_param_types_mixed() {
+        let proto = protocol(
+            "TKMixedParams",
+            vec![void_method(
+                "tableView:didSelectRow:",
+                vec![obj_param("tableView", "NSTableView"), int64_param("row")],
+            )],
+            vec![],
+        );
+        let output = generate_protocol_file(&proto, "TestKit");
+
+        assert!(
+            output.contains("\"tableView:didSelectRow:\" '(object long)"),
+            "expected mixed param types, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_protocol_no_param_types_when_no_object_params() {
+        let proto = protocol("TKPrimitive", vec![void_method("tick", vec![])], vec![]);
+        let output = generate_protocol_file(&proto, "TestKit");
+
+        assert!(
+            !output.contains("#:param-types"),
+            "should not emit #:param-types for no-param methods, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_protocol_header_groups_int_long_methods() {
+        let proto = protocol(
+            "TKMixed2",
+            vec![
+                void_method("didStart:", vec![obj_param("x", "NSObject")]),
+                int64_method("numberOfItems:", vec![obj_param("view", "NSView")]),
+                int32_method("statusCode", vec![]),
+            ],
+            vec![],
+        );
+        let output = generate_protocol_file(&proto, "TestKit");
+
+        assert!(
+            output.contains("int-returning"),
+            "expected int-returning group in header, got:\n{output}"
+        );
+        assert!(
+            output.contains("long-returning"),
+            "expected long-returning group in header, got:\n{output}"
+        );
     }
 }

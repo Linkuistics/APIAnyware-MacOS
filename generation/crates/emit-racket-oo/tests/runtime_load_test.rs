@@ -62,7 +62,12 @@ const REQUIRED_FRAMEWORKS: &[&str] = &[
     "NetworkExtension",
 ];
 
-const APPS: &[&str] = &["hello-window", "counter", "ui-controls-gallery", "file-lister"];
+const APPS: &[&str] = &[
+    "hello-window",
+    "counter",
+    "ui-controls-gallery",
+    "file-lister",
+];
 
 /// Library files exercised via `dynamic-require`. Each entry is a path
 /// under the harness tempdir root, chosen to cover one distinct dimension:

@@ -6,6 +6,7 @@
 ;;
 ;; Provides:
 ;;   wrap-objc-object   — wrap an ObjC pointer with a release finalizer
+;;   borrow-objc-object — wrap an ObjC pointer WITHOUT retain/finalizer (callback args)
 ;;   unwrap-objc-object — extract the raw cpointer for FFI calls
 ;;   with-autorelease-pool — syntax for @autoreleasepool scoping
 ;;   objc-thread         — spawn a thread with autorelease pool
@@ -18,6 +19,7 @@
          "swift-helpers.rkt")
 
 (provide wrap-objc-object
+         borrow-objc-object
          unwrap-objc-object
          as-id
          with-autorelease-pool
@@ -25,6 +27,7 @@
          with-objc-pool-guard
          objc-retain
          objc-release
+         objc-autorelease
          objc-object?
          objc-object-ptr
          objc-null?
@@ -86,6 +89,18 @@
           (register-finalizer obj release-prevent-gc)
           obj))))
 
+;; Wrap a raw ObjC pointer as an objc-object WITHOUT retain or finalizer.
+;;
+;; Use for borrowed references (e.g. delegate callback args from the Swift
+;; trampoline) that are valid only for the duration of the call. The caller
+;; must not store the result beyond the callback scope.
+;;
+;; Returns objc-null for null/nil pointers.
+(define (borrow-objc-object ptr)
+  (if (or (not ptr) (and (cpointer? ptr) (ptr-equal? ptr #f)))
+      objc-null
+      (objc-object (cast ptr _pointer _id) '())))
+
 ;; Finalizer: release the ObjC object when the wrapper is collected.
 (define (release-prevent-gc obj)
   (when (objc-object-ptr obj)
@@ -125,6 +140,21 @@
           (swift:release (objc-object-ptr obj))
           (tell (objc-object-ptr obj) release))
       (set-objc-object-ptr! obj #f))))
+
+;; Autorelease an ObjC object and return the raw pointer.
+;; Converts a +1 retained pointer to +0 autoreleased. Use for delegate
+;; callbacks that must return an autoreleased object (e.g. NSString from
+;; string->nsstring). Returns #f for nil inputs.
+(define (objc-autorelease ptr)
+  (cond
+    [(not ptr) #f]
+    [(objc-object? ptr)
+     (tell (cast (objc-object-ptr ptr) _pointer _id) autorelease)]
+    [(cpointer? ptr)
+     (if (ptr-equal? ptr #f)
+         #f
+         (tell (cast ptr _pointer _id) autorelease))]
+    [else (error 'objc-autorelease "expected objc-object, cpointer, or #f, got ~a" ptr)]))
 
 ;; Check if any ObjC reference is nil
 (define (objc-nil? v)

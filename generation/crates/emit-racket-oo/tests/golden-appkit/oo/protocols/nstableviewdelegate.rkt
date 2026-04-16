@@ -3,7 +3,7 @@
 ;; Do not edit — regenerate from enriched IR
 ;;
 ;; NSTableViewDelegate defines 31 methods:
-;;   void-returning (14):
+;;   void-returning (13):
 ;;     tableView:didAddRowView:forRow:  (tableView:NSTableView, rowView:NSTableRowView, row:int64)
 ;;     tableView:didRemoveRowView:forRow:  (tableView:NSTableView, rowView:NSTableRowView, row:int64)
 ;;     tableView:willDisplayCell:forTableColumn:row:  (tableView:NSTableView, cell:id, tableColumn:NSTableColumn, row:int64)
@@ -11,7 +11,6 @@
 ;;     tableView:didClickTableColumn:  (tableView:NSTableView, tableColumn:NSTableColumn)
 ;;     tableView:didDragTableColumn:  (tableView:NSTableView, tableColumn:NSTableColumn)
 ;;     tableView:heightOfRow:  (tableView:NSTableView, row:int64)
-;;     tableView:nextTypeSelectMatchFromRow:toRow:forString:  (tableView:NSTableView, startRow:int64, endRow:int64, searchString:NSString)
 ;;     tableView:sizeToFitWidthOfColumn:  (tableView:NSTableView, column:int64)
 ;;     tableView:userDidChangeVisibilityOfTableColumns:  (tableView:NSTableView, columns:id)
 ;;     tableViewSelectionDidChange:  (notification:NSNotification)
@@ -37,6 +36,8 @@
 ;;     tableView:selectionIndexesForProposedSelection:  (tableView:NSTableView, proposedSelectionIndexes:NSIndexSet)
 ;;     tableView:typeSelectStringForTableColumn:row:  (tableView:NSTableView, tableColumn:NSTableColumn, row:int64)
 ;;     tableView:rowActionsForRow:edge:  (tableView:NSTableView, row:int64, edge:NSTableRowActionEdge)
+;;   long-returning (1):
+;;     tableView:nextTypeSelectMatchFromRow:toRow:forString:  (tableView:NSTableView, startRow:int64, endRow:int64, searchString:NSString)
 
 (require racket/contract
          "../../../../runtime/delegate.rkt")
@@ -89,5 +90,7 @@
 (define (make-nstableviewdelegate . selector+handler-pairs)
   (apply make-delegate
     #:return-types
-    (hash "tableView:shouldEditTableColumn:row:" 'bool "tableView:shouldShowCellExpansionForTableColumn:row:" 'bool "tableView:shouldTrackCell:forTableColumn:row:" 'bool "selectionShouldChangeInTableView:" 'bool "tableView:shouldSelectRow:" 'bool "tableView:shouldSelectTableColumn:" 'bool "tableView:shouldTypeSelectForEvent:withCurrentSearchString:" 'bool "tableView:isGroupRow:" 'bool "tableView:shouldReorderColumn:toColumn:" 'bool "tableView:userCanChangeVisibilityOfTableColumn:" 'bool "tableView:viewForTableColumn:row:" 'id "tableView:rowViewForRow:" 'id "tableView:toolTipForCell:rect:tableColumn:row:mouseLocation:" 'id "tableView:dataCellForTableColumn:row:" 'id "tableView:selectionIndexesForProposedSelection:" 'id "tableView:typeSelectStringForTableColumn:row:" 'id "tableView:rowActionsForRow:edge:" 'id)
+    (hash "tableView:shouldEditTableColumn:row:" 'bool "tableView:shouldShowCellExpansionForTableColumn:row:" 'bool "tableView:shouldTrackCell:forTableColumn:row:" 'bool "selectionShouldChangeInTableView:" 'bool "tableView:shouldSelectRow:" 'bool "tableView:shouldSelectTableColumn:" 'bool "tableView:shouldTypeSelectForEvent:withCurrentSearchString:" 'bool "tableView:isGroupRow:" 'bool "tableView:shouldReorderColumn:toColumn:" 'bool "tableView:userCanChangeVisibilityOfTableColumn:" 'bool "tableView:viewForTableColumn:row:" 'id "tableView:rowViewForRow:" 'id "tableView:toolTipForCell:rect:tableColumn:row:mouseLocation:" 'id "tableView:dataCellForTableColumn:row:" 'id "tableView:selectionIndexesForProposedSelection:" 'id "tableView:typeSelectStringForTableColumn:row:" 'id "tableView:rowActionsForRow:edge:" 'id "tableView:nextTypeSelectMatchFromRow:toRow:forString:" 'long)
+    #:param-types
+    (hash "tableView:viewForTableColumn:row:" '(object object long) "tableView:rowViewForRow:" '(object long) "tableView:didAddRowView:forRow:" '(object object long) "tableView:didRemoveRowView:forRow:" '(object object long) "tableView:willDisplayCell:forTableColumn:row:" '(object object object long) "tableView:shouldEditTableColumn:row:" '(object object long) "tableView:toolTipForCell:rect:tableColumn:row:mouseLocation:" '(object object pointer object long pointer) "tableView:shouldShowCellExpansionForTableColumn:row:" '(object object long) "tableView:shouldTrackCell:forTableColumn:row:" '(object object object long) "tableView:dataCellForTableColumn:row:" '(object object long) "selectionShouldChangeInTableView:" '(object) "tableView:shouldSelectRow:" '(object long) "tableView:selectionIndexesForProposedSelection:" '(object object) "tableView:shouldSelectTableColumn:" '(object object) "tableView:mouseDownInHeaderOfTableColumn:" '(object object) "tableView:didClickTableColumn:" '(object object) "tableView:didDragTableColumn:" '(object object) "tableView:heightOfRow:" '(object long) "tableView:typeSelectStringForTableColumn:row:" '(object object long) "tableView:nextTypeSelectMatchFromRow:toRow:forString:" '(object long long object) "tableView:shouldTypeSelectForEvent:withCurrentSearchString:" '(object object object) "tableView:isGroupRow:" '(object long) "tableView:sizeToFitWidthOfColumn:" '(object long) "tableView:shouldReorderColumn:toColumn:" '(object long long) "tableView:rowActionsForRow:edge:" '(object long pointer) "tableView:userCanChangeVisibilityOfTableColumn:" '(object object) "tableView:userDidChangeVisibilityOfTableColumns:" '(object object) "tableViewSelectionDidChange:" '(object) "tableViewColumnDidMove:" '(object) "tableViewColumnDidResize:" '(object) "tableViewSelectionIsChanging:" '(object))
     selector+handler-pairs))

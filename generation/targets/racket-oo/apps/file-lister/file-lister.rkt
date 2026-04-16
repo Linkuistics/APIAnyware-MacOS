@@ -16,9 +16,7 @@
 ;;
 ;; Run with: racket file-lister.rkt
 
-(require ffi/unsafe
-         ffi/unsafe/objc
-         racket/format
+(require racket/format
          racket/list
          "../../generated/oo/appkit/nsapplication.rkt"
          "../../generated/oo/appkit/nswindow.rkt"
@@ -71,15 +69,6 @@
 
 ;; --- Helpers ---
 
-;; Unwrap an NSString-valued objc-object to a Racket string
-(define (ns->str obj)
-  (cond
-    [(not obj) ""]
-    [(objc-object? obj)
-     (if (objc-null? obj) "" (nsstring->string (objc-object-ptr obj)))]
-    [(cpointer? obj) (nsstring->string obj)]
-    [else ""]))
-
 ;; Format a byte count as a short human-readable string
 (define (format-bytes n)
   (cond
@@ -119,10 +108,10 @@
        (define count (nsarray-count raw-names))
        (for/list ([i (in-range count)]
                   #:when #t
-                  #:when (let ([name (ns->str (nsarray-object-at-index raw-names i))])
+                  #:when (let ([name (->string (nsarray-object-at-index raw-names i))])
                            (and (not (equal? name ""))
                                 (not (char=? (string-ref name 0) #\.)))))
-         (ns->str (nsarray-object-at-index raw-names i)))])))
+         (->string (nsarray-object-at-index raw-names i)))])))
 
 ;; Build (vector name-display size-str modified-str) for each child.
 ;; File size and mtime come from Racket's built-ins — no NSNumber/NSDate
@@ -164,7 +153,7 @@
 
 ;; --- Starting directory: home via NSFileManager (returns NSURL) ---
 (define current-dir
-  (ns->str
+  (->string
    (nsurl-path
     (nsfilemanager-home-directory-for-current-user
      (nsfilemanager-default-manager)))))
@@ -287,27 +276,20 @@
 ;; NSTableViewDataSource's two required methods:
 ;;
 ;; - numberOfRowsInTableView: returns NSInteger (Int64 on 64-bit Apple).
-;;   Registered with return kind 'long, which maps to the "q" type
-;;   encoding and the Int64 trampoline in DelegateBridge.swift.
+;;   Registered with return kind 'long.
 ;;
 ;; - tableView:objectValueForTableColumn:row: returns id. Declared 'id.
-;;   We build an autoreleased NSString with string->nsstring + tell
-;;   autorelease. The table view retains it for display, and the
+;;   We build an autoreleased NSString with string->nsstring +
+;;   objc-autorelease. The table view retains it for display, and the
 ;;   autorelease pool drains it at the next event-loop turn.
 ;;
-;; Delegate callbacks receive all args as raw cpointers. To talk to a
-;; raw NSTableColumn pointer we go through `tell` directly (the class
-;; wrappers enforce `objc-object?` on self) and extract the column
-;; identifier by selector.
+;; #:param-types auto-wraps callback args: objects become borrow-objc-object
+;; (satisfies objc-object? contracts), integers become Racket integers.
 ;;
 ;; The global `data-source` reference must stay live for the window's
 ;; lifetime — Cocoa holds the delegate weakly.
-(define (col->id-str col-ptr)
-  (let ([id-ptr (tell (cast col-ptr _pointer _id) identifier)])
-    (nsstring->string id-ptr)))
-
-(define (col-index col-ptr)
-  (case (col->id-str col-ptr)
+(define (col-index col)
+  (case (->string (nstablecolumn-identifier col))
     [("name") 0]
     [("size") 1]
     [("modified") 2]
@@ -317,18 +299,19 @@
   (make-delegate
    #:return-types (hash "numberOfRowsInTableView:" 'long
                         "tableView:objectValueForTableColumn:row:" 'id)
+   #:param-types  (hash "numberOfRowsInTableView:" '(object)
+                        "tableView:objectValueForTableColumn:row:" '(object object long))
    "numberOfRowsInTableView:"
    (lambda (_tv)
      (length file-entries))
    "tableView:objectValueForTableColumn:row:"
-   (lambda (_tv col-ptr row-ptr)
-     (define row (cast row-ptr _pointer _int64))
+   (lambda (_tv col row)
      (cond
        [(and (>= row 0) (< row (length file-entries)))
         (define entry (list-ref file-entries row))
-        (define idx (col-index col-ptr))
+        (define idx (col-index col))
         (define text (vector-ref entry idx))
-        (tell (string->nsstring text) autorelease)]
+        (objc-autorelease (string->nsstring text))]
        [else #f]))))
 
 (nstableview-set-data-source! table-view data-source)
@@ -356,12 +339,12 @@
      (define response (nsopenpanel-run-modal panel))
      (when (= response NSModalResponseOK)
        (define url (nsopenpanel-url panel))
-       (define picked (ns->str (nsurl-path url)))
+       (define picked (->string (nsurl-path url)))
        (unless (equal? picked "")
          (refresh-to-path! picked))))))
 
 (nsbutton-set-target! choose-button choose-target)
-(nsbutton-set-action! choose-button (sel_registerName "chooseFolder:"))
+(nsbutton-set-action! choose-button "chooseFolder:")
 
 ;; --- Show window and run ---
 (nswindow-make-key-and-order-front window #f)

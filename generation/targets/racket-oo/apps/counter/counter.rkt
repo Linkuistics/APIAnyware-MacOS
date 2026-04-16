@@ -6,9 +6,7 @@
 ;;
 ;; Run with: racket counter.rkt
 
-(require ffi/unsafe
-         ffi/unsafe/objc
-         "../../generated/oo/appkit/nsapplication.rkt"
+(require "../../generated/oo/appkit/nsapplication.rkt"
          "../../generated/oo/appkit/nswindow.rkt"
          "../../generated/oo/appkit/nsbutton.rkt"
          "../../generated/oo/appkit/nstextfield.rkt"
@@ -95,7 +93,7 @@
     (nsbutton-set-title! btn title)
     (nsbutton-set-bezel-style! btn NSBezelStyleRounded)
     (nsbutton-set-target! btn target)
-    (nsbutton-set-action! btn (sel_registerName action-sel))
+    (nsbutton-set-action! btn action-sel)
     (nsview-add-subview! content-view btn)
     btn))
 

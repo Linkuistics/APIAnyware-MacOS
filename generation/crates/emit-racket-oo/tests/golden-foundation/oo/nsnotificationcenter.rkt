@@ -16,13 +16,13 @@
 (provide NSNotificationCenter)
 (provide/contract
   [nsnotificationcenter-default-center (c-> any/c)]
-  [nsnotificationcenter-add-observer-selector-name-object! (c-> objc-object? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
-  [nsnotificationcenter-add-observer-for-name-object-queue-using-block! (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c procedure? #f) any/c)]
-  [nsnotificationcenter-post-notification (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsnotificationcenter-post-notification-name-object (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
-  [nsnotificationcenter-post-notification-name-object-user-info (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
-  [nsnotificationcenter-remove-observer! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsnotificationcenter-remove-observer-name-object! (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
+  [nsnotificationcenter-add-observer-selector-name-object! (c-> objc-object? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
+  [nsnotificationcenter-add-observer-for-name-object-queue-using-block! (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c procedure? #f) any/c)]
+  [nsnotificationcenter-post-notification (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsnotificationcenter-post-notification-name-object (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
+  [nsnotificationcenter-post-notification-name-object-user-info (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
+  [nsnotificationcenter-remove-observer! (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsnotificationcenter-remove-observer-name-object! (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
   )
 
 ;; --- Class reference ---
@@ -41,7 +41,7 @@
 
 ;; --- Instance methods ---
 (define (nsnotificationcenter-add-observer-selector-name-object! self observer a-selector a-name an-object)
-  (_msg-1 (coerce-arg self) (sel_registerName "addObserver:selector:name:object:") (coerce-arg observer) a-selector (coerce-arg a-name) (coerce-arg an-object)))
+  (_msg-1 (coerce-arg self) (sel_registerName "addObserver:selector:name:object:") (coerce-arg observer) (sel_registerName a-selector) (coerce-arg a-name) (coerce-arg an-object)))
 (define (nsnotificationcenter-add-observer-for-name-object-queue-using-block! self name obj queue block)
   (define-values (_blk3 _blk3-id)
     (make-objc-block block (list _id) _void))

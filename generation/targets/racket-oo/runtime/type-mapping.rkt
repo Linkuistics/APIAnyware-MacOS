@@ -13,6 +13,7 @@
 
 (provide string->nsstring
          nsstring->string
+         ->string
          list->nsarray
          nsarray->list
          hash->nsdictionary
@@ -69,6 +70,17 @@
   (if (not nsstr)
       ""
       (tell #:type _string nsstr UTF8String)))
+
+;; Convert an NSString value to a Racket string.
+;; Accepts objc-object (from wrapper returns), raw cpointer, or #f/nil.
+;; Returns "" for nil/null inputs.
+(define (->string v)
+  (cond
+    [(not v) ""]
+    [(objc-object? v) (nsstring->string (unwrap-objc-object v))]
+    [(cpointer? v) (nsstring->string v)]
+    [(string? v) v]
+    [else (error '->string "expected objc-object, cpointer, string, or #f, got ~a" v)]))
 
 ;; --- NSArray conversions ---
 

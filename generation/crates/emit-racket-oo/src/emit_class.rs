@@ -239,15 +239,16 @@ const SELF_CONTRACT: &str = "objc-object?";
 /// error.
 fn map_param_contract(type_ref: &TypeRef) -> String {
     match &type_ref.kind {
+        // Object params always accept #f (nil) — ObjC nil messaging is a
+        // no-op, and many APIs accept nil even without explicit _Nullable.
+        // coerce-arg passes #f through as the nil pointer.
         TypeRefKind::Class { .. } | TypeRefKind::Id | TypeRefKind::Instancetype => {
-            if type_ref.nullable {
-                "(or/c string? objc-object? cpointer? #f)".to_string()
-            } else {
-                "(or/c string? objc-object? cpointer?)".to_string()
-            }
+            "(or/c string? objc-object? #f)".to_string()
         }
         // Block params receive Racket procedures (or #f for nil)
         TypeRefKind::Block { .. } => "(or/c procedure? #f)".to_string(),
+        // Selector params accept strings — wrapper calls sel_registerName internally
+        TypeRefKind::Selector => "string?".to_string(),
         // Everything else delegates to the standard contract mapper
         _ => map_contract(type_ref, false),
     }
@@ -540,6 +541,9 @@ fn emit_typed_constructor(
     // Coerce id-kind params
     coerce_id_params(&method.params, &mut call_args, mapper);
 
+    // Coerce SEL-typed params (string → sel_registerName)
+    coerce_sel_params(&method.params, &mut call_args);
+
     let shared_name = sig_map.lookup(&param_types, "_id");
     match shared_name {
         Some(name) => {
@@ -645,6 +649,14 @@ fn emit_property(
             "(coerce-arg self)".to_string()
         };
 
+        // For SEL-typed property setters, wrap value with sel_registerName
+        let is_sel_prop = matches!(prop.property_type.kind, TypeRefKind::Selector);
+        let value_expr = if is_sel_prop {
+            "(sel_registerName value)"
+        } else {
+            "value"
+        };
+
         if ffi_type == "_id" {
             write_line!(w, "(define ({}{} value)", setter_name, params);
             write_line!(
@@ -660,10 +672,11 @@ fn emit_property(
                     write_line!(w, "(define ({}{} value)", setter_name, params);
                     write_line!(
                         w,
-                        "  ({} {} (sel_registerName \"{}\") value))",
+                        "  ({} {} (sel_registerName \"{}\") {}))",
                         name,
                         target,
-                        setter_sel
+                        setter_sel,
+                        value_expr
                     );
                 }
                 None => {
@@ -676,9 +689,10 @@ fn emit_property(
                     );
                     write_line!(
                         w,
-                        "    (msg {} (sel_registerName \"{}\") value)))",
+                        "    (msg {} (sel_registerName \"{}\") {})))",
                         target,
-                        setter_sel
+                        setter_sel,
+                        value_expr
                     );
                 }
             }
@@ -772,6 +786,9 @@ fn emit_method(
 
             // Coerce id-kind params
             coerce_id_params(&method.params, &mut call_args, mapper);
+
+            // Coerce SEL-typed params (string → sel_registerName)
+            coerce_sel_params(&method.params, &mut call_args);
 
             let shared_name = sig_map.lookup(&param_types, &ret_ffi_type);
             match shared_name {
@@ -899,6 +916,15 @@ fn coerce_id_params(params: &[Param], call_args: &mut [String], mapper: &dyn Ffi
     for (i, p) in params.iter().enumerate() {
         if mapper.is_object_type(&p.param_type) && !mapper.is_block_type(&p.param_type) {
             call_args[i] = format!("(coerce-arg {})", call_args[i]);
+        }
+    }
+}
+
+/// Wrap SEL-typed params with sel_registerName so callers pass strings.
+fn coerce_sel_params(params: &[Param], call_args: &mut [String]) {
+    for (i, p) in params.iter().enumerate() {
+        if matches!(p.param_type.kind, TypeRefKind::Selector) {
+            call_args[i] = format!("(sel_registerName {})", call_args[i]);
         }
     }
 }
@@ -1355,7 +1381,7 @@ mod tests {
         // Object setter: self + coerce-arg-matched union for the value.
         assert!(
             output.contains(
-                "[tkview-set-title! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]"
+                "[tkview-set-title! (c-> objc-object? (or/c string? objc-object? #f) void?)]"
             ),
             "Object property setter contract. Output:\n{output}"
         );
@@ -1399,14 +1425,12 @@ mod tests {
 
         // Contract: no receiver slot (class methods have no `self`).
         assert!(
-            output.contains(
-                "[tkwindow-set-allows-automatic-window-tabbing! (c-> boolean? void?)]"
-            ),
+            output.contains("[tkwindow-set-allows-automatic-window-tabbing! (c-> boolean? void?)]"),
             "Class-property primitive setter contract must omit receiver. Output:\n{output}"
         );
         assert!(
             output.contains(
-                "[tkwindow-set-default-title! (c-> (or/c string? objc-object? cpointer?) void?)]"
+                "[tkwindow-set-default-title! (c-> (or/c string? objc-object? #f) void?)]"
             ),
             "Class-property _id setter contract must omit receiver. Output:\n{output}"
         );
@@ -1428,9 +1452,7 @@ mod tests {
             "Class-property setter impls must not take `self`. Output:\n{output}"
         );
         assert!(
-            output.contains(
-                "(tell #:type _void TKWindow setDefaultTitle: (coerce-arg value))"
-            ),
+            output.contains("(tell #:type _void TKWindow setDefaultTitle: (coerce-arg value))"),
             "Class-property _id setter body must tell the class directly. Output:\n{output}"
         );
     }
@@ -1649,11 +1671,11 @@ mod tests {
 
     #[test]
     fn test_map_param_contract_coercion() {
-        // Non-nullable `Id` → union matching coerce-arg's accepted set
-        // (string, objc-object, cpointer — but not #f).
+        // Non-nullable `Id` → union matching the opaque API surface
+        // (string, objc-object — but not #f or cpointer).
         assert_eq!(
             map_param_contract(&type_id()),
-            "(or/c string? objc-object? cpointer?)"
+            "(or/c string? objc-object? #f)"
         );
         // Block → procedure? or #f
         let block = TypeRef {
@@ -1677,7 +1699,7 @@ mod tests {
         };
         assert_eq!(
             map_param_contract(&nullable_id),
-            "(or/c string? objc-object? cpointer? #f)"
+            "(or/c string? objc-object? #f)"
         );
     }
 
@@ -1693,7 +1715,7 @@ mod tests {
         };
         assert_eq!(
             map_param_contract(&non_null),
-            "(or/c string? objc-object? cpointer?)"
+            "(or/c string? objc-object? #f)"
         );
 
         let nullable = TypeRef {
@@ -1706,7 +1728,7 @@ mod tests {
         };
         assert_eq!(
             map_param_contract(&nullable),
-            "(or/c string? objc-object? cpointer? #f)"
+            "(or/c string? objc-object? #f)"
         );
     }
 
@@ -1718,7 +1740,7 @@ mod tests {
         };
         assert_eq!(
             map_param_contract(&non_null),
-            "(or/c string? objc-object? cpointer?)"
+            "(or/c string? objc-object? #f)"
         );
 
         let nullable = TypeRef {
@@ -1727,7 +1749,7 @@ mod tests {
         };
         assert_eq!(
             map_param_contract(&nullable),
-            "(or/c string? objc-object? cpointer? #f)"
+            "(or/c string? objc-object? #f)"
         );
     }
 
@@ -1739,5 +1761,66 @@ mod tests {
         assert_eq!(map_return_contract(&type_void()), "void?");
         // Primitive → delegates
         assert_eq!(map_return_contract(&type_bool()), "boolean?");
+    }
+
+    #[test]
+    fn test_map_param_contract_selector_accepts_string() {
+        let sel = TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Selector,
+        };
+        assert_eq!(map_param_contract(&sel), "string?");
+    }
+
+    fn type_selector() -> TypeRef {
+        TypeRef {
+            nullable: false,
+            kind: TypeRefKind::Selector,
+        }
+    }
+
+    #[test]
+    fn test_selector_param_wrapped_with_sel_register_name() {
+        let cls = Class {
+            name: "TKControl".to_string(),
+            superclass: "TKObject".to_string(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "setAction:",
+                false,
+                false,
+                vec![Param {
+                    name: "action".to_string(),
+                    param_type: type_selector(),
+                }],
+                type_void(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![make_test_method(
+                "setAction:",
+                false,
+                false,
+                vec![Param {
+                    name: "action".to_string(),
+                    param_type: type_selector(),
+                }],
+                type_void(),
+            )],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+
+        // Contract: SEL param accepts string
+        assert!(
+            output.contains("string?"),
+            "SEL param contract should accept string?, got:\n{output}"
+        );
+        // Body: wrapper converts string to SEL via sel_registerName
+        assert!(
+            output.contains("(sel_registerName action)"),
+            "SEL param should be wrapped with sel_registerName in body, got:\n{output}"
+        );
     }
 }

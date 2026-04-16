@@ -15,10 +15,10 @@
 
 (provide NSTimer)
 (provide/contract
-  [make-nstimer-init-with-fire-date-interval-repeats-block (c-> (or/c string? objc-object? cpointer?) real? boolean? (or/c procedure? #f) any/c)]
-  [make-nstimer-init-with-fire-date-interval-target-selector-user-info-repeats (c-> (or/c string? objc-object? cpointer?) real? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) boolean? any/c)]
+  [make-nstimer-init-with-fire-date-interval-repeats-block (c-> (or/c string? objc-object? #f) real? boolean? (or/c procedure? #f) any/c)]
+  [make-nstimer-init-with-fire-date-interval-target-selector-user-info-repeats (c-> (or/c string? objc-object? #f) real? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) boolean? any/c)]
   [nstimer-fire-date (c-> objc-object? any/c)]
-  [nstimer-set-fire-date! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nstimer-set-fire-date! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nstimer-time-interval (c-> objc-object? real?)]
   [nstimer-tolerance (c-> objc-object? real?)]
   [nstimer-set-tolerance! (c-> objc-object? real? void?)]
@@ -27,12 +27,12 @@
   [nstimer-fire (c-> objc-object? void?)]
   [nstimer-invalidate (c-> objc-object? void?)]
   [nstimer-is-valid (c-> objc-object? boolean?)]
-  [nstimer-scheduled-timer-with-time-interval-invocation-repeats (c-> real? (or/c string? objc-object? cpointer?) boolean? any/c)]
+  [nstimer-scheduled-timer-with-time-interval-invocation-repeats (c-> real? (or/c string? objc-object? #f) boolean? any/c)]
   [nstimer-scheduled-timer-with-time-interval-repeats-block (c-> real? boolean? (or/c procedure? #f) any/c)]
-  [nstimer-scheduled-timer-with-time-interval-target-selector-user-info-repeats (c-> real? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) boolean? any/c)]
-  [nstimer-timer-with-time-interval-invocation-repeats (c-> real? (or/c string? objc-object? cpointer?) boolean? any/c)]
+  [nstimer-scheduled-timer-with-time-interval-target-selector-user-info-repeats (c-> real? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) boolean? any/c)]
+  [nstimer-timer-with-time-interval-invocation-repeats (c-> real? (or/c string? objc-object? #f) boolean? any/c)]
   [nstimer-timer-with-time-interval-repeats-block (c-> real? boolean? (or/c procedure? #f) any/c)]
-  [nstimer-timer-with-time-interval-target-selector-user-info-repeats (c-> real? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) boolean? any/c)]
+  [nstimer-timer-with-time-interval-target-selector-user-info-repeats (c-> real? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) boolean? any/c)]
   )
 
 ;; --- Class reference ---
@@ -76,7 +76,7 @@
        (coerce-arg date)
        ti
        (coerce-arg t)
-       s
+       (sel_registerName s)
        (coerce-arg ui)
        rep)
    #:retained #t))
@@ -121,7 +121,7 @@
    ))
 (define (nstimer-scheduled-timer-with-time-interval-target-selector-user-info-repeats ti a-target a-selector user-info yes-or-no)
   (wrap-objc-object
-   (_msg-5 NSTimer (sel_registerName "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:") ti (coerce-arg a-target) a-selector (coerce-arg user-info) yes-or-no)
+   (_msg-5 NSTimer (sel_registerName "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:") ti (coerce-arg a-target) (sel_registerName a-selector) (coerce-arg user-info) yes-or-no)
    ))
 (define (nstimer-timer-with-time-interval-invocation-repeats ti invocation yes-or-no)
   (wrap-objc-object
@@ -135,5 +135,5 @@
    ))
 (define (nstimer-timer-with-time-interval-target-selector-user-info-repeats ti a-target a-selector user-info yes-or-no)
   (wrap-objc-object
-   (_msg-5 NSTimer (sel_registerName "timerWithTimeInterval:target:selector:userInfo:repeats:") ti (coerce-arg a-target) a-selector (coerce-arg user-info) yes-or-no)
+   (_msg-5 NSTimer (sel_registerName "timerWithTimeInterval:target:selector:userInfo:repeats:") ti (coerce-arg a-target) (sel_registerName a-selector) (coerce-arg user-info) yes-or-no)
    ))

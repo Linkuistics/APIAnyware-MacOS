@@ -32,4 +32,6 @@
   (apply make-delegate
     #:return-types
     (hash "managerWillReturnResult:" 'id)
+    #:param-types
+    (hash "managerDidFinish:" '(object) "managerShouldContinue:" '(object) "managerWillReturnResult:" '(object))
     selector+handler-pairs))

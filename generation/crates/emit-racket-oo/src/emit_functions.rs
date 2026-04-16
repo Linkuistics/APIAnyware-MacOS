@@ -14,9 +14,7 @@ use apianyware_macos_emit::write_line;
 use apianyware_macos_types::ir::Function;
 use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 
-use crate::shared_signatures::{
-    any_struct_type, framework_ffi_lib_arg, is_libdispatch_unexported,
-};
+use crate::shared_signatures::{any_struct_type, framework_ffi_lib_arg, is_libdispatch_unexported};
 
 /// Returns true if a function can be emitted as a Racket FFI binding.
 ///
@@ -198,12 +196,20 @@ pub fn generate_functions_file(functions: &[Function], framework: &str) -> Strin
                 // to _id via OS_OBJECT_USE_OBJC, but no wrapper classes exist.
                 // Emit _pointer so consumers can pass raw cpointers (e.g. from
                 // ffi-obj-ref) without a (cast ... _pointer _id) ceremony.
-                if is_libdispatch && t == "_id" { "_pointer".to_string() } else { t }
+                if is_libdispatch && t == "_id" {
+                    "_pointer".to_string()
+                } else {
+                    t
+                }
             })
             .collect();
         let return_type = {
             let t = mapper.map_type(&func.return_type, true);
-            if is_libdispatch && t == "_id" { "_pointer".to_string() } else { t }
+            if is_libdispatch && t == "_id" {
+                "_pointer".to_string()
+            } else {
+                t
+            }
         };
 
         let fun_type = if param_types.is_empty() {

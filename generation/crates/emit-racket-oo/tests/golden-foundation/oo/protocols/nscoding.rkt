@@ -30,4 +30,6 @@
   (apply make-delegate
     #:return-types
     (hash "initWithCoder:" 'id)
+    #:param-types
+    (hash "encodeWithCoder:" '(object) "initWithCoder:" '(object))
     selector+handler-pairs))

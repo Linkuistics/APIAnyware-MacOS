@@ -14,7 +14,10 @@ pub fn framework_ffi_lib_arg(framework_name: &str) -> String {
     if framework_name == "libdispatch" {
         return "libSystem".to_string();
     }
-    format!("/System/Library/Frameworks/{0}.framework/{0}", framework_name)
+    format!(
+        "/System/Library/Frameworks/{0}.framework/{0}",
+        framework_name
+    )
 }
 
 /// Returns `true` if the symbol is declared in libdispatch/pthread

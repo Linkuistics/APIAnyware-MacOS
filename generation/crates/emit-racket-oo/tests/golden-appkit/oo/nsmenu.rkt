@@ -16,8 +16,8 @@
 
 (provide NSMenu)
 (provide/contract
-  [make-nsmenu-init-with-coder (c-> (or/c string? objc-object? cpointer?) any/c)]
-  [make-nsmenu-init-with-title (c-> (or/c string? objc-object? cpointer?) any/c)]
+  [make-nsmenu-init-with-coder (c-> (or/c string? objc-object? #f) any/c)]
+  [make-nsmenu-init-with-title (c-> (or/c string? objc-object? #f) any/c)]
   [nsmenu-allows-context-menu-plug-ins (c-> objc-object? boolean?)]
   [nsmenu-set-allows-context-menu-plug-ins! (c-> objc-object? boolean? void?)]
   [nsmenu-autoenables-items (c-> objc-object? boolean?)]
@@ -25,12 +25,12 @@
   [nsmenu-automatically-inserts-writing-tools-items (c-> objc-object? boolean?)]
   [nsmenu-set-automatically-inserts-writing-tools-items! (c-> objc-object? boolean? void?)]
   [nsmenu-delegate (c-> objc-object? any/c)]
-  [nsmenu-set-delegate! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-set-delegate! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-font (c-> objc-object? any/c)]
-  [nsmenu-set-font! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-set-font! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-highlighted-item (c-> objc-object? any/c)]
   [nsmenu-item-array (c-> objc-object? any/c)]
-  [nsmenu-set-item-array! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-set-item-array! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-menu-bar-height (c-> objc-object? real?)]
   [nsmenu-menu-changed-messages-enabled (c-> objc-object? boolean?)]
   [nsmenu-set-menu-changed-messages-enabled! (c-> objc-object? boolean? void?)]
@@ -41,46 +41,46 @@
   [nsmenu-set-presentation-style! (c-> objc-object? exact-nonnegative-integer? void?)]
   [nsmenu-properties-to-update (c-> objc-object? exact-nonnegative-integer?)]
   [nsmenu-selected-items (c-> objc-object? any/c)]
-  [nsmenu-set-selected-items! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-set-selected-items! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-selection-mode (c-> objc-object? exact-nonnegative-integer?)]
   [nsmenu-set-selection-mode! (c-> objc-object? exact-nonnegative-integer? void?)]
   [nsmenu-shows-state-column (c-> objc-object? boolean?)]
   [nsmenu-set-shows-state-column! (c-> objc-object? boolean? void?)]
   [nsmenu-size (c-> objc-object? any/c)]
   [nsmenu-supermenu (c-> objc-object? any/c)]
-  [nsmenu-set-supermenu! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-set-supermenu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-title (c-> objc-object? any/c)]
-  [nsmenu-set-title! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-set-title! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-torn-off (c-> objc-object? boolean?)]
   [nsmenu-user-interface-layout-direction (c-> objc-object? exact-nonnegative-integer?)]
   [nsmenu-set-user-interface-layout-direction! (c-> objc-object? exact-nonnegative-integer? void?)]
-  [nsmenu-add-item! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsmenu-add-item-with-title-action-key-equivalent! (c-> objc-object? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) any/c)]
+  [nsmenu-add-item! (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsmenu-add-item-with-title-action-key-equivalent! (c-> objc-object? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) any/c)]
   [nsmenu-cancel-tracking (c-> objc-object? void?)]
   [nsmenu-cancel-tracking-without-animation (c-> objc-object? void?)]
-  [nsmenu-index-of-item (c-> objc-object? (or/c string? objc-object? cpointer?) exact-integer?)]
-  [nsmenu-index-of-item-with-represented-object (c-> objc-object? (or/c string? objc-object? cpointer?) exact-integer?)]
-  [nsmenu-index-of-item-with-submenu (c-> objc-object? (or/c string? objc-object? cpointer?) exact-integer?)]
+  [nsmenu-index-of-item (c-> objc-object? (or/c string? objc-object? #f) exact-integer?)]
+  [nsmenu-index-of-item-with-represented-object (c-> objc-object? (or/c string? objc-object? #f) exact-integer?)]
+  [nsmenu-index-of-item-with-submenu (c-> objc-object? (or/c string? objc-object? #f) exact-integer?)]
   [nsmenu-index-of-item-with-tag (c-> objc-object? exact-integer? exact-integer?)]
-  [nsmenu-index-of-item-with-target-and-action (c-> objc-object? (or/c string? objc-object? cpointer?) cpointer? exact-integer?)]
-  [nsmenu-index-of-item-with-title (c-> objc-object? (or/c string? objc-object? cpointer?) exact-integer?)]
-  [nsmenu-insert-item-at-index! (c-> objc-object? (or/c string? objc-object? cpointer?) exact-integer? void?)]
-  [nsmenu-insert-item-with-title-action-key-equivalent-at-index! (c-> objc-object? (or/c string? objc-object? cpointer?) cpointer? (or/c string? objc-object? cpointer?) exact-integer? any/c)]
+  [nsmenu-index-of-item-with-target-and-action (c-> objc-object? (or/c string? objc-object? #f) string? exact-integer?)]
+  [nsmenu-index-of-item-with-title (c-> objc-object? (or/c string? objc-object? #f) exact-integer?)]
+  [nsmenu-insert-item-at-index! (c-> objc-object? (or/c string? objc-object? #f) exact-integer? void?)]
+  [nsmenu-insert-item-with-title-action-key-equivalent-at-index! (c-> objc-object? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) exact-integer? any/c)]
   [nsmenu-item-at-index (c-> objc-object? exact-integer? any/c)]
-  [nsmenu-item-changed (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-item-changed (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-item-with-tag (c-> objc-object? exact-integer? any/c)]
-  [nsmenu-item-with-title (c-> objc-object? (or/c string? objc-object? cpointer?) any/c)]
+  [nsmenu-item-with-title (c-> objc-object? (or/c string? objc-object? #f) any/c)]
   [nsmenu-perform-action-for-item-at-index! (c-> objc-object? exact-integer? void?)]
-  [nsmenu-perform-key-equivalent! (c-> objc-object? (or/c string? objc-object? cpointer?) boolean?)]
-  [nsmenu-pop-up-menu-positioning-item-at-location-in-view (c-> objc-object? (or/c string? objc-object? cpointer?) any/c (or/c string? objc-object? cpointer?) boolean?)]
+  [nsmenu-perform-key-equivalent! (c-> objc-object? (or/c string? objc-object? #f) boolean?)]
+  [nsmenu-pop-up-menu-positioning-item-at-location-in-view (c-> objc-object? (or/c string? objc-object? #f) any/c (or/c string? objc-object? #f) boolean?)]
   [nsmenu-remove-all-items! (c-> objc-object? void?)]
-  [nsmenu-remove-item! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-remove-item! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-remove-item-at-index! (c-> objc-object? exact-integer? void?)]
-  [nsmenu-set-submenu-for-item! (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-set-submenu-for-item! (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
   [nsmenu-update (c-> objc-object? void?)]
   [nsmenu-menu-bar-visible (c-> boolean?)]
-  [nsmenu-pop-up-context-menu-with-event-for-view (c-> (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
-  [nsmenu-pop-up-context-menu-with-event-for-view-with-font (c-> (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) void?)]
+  [nsmenu-pop-up-context-menu-with-event-for-view (c-> (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
+  [nsmenu-pop-up-context-menu-with-event-for-view-with-font (c-> (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
   [nsmenu-set-menu-bar-visible! (c-> boolean? void?)]
   )
 
@@ -225,7 +225,7 @@
   (tell #:type _void (coerce-arg self) addItem: (coerce-arg new-item)))
 (define (nsmenu-add-item-with-title-action-key-equivalent! self string selector char-code)
   (wrap-objc-object
-   (_msg-12 (coerce-arg self) (sel_registerName "addItemWithTitle:action:keyEquivalent:") (coerce-arg string) selector (coerce-arg char-code))
+   (_msg-12 (coerce-arg self) (sel_registerName "addItemWithTitle:action:keyEquivalent:") (coerce-arg string) (sel_registerName selector) (coerce-arg char-code))
    ))
 (define (nsmenu-cancel-tracking self)
   (tell #:type _void (coerce-arg self) cancelTracking))
@@ -240,14 +240,14 @@
 (define (nsmenu-index-of-item-with-tag self tag)
   (_msg-15 (coerce-arg self) (sel_registerName "indexOfItemWithTag:") tag))
 (define (nsmenu-index-of-item-with-target-and-action self target action-selector)
-  (_msg-11 (coerce-arg self) (sel_registerName "indexOfItemWithTarget:andAction:") (coerce-arg target) action-selector))
+  (_msg-11 (coerce-arg self) (sel_registerName "indexOfItemWithTarget:andAction:") (coerce-arg target) (sel_registerName action-selector)))
 (define (nsmenu-index-of-item-with-title self title)
   (_msg-8 (coerce-arg self) (sel_registerName "indexOfItemWithTitle:") (coerce-arg title)))
 (define (nsmenu-insert-item-at-index! self new-item index)
   (_msg-10 (coerce-arg self) (sel_registerName "insertItem:atIndex:") (coerce-arg new-item) index))
 (define (nsmenu-insert-item-with-title-action-key-equivalent-at-index! self string selector char-code index)
   (wrap-objc-object
-   (_msg-13 (coerce-arg self) (sel_registerName "insertItemWithTitle:action:keyEquivalent:atIndex:") (coerce-arg string) selector (coerce-arg char-code) index)
+   (_msg-13 (coerce-arg self) (sel_registerName "insertItemWithTitle:action:keyEquivalent:atIndex:") (coerce-arg string) (sel_registerName selector) (coerce-arg char-code) index)
    ))
 (define (nsmenu-item-at-index self index)
   (wrap-objc-object

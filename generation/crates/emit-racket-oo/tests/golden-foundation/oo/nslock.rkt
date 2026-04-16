@@ -15,8 +15,8 @@
 (provide NSLock)
 (provide/contract
   [nslock-name (c-> objc-object? any/c)]
-  [nslock-set-name! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nslock-lock-before-date (c-> objc-object? (or/c string? objc-object? cpointer?) boolean?)]
+  [nslock-set-name! (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nslock-lock-before-date (c-> objc-object? (or/c string? objc-object? #f) boolean?)]
   [nslock-try-lock (c-> objc-object? boolean?)]
   )
 

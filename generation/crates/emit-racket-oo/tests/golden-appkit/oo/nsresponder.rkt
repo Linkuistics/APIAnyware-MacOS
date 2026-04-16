@@ -14,64 +14,64 @@
 
 (provide NSResponder)
 (provide/contract
-  [make-nsresponder-init-with-coder (c-> (or/c string? objc-object? cpointer?) any/c)]
+  [make-nsresponder-init-with-coder (c-> (or/c string? objc-object? #f) any/c)]
   [nsresponder-accepts-first-responder (c-> objc-object? boolean?)]
   [nsresponder-menu (c-> objc-object? any/c)]
-  [nsresponder-set-menu! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsresponder-set-menu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsresponder-next-responder (c-> objc-object? any/c)]
-  [nsresponder-set-next-responder! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsresponder-set-next-responder! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsresponder-restorable-state-key-paths (c-> any/c)]
   [nsresponder-touch-bar (c-> objc-object? any/c)]
-  [nsresponder-set-touch-bar! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsresponder-set-touch-bar! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsresponder-undo-manager (c-> objc-object? any/c)]
   [nsresponder-user-activity (c-> objc-object? any/c)]
-  [nsresponder-set-user-activity! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsresponder-set-user-activity! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsresponder-become-first-responder (c-> objc-object? boolean?)]
-  [nsresponder-begin-gesture-with-event! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-change-mode-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-context-menu-key-down (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-cursor-update (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-end-gesture-with-event! (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-flags-changed (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsresponder-begin-gesture-with-event! (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-change-mode-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-context-menu-key-down (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-cursor-update (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-end-gesture-with-event! (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-flags-changed (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsresponder-flush-buffered-key-events (c-> objc-object? void?)]
-  [nsresponder-help-requested (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-interpret-key-events (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-key-down (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-key-up (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-magnify-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-mouse-cancelled (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-mouse-down (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-mouse-dragged (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-mouse-entered (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-mouse-exited (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-mouse-moved (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-mouse-up (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-no-responder-for (c-> objc-object? cpointer? void?)]
-  [nsresponder-other-mouse-down (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-other-mouse-dragged (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-other-mouse-up (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-perform-key-equivalent! (c-> objc-object? (or/c string? objc-object? cpointer?) boolean?)]
-  [nsresponder-pressure-change-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-quick-look-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
+  [nsresponder-help-requested (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-interpret-key-events (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-key-down (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-key-up (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-magnify-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-mouse-cancelled (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-mouse-down (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-mouse-dragged (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-mouse-entered (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-mouse-exited (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-mouse-moved (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-mouse-up (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-no-responder-for (c-> objc-object? string? void?)]
+  [nsresponder-other-mouse-down (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-other-mouse-dragged (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-other-mouse-up (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-perform-key-equivalent! (c-> objc-object? (or/c string? objc-object? #f) boolean?)]
+  [nsresponder-pressure-change-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-quick-look-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsresponder-resign-first-responder (c-> objc-object? boolean?)]
-  [nsresponder-right-mouse-down (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-right-mouse-dragged (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-right-mouse-up (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-rotate-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-scroll-wheel (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-should-be-treated-as-ink-event (c-> objc-object? (or/c string? objc-object? cpointer?) boolean?)]
-  [nsresponder-show-context-help (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-smart-magnify-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-supplemental-target-for-action-sender (c-> objc-object? cpointer? (or/c string? objc-object? cpointer?) any/c)]
-  [nsresponder-swipe-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-tablet-point (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-tablet-proximity (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-touches-began-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-touches-cancelled-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-touches-ended-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-touches-moved-with-event (c-> objc-object? (or/c string? objc-object? cpointer?) void?)]
-  [nsresponder-try-to-perform-with (c-> objc-object? cpointer? (or/c string? objc-object? cpointer?) boolean?)]
-  [nsresponder-valid-requestor-for-send-type-return-type (c-> objc-object? (or/c string? objc-object? cpointer?) (or/c string? objc-object? cpointer?) any/c)]
+  [nsresponder-right-mouse-down (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-right-mouse-dragged (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-right-mouse-up (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-rotate-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-scroll-wheel (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-should-be-treated-as-ink-event (c-> objc-object? (or/c string? objc-object? #f) boolean?)]
+  [nsresponder-show-context-help (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-smart-magnify-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-supplemental-target-for-action-sender (c-> objc-object? string? (or/c string? objc-object? #f) any/c)]
+  [nsresponder-swipe-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-tablet-point (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-tablet-proximity (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-touches-began-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-touches-cancelled-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-touches-ended-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-touches-moved-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
+  [nsresponder-try-to-perform-with (c-> objc-object? string? (or/c string? objc-object? #f) boolean?)]
+  [nsresponder-valid-requestor-for-send-type-return-type (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) any/c)]
   [nsresponder-wants-forwarded-scroll-events-for-axis (c-> objc-object? exact-nonnegative-integer? boolean?)]
   [nsresponder-wants-scroll-events-for-swipe-tracking-on-axis (c-> objc-object? exact-nonnegative-integer? boolean?)]
   )
@@ -173,7 +173,7 @@
 (define (nsresponder-mouse-up self event)
   (tell #:type _void (coerce-arg self) mouseUp: (coerce-arg event)))
 (define (nsresponder-no-responder-for self event-selector)
-  (_msg-2 (coerce-arg self) (sel_registerName "noResponderFor:") event-selector))
+  (_msg-2 (coerce-arg self) (sel_registerName "noResponderFor:") (sel_registerName event-selector)))
 (define (nsresponder-other-mouse-down self event)
   (tell #:type _void (coerce-arg self) otherMouseDown: (coerce-arg event)))
 (define (nsresponder-other-mouse-dragged self event)
@@ -206,7 +206,7 @@
   (tell #:type _void (coerce-arg self) smartMagnifyWithEvent: (coerce-arg event)))
 (define (nsresponder-supplemental-target-for-action-sender self action sender)
   (wrap-objc-object
-   (_msg-4 (coerce-arg self) (sel_registerName "supplementalTargetForAction:sender:") action (coerce-arg sender))
+   (_msg-4 (coerce-arg self) (sel_registerName "supplementalTargetForAction:sender:") (sel_registerName action) (coerce-arg sender))
    ))
 (define (nsresponder-swipe-with-event self event)
   (tell #:type _void (coerce-arg self) swipeWithEvent: (coerce-arg event)))
@@ -223,7 +223,7 @@
 (define (nsresponder-touches-moved-with-event self event)
   (tell #:type _void (coerce-arg self) touchesMovedWithEvent: (coerce-arg event)))
 (define (nsresponder-try-to-perform-with self action object)
-  (_msg-3 (coerce-arg self) (sel_registerName "tryToPerform:with:") action (coerce-arg object)))
+  (_msg-3 (coerce-arg self) (sel_registerName "tryToPerform:with:") (sel_registerName action) (coerce-arg object)))
 (define (nsresponder-valid-requestor-for-send-type-return-type self send-type return-type)
   (wrap-objc-object
    (tell (coerce-arg self) validRequestorForSendType: (coerce-arg send-type) returnType: (coerce-arg return-type))))

@@ -7,9 +7,7 @@
 ;;
 ;; Run with: racket hello-window.rkt
 
-(require ffi/unsafe
-         ffi/unsafe/objc
-         "../../generated/oo/appkit/nsapplication.rkt"
+(require "../../generated/oo/appkit/nsapplication.rkt"
          "../../generated/oo/appkit/nswindow.rkt"
          "../../generated/oo/appkit/nstextfield.rkt"
          "../../generated/oo/appkit/nsview.rkt"

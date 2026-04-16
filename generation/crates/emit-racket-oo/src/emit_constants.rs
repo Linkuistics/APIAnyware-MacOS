@@ -396,7 +396,9 @@ mod tests {
         )];
         let output = generate_constants_file(&constants, "CoreFoundation");
         assert!(
-            output.contains("(define kCFRunLoopCommonModes (get-ffi-obj 'kCFRunLoopCommonModes _fw-lib _id))"),
+            output.contains(
+                "(define kCFRunLoopCommonModes (get-ffi-obj 'kCFRunLoopCommonModes _fw-lib _id))"
+            ),
             "Pointer globals must still use get-ffi-obj. Output was:\n{output}"
         );
     }
