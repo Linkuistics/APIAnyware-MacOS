@@ -63,7 +63,10 @@ Emitter crate: emit-racket-oo
 Runtime location: generation/targets/racket-oo/runtime/
 ```
 ## Task Backlog
+
 ### Sample Apps
+
+#### Menu Bar Tool
 - **Status:** not_started
 - **Dependencies:** none; independent of File Lister (GUI smoke tracked separately)
 - **Description:** NSStatusBar, NSMenu, no-window app, timers, clipboard. Tests
@@ -72,6 +75,8 @@ Runtime location: generation/targets/racket-oo/runtime/
   in place for timer callbacks.
   See `knowledge/apps/menu-bar-tool/spec.md` and `test-strategy.md`.
 - **Results:** _pending_
+
+#### Text Editor
 - **Status:** not_started
 - **Dependencies:** File Lister complete — **satisfied 2026-04-15**.
   Delegate-pattern shakedown is in the books (data-source delegate for
@@ -82,6 +87,8 @@ Runtime location: generation/targets/racket-oo/runtime/
   returning `(values #f #f)` for `#f` proc) is now in place.
   See `knowledge/apps/text-editor/spec.md` and `test-strategy.md`.
 - **Results:** _pending_
+
+#### Mini Browser
 - **Status:** not_started
 - **Dependencies:** none. WebKit OO emission is verified (164 classes,
   29 protocols, 196 files load cleanly in Racket).
@@ -149,7 +156,32 @@ Runtime location: generation/targets/racket-oo/runtime/
   `#f` in the contract.
 - **Results:** _pending_
 
+### Emit foreign-thread safety warnings in generated C callback bindings `[emitter]`
+- **Status:** not_started
+- **Priority:** 3 — silent SIGILL (exit 132) on Racket CS, non-obvious cause
+- **Dependencies:** none
+- **Description:** Generated `functions.rkt` bindings that expose C callback
+  parameters (function-pointer or block-typed args) should carry an inline Racket
+  comment warning that `_cprocedure` callbacks SIGILL when invoked from a non-main
+  GCD queue or libdispatch worker thread. The crash mode is SIGILL (exit 132) and
+  `#:async-apply` converts it to a deadlock under `nsapplication-run` — both
+  failure modes are non-obvious.
+  
+  **Fix:** In `emit_functions.rs`, detect parameters whose type maps to a function
+  pointer or `_cprocedure` and emit a `; WARNING: callback must run on main OS thread
+  — _cprocedure invoked from a foreign thread SIGILLs on Racket CS` comment above
+  the `define` form. The CGEvent tap case is safe because it fires on
+  `CFRunLoopGetMain` (main OS thread), not a GCD worker — distinguish this in the
+  comment if the framework is CoreGraphics/CoreFoundation.
+  
+  **Note:** The Documentation task captures this for the developer guide; this task
+  closes the gap at the generated-code level so consumers see the warning at point
+  of use without consulting docs.
+- **Results:** _pending_
+
 ### Future Work
+
+#### Framework Coverage Deepening
 - **Status:** not_started
 - **Dependencies:** at least 2 more sample apps complete (scope clarifies with
   real usage)
@@ -160,6 +192,8 @@ Runtime location: generation/targets/racket-oo/runtime/
   so this task's focus should be deeper per-framework API exercises (construct
   values, call functions, check results) rather than mere load checks.
 - **Results:** _pending_
+
+#### Racket Class System Analysis
 - **Status:** not_started
 - **Dependencies:** all 4 remaining apps complete (real usage reveals which
   patterns matter)
@@ -170,6 +204,8 @@ Runtime location: generation/targets/racket-oo/runtime/
   Identify where the current approach falls short of idiomatic Racket OO and
   propose concrete changes to make better use of the class system.
 - **Results:** _pending_
+
+#### Developer Documentation
 - **Status:** not_started
 - **Dependencies:** none
 - **Description:** Record Racket-specific documentation requirements: `tell`
