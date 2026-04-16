@@ -99,7 +99,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 ### Non-const `char *` params mapped to `_string` (should be `_pointer`) `[emitter, type-mapping]`
-- **Status:** not_started
+- **Status:** done
 - **Priority:** 4 — runtime breakage for any function with writable buffer params
 - **Dependencies:** none
 - **Filed by:** Modaliser-Racket (2026-04-16)
@@ -122,10 +122,16 @@ Runtime location: generation/targets/racket-oo/runtime/
   takes a writable `char *` buffer (e.g., `CFStringGetCString`, `CFURLGetFileSystemRepresentation`,
   `AXValueGetValue`-style out-params). A grep for `_string` in parameter position
   combined with checking the C declaration's const qualification would identify all cases.
-- **Results:** _pending_
+- **Results:** Fixed 2026-04-16. Added `pointee.is_const_qualified()` guard in
+  `type_mapping.rs` at both `map_type_kind` and `map_typedef` sites. Only
+  `const char *` → `CString`; non-const `char *` → `Pointer`. Updated `CString`
+  doc in `type_ref.rs`. Full pipeline re-run confirms `CFStringGetCString.buffer`
+  is now `_pointer`. All 162 workspace tests pass, runtime load harness passes.
+  `TKGetName` (CString return) and `TKRegisterCallback` (callback param) added
+  to snapshot test fixture.
 
 ### Nullable `_string` returns need `(or/c string? #f)` contract `[emitter, contracts]`
-- **Status:** not_started
+- **Status:** done
 - **Priority:** 4 — runtime contract violation for any function returning nullable strings
 - **Dependencies:** none
 - **Filed by:** Modaliser-Racket (2026-04-16)
@@ -154,10 +160,15 @@ Runtime location: generation/targets/racket-oo/runtime/
   `const char *`. The general pattern: any FFI type that maps to a Racket type
   capable of producing `#f` (nullable pointers, `_string` for NULL) should have
   `#f` in the contract.
-- **Results:** _pending_
+- **Results:** Fixed 2026-04-16. `map_contract` in `emit_functions.rs` now emits
+  `(or/c string? #f)` for CString return types, `string?` for params. The fix
+  flows through to class wrappers via `map_return_contract` delegation. Golden
+  files updated for Foundation (nsstring, nsurl, nsfilemanager). 6 new unit tests
+  added (TDD). Confirmed `CFStringGetCStringPtr` contract is now
+  `(or/c string? #f)` in regenerated output.
 
 ### Emit foreign-thread safety warnings in generated C callback bindings `[emitter]`
-- **Status:** not_started
+- **Status:** done
 - **Priority:** 3 — silent SIGILL (exit 132) on Racket CS, non-obvious cause
 - **Dependencies:** none
 - **Description:** Generated `functions.rkt` bindings that expose C callback
@@ -177,7 +188,11 @@ Runtime location: generation/targets/racket-oo/runtime/
   **Note:** The Documentation task captures this for the developer guide; this task
   closes the gap at the generated-code level so consumers see the warning at point
   of use without consulting docs.
-- **Results:** _pending_
+- **Results:** Fixed 2026-04-16. `generate_functions_file` in `emit_functions.rs`
+  now detects `FunctionPointer` and `Block` parameter types and emits a 3-line
+  warning comment before the `define` form. Confirmed in regenerated
+  CoreGraphics `functions.rkt` (CGScreenRegisterMoveCallback, CGErrorSetCallback,
+  etc.). `TKRegisterCallback` added to snapshot test fixture. 2 unit tests (TDD).
 
 ### Future Work
 

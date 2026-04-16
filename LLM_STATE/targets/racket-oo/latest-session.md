@@ -1,56 +1,23 @@
-### Session 20 (2026-04-16T11:34:02Z) — Type mapping, CFSTR extraction, class predicates, expanded harness
+### Session 20 (2026-04-16T12:38:56Z) — Three contract/type bugs fixed; class-return predicates and runtime helpers added
 
-- **What was attempted:** Four parallel improvements to the collection/generation pipeline:
-  (1) type system gaps (CString, CF struct typedefs, Boolean), (2) CFSTR macro constant
-  extraction and emission, (3) class-specific return-type predicates for `provide/contract`,
-  (4) expanded runtime load test harness coverage.
+- **What was attempted:** Close three filed bug tasks (non-const `char *` mapping, nullable `_string` return contracts, foreign-thread callback warnings) plus add class-return predicates backed by `isKindOfClass:` and three new runtime helper modules.
 
 - **What worked:**
-  - `TypeRefKind::CString` added to `type_ref.rs`; `const char *` / `char *` now mapped
-    in `extract_declarations.rs` type_mapping via `is_c_string_pointee()`, emitted as
-    `_string` in `ffi_type_mapping.rs`. Closes FFI marshalling gap for C-string params.
-  - CF record typedefs (e.g. `AXValueRef`) now map to `TypeRefKind::Struct` in
-    `type_mapping.rs`; `ffi_type_mapping.rs` emits `ffi-obj-ref` for struct-data constants
-    in `emit_constants.rs`. `Boolean` primitive now maps to `_bool`.
-  - `is_generic_type_param()` in `ffi_type_mapping.rs` distinguishes ObjC generic type
-    params (`ObjectType`, `KeyType`) from framework-prefixed enum aliases (`AXValueType`,
-    `CGColorRenderingIntent`), fixing over-broad `_id` emission for enum-alias types.
-  - `MacroDefinition` entity handling added to `extract_declarations.rs`:
-    `extract_cfstr_macro_constant()` tokenises the source range and matches `CFSTR("...")`.
-    `ir::Constant` gains `macro_value: Option<String>`. `emit_constants.rs` emits
-    `(_make-cfstr "literal")` using an inlined CFStringCreateWithCString preamble.
-    `is_definition()` guards added for `ObjCProtocolDecl` and `StructDecl` to prevent
-    forward declarations shadowing full definitions.
-  - `collect_return_type_class_names()` and `emit_class_predicates()` added to
-    `emit_class.rs`: every class wrapper now emits inline `(define (nsview? v) ...)`
-    predicates backed by `objc-instance-of?`, and return contracts use these specific
-    predicates instead of `any/c`. Method/property collision detection partitioned into
-    separate class vs. instance name sets to prevent cross-level suppression.
-  - `runtime_load_test.rs` expanded: `nsview-helpers.rkt`, `cf-bridge.rkt`,
-    `ax-helpers.rkt`, `cgevent-helpers.rkt`, `spi-helpers.rkt` added to `RUNTIME_FILES`
-    and `LIBRARY_LOAD_CHECKS`; `ApplicationServices`, `libdispatch`, `Network`,
-    `NetworkExtension` added to `REQUIRED_FRAMEWORKS`. All golden snapshot files updated.
+  - **Non-const `char *` fix** (`collection/crates/extract-objc/src/type_mapping.rs`): Added `is_c_string_pointee()` helper and `pointee.is_const_qualified()` guard at both `map_type_kind` and `map_typedef` call sites. Only `const char *` → `CString`; non-const `char *` (output buffers) → `Pointer`. `CFStringGetCString.buffer` now correctly emits `_pointer` in regenerated output. `type_ref.rs` doc updated to record the distinction.
+  - **Nullable `_string` return contract** (`emit_functions.rs`): `map_contract()` now returns `(or/c string? #f)` for `CString` return types (matching `_string` FFI behaviour where NULL → `#f`) and `string?` for param types. Delegates through `map_return_contract` in `emit_class.rs`. 6 TDD unit tests added; golden files updated for Foundation (nsstring, nsurl, nsfilemanager).
+  - **Foreign-thread safety warnings** (`emit_functions.rs`): `generate_functions_file()` detects `FunctionPointer` and `Block` param types and emits a 3-line `; WARNING:` comment before the `define` form, naming `_cprocedure`, SIGILL, and `#:async-apply`/deadlock. 2 TDD unit tests added. Confirmed in regenerated CoreGraphics `functions.rkt`.
+  - **Class-return predicates** (`emit_class.rs`): `collect_return_type_class_names()` collects unique ObjC class names from method/property return positions; `emit_class_predicates()` emits `(define (nsview? v) (objc-instance-of? v "NSView"))` inline definitions before the `provide/contract` block. `map_return_contract()` uses these predicates for typed return contracts instead of `cpointer?`. Visible in all AppKit golden files (nsbutton.rkt, nscolor.rkt, etc.).
+  - **`objc-instance-of?`** (`objc-base.rkt`): Added `objc_getClass` FFI binding, `class-cache` hash (avoids repeated `objc_getClass` calls), `get-objc-class` helper, and `objc-instance-of?` backed by `isKindOfClass:`. Added to `provide` list.
+  - **`is_definition()` guards** (`extract_declarations.rs`): `ObjCProtocolDecl` and `StructDecl` now call `entity.is_definition()` before extraction, preventing forward declarations from shadowing the full definitions in the dedup sets. `ObjCInterfaceDecl` intentionally unguarded (SDK headers contain declarations, not @implementation definitions).
+  - **New runtime helpers**: `ax-helpers.rkt`, `cgevent-helpers.rkt`, `spi-helpers.rkt` added to `generation/targets/racket-oo/runtime/`; all registered in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in the harness.
+  - Full pipeline re-run after all changes; 65 files changed, all workspace tests pass, runtime load harness passes.
 
-- **What didn't work / wasn't attempted:** Full pipeline re-run not performed in this
-  session — changes are in working directory, not committed. Runtime load harness
-  (`RUNTIME_LOAD_TEST=1`) not re-run against updated output; test correctness assumed
-  from golden file diffs and prior harness structure.
+- **What didn't work:** Nothing notable failed. All three bug tasks closed cleanly with TDD before pipeline re-run.
 
-- **Key learnings / discoveries:**
-  - `is_definition()` is safe for `ObjCProtocolDecl` and `StructDecl` but must NOT be
-    applied to `ObjCInterfaceDecl` — SDK headers use `@interface` (declaration) without
-    `@implementation` (definition), so the guard would drop all classes.
-  - Class-method vs. instance-level property collision detection requires separate name
-    sets; a single shared set incorrectly suppressed class factory methods whose names
-    matched instance boolean properties (e.g. `+[NSMenuItem separatorItem]` vs.
-    `separatorItem: bool`).
-  - CFSTR token extraction requires matching the four-token sequence `CFSTR ( "..." )`
-    because the preprocessor does not expand macros in the AST token stream; raw source
-    tokenization is needed.
-  - `map_return_contract()` using class-specific predicates propagates a stronger contract
-    guarantee at module boundaries, enabling Racket to detect class mismatches at call
-    site rather than deep in `coerce-arg`.
+- **What this suggests trying next:** The three remaining sample apps (Menu Bar Tool, Text Editor, Mini Browser) are the highest-value next targets. Class-return predicates and the new runtime helpers (`ax-helpers`, `cgevent-helpers`) are now in place to support Accessibility and CGEvent-based apps. Text Editor is the most demanding due to block callbacks and NSUndoManager; Menu Bar Tool exercises the no-main-window lifecycle.
 
-- **What this suggests trying next:** Full pipeline re-run to regenerate IR and committed
-  output; runtime load harness re-verification; then proceed to next sample app (Menu Bar
-  Tool or Text Editor).
+- **Key learnings:**
+  - The `is_const_qualified()` check on the pointee (not the pointer itself) is the correct way to distinguish input-string `const char *` from output-buffer `char *` in libclang.
+  - `_string` FFI type silently converts NULL to `#f` — the contract must accept `#f` for return types but not for params (params are always Racket strings passed in).
+  - Inline class predicates (`nsview?` etc.) backed by `isKindOfClass:` are more correct than `cpointer?` for return contracts — they catch wrong-class returns at the boundary rather than accepting any pointer.
+  - Forward-declaration `@protocol Foo;` entities are visited by the Clang AST traversal; `is_definition()` is required to distinguish them from the full `@protocol Foo { ... }` body.
