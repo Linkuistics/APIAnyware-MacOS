@@ -39,7 +39,7 @@ Non-linkable symbols (preprocessor macros, internal-linkage decls, Swift-native 
 
 Adding a new filter: (a) add a skip-reason branch in `non_c_linkable_skip_reason`; (b) add a canary framework to harness coverage. Coverage extension is a discovery mechanism — all known classes above were surfaced by coverage tasks.
 
-Note: dylib-unexported symbols are a separate concern — see "Emit-time filter for dylib-unexported symbols".
+Dylib-unexported symbols are a separate concern — see "Emit-time filter for dylib-unexported symbols".
 
 ### `seen` guard misses `EnumDecl` forward-decls
 `seen_enums` in `extract_declarations.rs` deduplicates by name only. For `CF_ENUM`/`NS_ENUM`, libclang emits both a forward `EnumDecl` (no values) and a defining `EnumDecl` (with values); if the forward decl is visited first it wins the seen-set and the definition is skipped. Fix: add `entity.is_definition()` check in the `EnumDecl` arm before inserting. The same latent bug exists in `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl` — `is_definition()` guard audit for all three is open.
@@ -118,7 +118,7 @@ The harness uses `(dynamic-require \`(file ,p) #f)`, not `(dynamic-require p #f)
 
 ### Contract-based API boundaries
 Every FFI boundary uses `provide/contract`. Three contract mappers:
-- `map_contract` in `emit_functions.rs` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, geometry structs → `any/c`, void → `void?`. Reused by functions, constants, and class wrappers. Note: `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
+- `map_contract` in `emit_functions.rs` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, geometry structs → `any/c`, void → `void?`. Reused by functions, constants, and class wrappers. `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
 - `map_param_contract` in `emit_class.rs` (class wrapper params): `Id`/`Class`/`Instancetype` → `(or/c string? objc-object? #f)` for all object params (always includes `#f`; `cpointer?` excluded), SEL → `string?`, `(or/c procedure? #f)` for blocks, delegates to `map_contract` for primitives.
 - `map_return_contract` in `emit_class.rs` (class wrapper returns): `any/c` for objects, delegates to `map_contract` for void/primitives.
 Protocol files use fixed contracts (see "Protocol file contract shape is fixed").
@@ -130,7 +130,7 @@ Self uses `SELF_CONTRACT` (`"objc-object?"`) in `emit_class.rs` for instance met
 - **Object returns**: `any/c` via `map_return_contract`.
 `objc-object?` in scope via `coerce.rkt` re-exporting `runtime/objc-base.rkt`. Class-property methods omit `self` (see "Class-property methods omit `self`").
 
-### `objc-object?` is a struct predicate, not a cpointer tag
+### `objc-object?` is a struct predicate, not cpointer
 `(cast ptr _pointer _id)` tags the pointer for FFI but does NOT create an `objc-object` struct — it fails the `objc-object?` contract at class wrapper boundaries. For `make-delegate` with `#:param-types`, `'object`-typed callback args are wrapped automatically via `borrow-objc-object`. For `tell`-based code not using `#:param-types`, use `wrap-objc-object` manually. Do NOT use `tell` as a bypass for non-object parameters (int, bool, SEL) — `tell` rejects them with `id->C: argument is not 'id' pointer`.
 
 ### Class-property methods omit `self`
@@ -221,7 +221,7 @@ Documents exactly which generated names the consumer uses; prevents `racket/cont
 ### New sample apps need spec.md only
 Create `apps/<name>/<name>.rkt` and `knowledge/apps/<name>/spec.md` with `# <Display Name>` as the first heading. `bundle-racket-oo` reads the H1 for the canonical display name — kebab→title conversion produces wrong capitalisation for acronyms (e.g. "Ui Controls Gallery"). The integration test in `bundle-racket-oo` auto-discovers apps via directory walk; no test edits needed for a new app.
 
-### `app-menu.rkt` uses raw typed `objc_msgSend` for SEL params
+### `app-menu.rkt` uses typed `objc_msgSend` for SEL params
 `tell` fails on selectors with SEL parameters (`id->C: argument is not 'id' pointer`) — Racket SELs are plain `cpointer`, not `_id`-tagged. `addItemWithTitle:action:keyEquivalent:` and `initWithTitle:action:keyEquivalent:` both hit this. `app-menu.rkt` defines explicitly-typed `objc_msgSend` aliases (`_msg-init-with-title-action-key`, `_msg-add-item-with-title-action-key`, ...) and calls them with `sel_registerName` selectors — the same pattern the generated framework bindings use for non-id-parameter methods.
 
 ### `as-id` casts both branches to `_id`
@@ -276,7 +276,7 @@ Hash mapping selectors to lists of type symbols (`'object`, `'long`, `'int`, `'b
 Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dispatch_source_type_*`, `kCFTypeDictionaryKeyCallBacks`, geometry zero-constants) are emitted as `(define sym (ffi-obj-ref 'sym lib))` — returning the symbol's address. Non-struct constants keep `(get-ffi-obj 'sym lib type)` — dereferencing the symbol. The distinction is in `generate_constants_file` via `is_struct_data_symbol()`. Contract for struct globals is `cpointer?`. `constants.rkt` does not require `type-mapping.rkt` — struct globals use `ffi-obj-ref`, not a typed getter needing a cstruct.
 
 ### `wkwebview.rkt` needs `_NSEdgeInsets` from `type-mapping.rkt`
-`wkwebview.rkt` references `_NSEdgeInsets` (used in `WKWebView` geometry properties), defined and provided by `runtime/type-mapping.rkt`. If `_NSEdgeInsets` is absent from `type-mapping.rkt`'s `(provide ...)` list, the generated file fails to load with an unbound-identifier error. Fix is in place: `_NSEdgeInsets` is in the provide list. See "`type-mapping.rkt` must `provide` every cstruct" for the general procedure.
+`wkwebview.rkt` references `_NSEdgeInsets` (used in `WKWebView` geometry properties), defined and provided by `runtime/type-mapping.rkt`. Without `_NSEdgeInsets` in `type-mapping.rkt`'s `(provide ...)` list, the generated file fails to load with an unbound-identifier error. See "`type-mapping.rkt` must `provide` every cstruct" for the general procedure.
 
 ### `make-dynamic-subclass` guards against duplicate registration
 `objc_allocateClassPair` returns NULL for a name already registered — subsequent `class_addMethod` would crash. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. Required for modules that register a subclass at load time and may be required twice in the same Racket VM.
@@ -293,7 +293,7 @@ ObjC/Swift dual-extracted properties can differ only in casing (e.g., `CGDirectD
 ### `is_generic_type_param` identifies ObjC generic params by case pattern
 Single uppercase letter followed by lowercase chars (e.g., `ObjectType`, `KeyType`) identifies ObjC generic type parameters; framework-prefixed aliases have 2+ uppercase chars (e.g., `AXValueType`). Used in `emit/src/ffi_type_mapping.rs` to prevent mapping framework-defined type aliases as `_uint64`. Replaces a maintained allowlist of 15+ framework prefixes in `map_contract`.
 
-### Property/method collision sets must partition by class vs instance
+### Property/method collision sets partition by class vs instance
 `PropertyNameSets` in `emit_class.rs` separates `class_property_names` and `instance_property_names`. A flat merged set causes cross-level false positives — e.g., an instance bool-property getter name suppressing a same-named class factory method. Class methods collide only with class property names; instance properties whose getter name matches a class method name are suppressed (class method wins).
 
 ### CFSTR constants emitted via `_make-cfstr` module-level helper
