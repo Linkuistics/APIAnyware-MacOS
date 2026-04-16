@@ -91,24 +91,6 @@ Runtime location: generation/targets/racket-oo/runtime/
   See `knowledge/apps/mini-browser/spec.md` and `test-strategy.md`.
 - **Results:** _pending_
 
-### `make-objc-block` Nil Guard
-- **Status:** done
-- **Dependencies:** none
-- **Description:** `make-objc-block` currently defers the crash to call time when
-  passed `#f` — it creates a live block that invokes `(apply #f args...)` on
-  invocation. Fix: return `(values #f #f)` (NULL block pointer + no block-id)
-  for `#f` input. `free-objc-block` must also handle `#f` gracefully (no-op).
-  This guard is required before the Text Editor app, which uses block callbacks
-  for completion handlers and undo/redo integration. Safe workaround until fixed:
-  use `(lambda args (void))` instead of `#f` for optional completion handlers.
-- **Results:** Implementation already landed in `block.rkt` (commit f7a906c) —
-  `(if (not proc) (values #f #f) ...)` guard at top of `make-objc-block`;
-  `free-objc-block` handles `#f` gracefully via `(hash-ref active-blocks #f #f)`
-  returning `#f`. `call-with-objc-block` passes `#f` through correctly to body.
-  Added `runtime_block_nil_guard` test to `runtime_load_test.rs` (gated on
-  `RUNTIME_LOAD_TEST=1`) — 3 checks: make returns `(values #f #f)`, free no-ops,
-  call-with passes `#f` to body. All pass (0.58s). Stale memory entry updated.
-
 ### Non-const `char *` params mapped to `_string` (should be `_pointer`) `[emitter, type-mapping]`
 - **Status:** not_started
 - **Priority:** 4 — runtime breakage for any function with writable buffer params
