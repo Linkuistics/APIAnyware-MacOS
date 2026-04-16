@@ -66,7 +66,7 @@ The `libdispatch` short name does not resolve via dyld's shared cache on macOS e
 Some symbols present in SDK headers do not exist in the live dylib shared cache. Snapshot tests cannot detect this; only the runtime load harness can. When adding new framework coverage, always run the harness before declaring victory.
 
 ### Emit-time filter for dylib-unexported symbols
-Header-declared symbols absent from the live dylib are filtered at emit time, not at collection time — collection-time filtering would require a Rust `dlopen`/`dlsym` probe per symbol. The emit-time filter (`is_libdispatch_unexported` in `shared_signatures.rs`) is a single grep-able location for "what did we omit and why". Libdispatch known-missing: `dispatch_cancel`, `dispatch_notify`, `dispatch_testcancel`, `dispatch_wait`, `pthread_jit_write_with_callback_np`.
+Header-declared symbols absent from the live dylib are filtered at emit time, not at collection time — collection-time filtering would require a Rust `dlopen`/`dlsym` probe per symbol. The emit-time filter (`is_libdispatch_unexported` in `emit_functions.rs`) is a single grep-able location for "what did we omit and why". Libdispatch known-missing: `dispatch_cancel`, `dispatch_notify`, `dispatch_testcancel`, `dispatch_wait`, `pthread_jit_write_with_callback_np`.
 
 ### Framework dylib and `get-ffi-obj` pattern
 `constants.rkt` and `functions.rkt` load the framework dylib as `_fw-lib` (excluded from `provide`) and use `get-ffi-obj`:
@@ -141,7 +141,7 @@ Self uses `SELF_CONTRACT` (`"objc-object?"`) in `emit_class.rs` for instance met
 
 Default `#:retained #f` adds a balanced retain/release pair, safe for borrowed refs. Do NOT use `tell` as a bypass for non-object parameters (int, bool, SEL) — `tell` types all params as `_id` and rejects integers with `id->C: argument is not 'id' pointer`.
 
-File Lister's `(cast col _pointer _id)` works only because it feeds into `tell` directly, never through a `provide/contract` boundary. If the value ever flows through a wrapper, it will need `wrap-objc-object` too.
+File Lister's `(cast col _pointer _id)` works only because it feeds into `tell` directly, never through a `provide/contract` boundary. If the value ever flows through a wrapper, it will need `wrap-objc-object` too. The ceremony is correct but intrusive for app authors — transparent object wrapping for delegate callback args is an open design problem.
 
 ### Class-property methods omit `self`
 Class-property getters/setters have no `self` parameter. `build_export_contracts` drops `self` for `prop.class_property`. `emit_property`'s setter branches substitute `class_name` for `(coerce-arg self)` as the target. TestKit has no class-method properties, so arity divergence is only caught by the real-framework canary (`nsmenuitem.rkt` in `LIBRARY_LOAD_CHECKS`).
