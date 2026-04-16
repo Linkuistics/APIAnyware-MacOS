@@ -45,7 +45,7 @@ Adding a new filter: (a) add a skip-reason branch in `non_c_linkable_skip_reason
 Note: dylib-unexported symbols (header-declared but absent from the live dylib) are a separate concern — see "Header-declared ≠ dylib-exported" and "Emit-time filter for dylib-unexported symbols".
 
 ### EnumDecl forward-decl shadows definition via `seen` guard
-The `seen_enums` HashSet dedup guard in `extract_declarations.rs` checks by name only. For `CF_ENUM`/`NS_ENUM`-generated cursors, libclang emits both a forward `EnumDecl` (no values) and a defining `EnumDecl` (with values); if the forward decl is visited first it wins the seen-set and the definition is skipped. Fix: add `entity.is_definition()` check in the `EnumDecl` arm before inserting. The same latent bug exists in `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl` arms — not yet confirmed to bite in practice, but worth auditing if those cursor types gain seen-set guards.
+The `seen_enums` HashSet dedup guard in `extract_declarations.rs` checks by name only. For `CF_ENUM`/`NS_ENUM`-generated cursors, libclang emits both a forward `EnumDecl` (no values) and a defining `EnumDecl` (with values); if the forward decl is visited first it wins the seen-set and the definition is skipped. Fix: add `entity.is_definition()` check in the `EnumDecl` arm before inserting. The same latent bug exists in `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl` arms — `is_definition()` guard audit for all three is an open task.
 
 ### Unsigned enum extraction requires canonical type check
 `is_unsigned_int_kind` in `extract_declarations.rs` must canonicalize via `get_canonical_type()` before checking the underlying enum type. Without this, `NS_ENUM(NSUInteger, ...)` presents as `Typedef` kind and misses the unsigned branch. Clang's `get_enum_constant_value()` returns `(i64, u64)` — use `.1` (unsigned) for unsigned-backed enums. Values exceeding `i64::MAX` are skipped with `tracing::warn!` rather than wrapped silently (the IR schema is i64; silent wrapping would corrupt value semantics). Pipeline regeneration is required to propagate this to generated output.
@@ -177,10 +177,8 @@ Variadic and inline functions are skipped — they can't be bound via `get-ffi-o
 ### Snapshot testing infrastructure
 `load_enriched_framework(name)` in `snapshot_test.rs` generalizes framework loading — adding a new framework is a file list and test function. AppKit suite has 23 curated golden files covering key class hierarchies (NSResponder→NSView→NSControl→NSButton, NSWindow, table view, menus, text, layout). Rich classes like NSButton and NSWindow exercise more typed message send variants and geometry struct handling than Foundation classes.
 
-### Block nil handling convention
-`make-objc-block` returns `(values #f #f)` when `proc` is `#f` (NULL block pointer + no block-id), rather than wrapping `#f` in a crashing lambda. `free-objc-block` handles `#f` gracefully.
-
-Without the `(values #f #f)` guard, passing `#f` to `make-objc-block` creates a live block that calls `(apply #f args...)` on invocation — a crash deferred to call time. Verify the guard on optional completion-handler parameters specifically, not only the primary proc path. Safe alternative for optional completion handlers: `(lambda args (void))` instead of `#f`.
+### `make-objc-block` crashes on `#f` input
+Passing `#f` to `make-objc-block` creates a live block that calls `(apply #f args...)` on invocation — a crash deferred to call time. Guard needed: return `(values #f #f)` for `#f` input (NULL block pointer + no block-id); `free-objc-block` must also handle `#f` gracefully. Safe workaround until fixed: use `(lambda args (void))` instead of `#f` for optional completion handlers.
 
 ### `function-ptr` satisfies `(or/c cpointer? #f)` contract
 A `function-ptr` constructed from `_cprocedure` satisfies the `(or/c cpointer? #f)` contract emitted for C callback parameters. No raw-symbol fallback is needed for callback params in generated bindings — the generated contract path works as-is.
