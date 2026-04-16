@@ -54,6 +54,8 @@ per-class inline predicates (`nsview?` etc.) generated via `collect_return_type_
 `ObjCInterfaceDecl` intentionally ungarded (declarations only in SDK headers). AX,
 CGEvent, and SPI runtime helpers landed (2026-04-16): `ax-helpers.rkt`,
 `cgevent-helpers.rkt`, `spi-helpers.rkt` — all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
+Non-const `char *` → `_pointer` fix, nullable `_string` return contracts, and
+foreign-thread safety warnings in C callback bindings all landed 2026-04-16.
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -90,116 +92,26 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 #### Mini Browser
 - **Status:** not_started
-- **Dependencies:** none. WebKit OO emission is verified (164 classes,
-  29 protocols, 196 files load cleanly in Racket).
+- **Dependencies:** `wkwebview.rkt` has a generator bug — `_NSEdgeInsets`
+  unbound due to `any_struct_type` not detecting `NSEdgeInsets` in WKWebView's
+  property set; the fix is tracked in the core backlog (filed 2026-04-16).
+  **Option A:** wait for core fix and add `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS`.
+  **Option B (unblocked now):** implement using raw `tell` calls against WKWebView
+  instead of the generated class wrapper — same API, bypasses the broken require.
+  WebKit OO emission is otherwise verified (164 classes, 29 protocols, 196 files
+  load cleanly in Racket).
 - **Description:** Cross-framework WebKit, WKNavigationDelegate, URL handling.
   Tests cross-framework imports (AppKit + WebKit) and delegate protocols from a
   non-Foundation framework.
   See `knowledge/apps/mini-browser/spec.md` and `test-strategy.md`.
 - **Results:** _pending_
 
-### Non-const `char *` params mapped to `_string` (should be `_pointer`) `[emitter, type-mapping]`
-- **Status:** done
-- **Priority:** 4 — runtime breakage for any function with writable buffer params
-- **Dependencies:** none
-- **Filed by:** Modaliser-Racket (2026-04-16)
-- **Description:** The `const char *` → `_string` type mapping fix (2026-04-16)
-  appears to also map non-const `char *` to `_string`. For output buffer parameters,
-  `_string` is wrong — it auto-converts a Racket string to a temporary C `char*`
-  on input, but the C function writes into the buffer and the written data is lost
-  when the temporary is freed. Output buffers need `_pointer` so callers can pass
-  `malloc`'d memory and read back results.
-  
-  **Concrete example:** `CFStringGetCString(theString, buffer, bufferSize, encoding)`
-  — second param `char *buffer` is an output buffer. Generated:
-  `(_fun _pointer _string _int64 _uint32 -> _bool)`. Should be:
-  `(_fun _pointer _pointer _int64 _uint32 -> _bool)`.
-  
-  **Fix:** Only map `const char *` to `_string`; map non-const `char *` to `_pointer`.
-  The const qualifier distinguishes input strings from output buffers at the C level.
-  
-  **Scope:** Likely affects many functions across frameworks — any function that
-  takes a writable `char *` buffer (e.g., `CFStringGetCString`, `CFURLGetFileSystemRepresentation`,
-  `AXValueGetValue`-style out-params). A grep for `_string` in parameter position
-  combined with checking the C declaration's const qualification would identify all cases.
-- **Results:** Fixed 2026-04-16. Added `pointee.is_const_qualified()` guard in
-  `type_mapping.rs` at both `map_type_kind` and `map_typedef` sites. Only
-  `const char *` → `CString`; non-const `char *` → `Pointer`. Updated `CString`
-  doc in `type_ref.rs`. Full pipeline re-run confirms `CFStringGetCString.buffer`
-  is now `_pointer`. All 162 workspace tests pass, runtime load harness passes.
-  `TKGetName` (CString return) and `TKRegisterCallback` (callback param) added
-  to snapshot test fixture.
-
-### Nullable `_string` returns need `(or/c string? #f)` contract `[emitter, contracts]`
-- **Status:** done
-- **Priority:** 4 — runtime contract violation for any function returning nullable strings
-- **Dependencies:** none
-- **Filed by:** Modaliser-Racket (2026-04-16)
-- **Description:** Functions returning `const char *` are mapped to `_string` return
-  type. Racket's `_string` FFI type correctly converts NULL to `#f`, but the
-  generated contract says `string?` (non-nullable), which rejects `#f` at the
-  contract boundary before the caller can handle it.
-  
-  **Concrete example:** `CFStringGetCStringPtr(theString, encoding)` returns
-  `const char *` which is NULL when the internal encoding doesn't match the
-  requested one. Generated contract: `(c-> (or/c cpointer? #f) exact-nonnegative-integer? string?)`.
-  Should be: `(c-> (or/c cpointer? #f) exact-nonnegative-integer? (or/c string? #f))`.
-  
-  At runtime:
-  ```
-  CFStringGetCStringPtr: broke its own contract
-    promised: string?
-    produced: #f
-  ```
-  
-  **Fix:** When a C function's return type maps to `_string`, emit
-  `(or/c string? #f)` in the contract (matching the FFI type's actual behavior).
-  All `const char *` returns are potentially nullable in C.
-  
-  **Scope:** Affects `CFStringGetCStringPtr` and likely every function returning
-  `const char *`. The general pattern: any FFI type that maps to a Racket type
-  capable of producing `#f` (nullable pointers, `_string` for NULL) should have
-  `#f` in the contract.
-- **Results:** Fixed 2026-04-16. `map_contract` in `emit_functions.rs` now emits
-  `(or/c string? #f)` for CString return types, `string?` for params. The fix
-  flows through to class wrappers via `map_return_contract` delegation. Golden
-  files updated for Foundation (nsstring, nsurl, nsfilemanager). 6 new unit tests
-  added (TDD). Confirmed `CFStringGetCStringPtr` contract is now
-  `(or/c string? #f)` in regenerated output.
-
-### Emit foreign-thread safety warnings in generated C callback bindings `[emitter]`
-- **Status:** done
-- **Priority:** 3 — silent SIGILL (exit 132) on Racket CS, non-obvious cause
-- **Dependencies:** none
-- **Description:** Generated `functions.rkt` bindings that expose C callback
-  parameters (function-pointer or block-typed args) should carry an inline Racket
-  comment warning that `_cprocedure` callbacks SIGILL when invoked from a non-main
-  GCD queue or libdispatch worker thread. The crash mode is SIGILL (exit 132) and
-  `#:async-apply` converts it to a deadlock under `nsapplication-run` — both
-  failure modes are non-obvious.
-  
-  **Fix:** In `emit_functions.rs`, detect parameters whose type maps to a function
-  pointer or `_cprocedure` and emit a `; WARNING: callback must run on main OS thread
-  — _cprocedure invoked from a foreign thread SIGILLs on Racket CS` comment above
-  the `define` form. The CGEvent tap case is safe because it fires on
-  `CFRunLoopGetMain` (main OS thread), not a GCD worker — distinguish this in the
-  comment if the framework is CoreGraphics/CoreFoundation.
-  
-  **Note:** The Documentation task captures this for the developer guide; this task
-  closes the gap at the generated-code level so consumers see the warning at point
-  of use without consulting docs.
-- **Results:** Fixed 2026-04-16. `generate_functions_file` in `emit_functions.rs`
-  now detects `FunctionPointer` and `Block` parameter types and emits a 3-line
-  warning comment before the `define` form. Confirmed in regenerated
-  CoreGraphics `functions.rkt` (CGScreenRegisterMoveCallback, CGErrorSetCallback,
-  etc.). `TKRegisterCallback` added to snapshot test fixture. 2 unit tests (TDD).
-
 ### Future Work
 
 #### Framework Coverage Deepening
 - **Status:** not_started
-- **Dependencies:** at least 2 more sample apps complete (scope clarifies with
-  real usage)
+- **Dependencies:** none — "at least 2 more sample apps" dependency satisfied
+  (4 apps done: hello-window, counter, ui-controls-gallery, file-lister).
 - **Description:** Targeted tests for CoreGraphics, AVFoundation, MapKit beyond
   what sample apps cover. Scope TBD — may be better defined after app experience
   reveals which frameworks have surprising emitter edge cases. Note: the runtime
@@ -210,8 +122,8 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 #### Racket Class System Analysis
 - **Status:** not_started
-- **Dependencies:** all 4 remaining apps complete (real usage reveals which
-  patterns matter)
+- **Dependencies:** all 3 remaining sample apps complete (Menu Bar Tool, Text
+  Editor, Mini Browser — real usage reveals which patterns matter)
 - **Description:** Analyse the current racket-oo emitter output and runtime to
   determine whether it truly models macOS APIs using Racket's class system
   (`racket/class`) as much as possible — e.g., using `class*`, `define/public`,
@@ -232,5 +144,7 @@ Runtime location: generation/targets/racket-oo/runtime/
   alternatives (`call-on-main-thread`, `dynamic-place` for I/O), and the
   place-backed async facade pattern for Cocoa integration. Any generated binding
   exposing a C callback type should carry a warning about the foreign-thread
-  constraint.
+  constraint. Also cover: `only-in` for generated binding subsets, auto-terminating
+  Cocoa-loop test pattern, VNC/GUIVisionVMDriver workflow quirks (menu accessibility
+  drill-down requires VNC click, not agent snapshot alone).
 - **Results:** _pending_
