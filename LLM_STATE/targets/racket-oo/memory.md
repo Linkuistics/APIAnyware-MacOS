@@ -1,6 +1,6 @@
 # Memory
 
-### Racket OO IR requirements
+### Racket OO IR schema fields
 `Enum.enum_type` is `TypeRef` (not `String`), `EnumValue.value` is `i64` (not `String`),
 `Method` has `source`/`provenance`/`doc_refs` fields. These differ from the base IR schema.
 
@@ -11,7 +11,7 @@ runtime/generated paths depend on file depth under the target root:
 - Protocol files (`generated/oo/<fw>/protocols/<proto>.rkt`) → `../../../../runtime/`
 - Apps (`apps/<name>/<name>.rkt`) → `../../runtime/` and `../../generated/oo/`
 After any layout refactor, all three categories must be re-validated. Apps carry stale
-prefixes indefinitely because the emitter never touches them.
+prefixes indefinitely — the emitter never touches them.
 
 ### Selector filtering
 Swift-style selectors containing `(` must be filtered out — e.g. `init(string:)` can't
@@ -23,7 +23,7 @@ be called via `objc_msgSend`. The extractor or emitter must exclude these.
 
 ### Collection-time type resolution
 - Category property deduplication by name required (HashSet filter in `extract_declarations.rs`)
-- Typedef aliases must resolve to canonical types at collection time — object pointer typedefs → `Id`/`Class`, primitive typedefs → `Primitive` (including `Boolean` → `bool`), record typedefs → `TypeRefKind::Struct`
+- Typedef aliases resolve to canonical types at collection time: object pointer typedefs → `Id`/`Class`, primitive typedefs → `Primitive` (including `Boolean` → `bool`), record typedefs → `TypeRefKind::Struct`
 
 ### Non-linkable-symbol filters in extractors
 Non-linkable symbols (preprocessor macros, internal-linkage decls, Swift-native identifiers) leak into the IR as `get-ffi-obj` calls that fail at `dlsym` time. All filters route through `non_c_linkable_skip_reason` in the collection crates.
@@ -38,25 +38,25 @@ Non-linkable symbols (preprocessor macros, internal-linkage decls, Swift-native 
 **Open leak classes:**
 
 A. **Bare `c:@<name>` preprocessor macros.** libclang sometimes exposes a macro through a naked `c:@<name>` USR without `@macro@` — neither extractor catches this. Canary: `kAudioServicesDetailIntendedSpatialExperience` (AudioToolbox, `AudioServices.h:401`, ObjC source).
-B. **`c:@Ea@...` anonymous enum members as constants.** Clang's `Ea` USR prefix marks anonymous-enum members; these are extracted as constants. Canary: `nw_browse_result_change_identical` (Network, Swift source).
+B. **`c:@Ea@...` anonymous enum members as constants.** Clang's `Ea` USR prefix marks anonymous-enum members extracted as constants. Canary: `nw_browse_result_change_identical` (Network, Swift source).
 
-Adding a new filter: (a) add a skip-reason branch in `non_c_linkable_skip_reason`; (b) add a canary framework to harness coverage. Coverage extension is itself a discovery mechanism — all open classes above were surfaced by coverage tasks, not bug reports.
+Adding a new filter: (a) add a skip-reason branch in `non_c_linkable_skip_reason`; (b) add a canary framework to harness coverage. Coverage extension is a discovery mechanism — all open classes above were surfaced by coverage tasks.
 
-Note: dylib-unexported symbols (header-declared but absent from the live dylib) are a separate concern — see "Header-declared ≠ dylib-exported" and "Emit-time filter for dylib-unexported symbols".
+Note: dylib-unexported symbols are a separate concern — see "Emit-time filter for dylib-unexported symbols".
 
-### EnumDecl forward-decl shadows definition via `seen` guard
-The `seen_enums` HashSet dedup guard in `extract_declarations.rs` checks by name only. For `CF_ENUM`/`NS_ENUM`-generated cursors, libclang emits both a forward `EnumDecl` (no values) and a defining `EnumDecl` (with values); if the forward decl is visited first it wins the seen-set and the definition is skipped. Fix: add `entity.is_definition()` check in the `EnumDecl` arm before inserting. The same latent bug exists in `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl` arms — `is_definition()` guard audit for all three is an open task.
+### `seen` guard misses `EnumDecl` forward-decls
+`seen_enums` in `extract_declarations.rs` deduplicates by name only. For `CF_ENUM`/`NS_ENUM`, libclang emits both a forward `EnumDecl` (no values) and a defining `EnumDecl` (with values); if the forward decl is visited first it wins the seen-set and the definition is skipped. Fix: add `entity.is_definition()` check in the `EnumDecl` arm before inserting. The same latent bug exists in `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl` — `is_definition()` guard audit for all three is open.
 
-### Unsigned enum extraction requires canonical type check
-`is_unsigned_int_kind` in `extract_declarations.rs` must canonicalize via `get_canonical_type()` before checking the underlying enum type. Without this, `NS_ENUM(NSUInteger, ...)` presents as `Typedef` kind and misses the unsigned branch. Clang's `get_enum_constant_value()` returns `(i64, u64)` — use `.1` (unsigned) for unsigned-backed enums. Values exceeding `i64::MAX` are skipped with `tracing::warn!` rather than wrapped silently (the IR schema is i64; silent wrapping would corrupt value semantics). Pipeline regeneration is required to propagate this to generated output.
+### Unsigned enums need `get_canonical_type()` check
+`is_unsigned_int_kind` in `extract_declarations.rs` must canonicalize via `get_canonical_type()` before checking the underlying enum type. Without this, `NS_ENUM(NSUInteger, ...)` presents as `Typedef` kind and misses the unsigned branch. Clang's `get_enum_constant_value()` returns `(i64, u64)` — use `.1` (unsigned) for unsigned-backed enums. Values exceeding `i64::MAX` are skipped with `tracing::warn!` (the IR schema is i64; silent wrapping would corrupt value semantics). Pipeline regeneration is required to propagate this to generated output.
 
-### libclang canonicalises symlinked subframeworks to top-level path
-ColorSync, CoreGraphics, CoreText, and ImageIO live under `ApplicationServices.framework` as symlinks, but libclang resolves their declarations to the canonical top-level framework paths (`System/Library/Frameworks/CoreGraphics.framework/...`). Only genuinely non-symlinked subframeworks (HIServices, ATS, PrintCore) need an allowlist entry in `is_from_framework`. The symlinked ones are already accepted via their own top-level entries.
+### libclang resolves symlinked subframeworks to canonical path
+ColorSync, CoreGraphics, CoreText, and ImageIO live under `ApplicationServices.framework` as symlinks, but libclang resolves their declarations to the canonical top-level framework paths (`System/Library/Frameworks/CoreGraphics.framework/...`). Only genuinely non-symlinked subframeworks (HIServices, ATS, PrintCore) need an allowlist entry in `is_from_framework`. The symlinked ones are accepted via their own top-level entries.
 
 ### Subframework allowlist in `sdk.rs`
 `SUBFRAMEWORK_ALLOWLIST = &["ApplicationServices"]` in `sdk.rs`'s `is_from_framework` accepts header paths under that framework containing `/Headers/`. Quartz is excluded: the `clang-2.0.0` crate panics on a UTF-8 error when visiting a Quartz subframework path during a full collect run. Expanding to Carbon/CoreServices requires fixing that panic first.
 
-### Synthetic pseudo-framework: structure and emitter hookup
+### Synthetic pseudo-framework structure and hookup
 For system headers outside the `.framework` tree (e.g. libdispatch, pthread): checked-in umbrella header at `collection/crates/extract-objc/synthetic-frameworks/<name>/<name>.h`; `sdk.rs` appends a synthetic `FrameworkInfo` via `synthetic_frameworks()`; `is_from_framework` branches on the synthetic name to accept the relevant `usr/include/` paths. Emitter hookup: `framework_ffi_lib_arg` in `shared_signatures.rs` maps the synthetic framework name to the actual dylib short name. No other emitter changes needed.
 
 ### libdispatch ffi-lib must be `"libSystem"`
@@ -74,7 +74,7 @@ Header-declared symbols absent from the live dylib are filtered at emit time, no
 - Functions: `(define Name (get-ffi-obj 'Name _fw-lib (_fun arg-types... -> ret-type)))`
 Geometry struct constants (`NSZeroPoint`/`NSZeroRect`) map correctly via alias handling in `RacketFfiTypeMapper`.
 
-### Require block shape for functions/constants
+### Require block shape for functions and constants
 Both files always require `ffi/unsafe`, `ffi/unsafe/objc`, and `racket/contract` (renamed to dodge the `->` conflict), regardless of whether any binding uses `_id`. Unconditional is cheaper than per-binding Id-detection drift. `type-mapping.rkt` is a conditional require for `functions.rkt` only — emitted when `any_struct_type` (in `shared_signatures.rs`) returns true. `constants.rkt` never requires `type-mapping.rkt` — struct-typed globals use `ffi-obj-ref`, so no cstruct type is needed. Forgetting `ffi/unsafe/objc` is invisible until a file with an `_id`-typed binding is loaded.
 
 ### Framework subsets differ for functions vs classes
@@ -91,8 +91,7 @@ Contract arrows become `(c-> arg-contract ... ret-contract)`. Applies to `functi
 ### `type-mapping.rkt` must `provide` every cstruct
 Every `define-cstruct` in `runtime/type-mapping.rkt` must appear in its `(provide ...)` list. Current exports: `_NSPoint`, `_NSSize`, `_NSRect`, `_NSRange`, `_CGPoint`, `_CGSize`, `_CGRect`, `_NSEdgeInsets`, `_NSDirectionalEdgeInsets`, `_NSAffineTransformStruct`, `_CGAffineTransform`, `_CGVector`. Adding a geometry struct: (1) `define-cstruct`, (2) add to provide, (3) add to `is_known_geometry_struct` in `emit/src/ffi_type_mapping.rs`. Struct detection goes through `any_struct_type(type_refs, mapper)` in `shared_signatures.rs`, used by class wrappers, `emit_functions.rs`, and `emit_constants.rs` — a one-allowlist-edit operation.
 
-### Snapshot tests insufficient; runtime load required
-Text-level snapshot tests are necessary but insufficient. Load-time failures cascade — fixing one missing require reveals the next, and `unbound identifier` masks several orthogonal bugs. Three verification layers are required; none alone suffices:
+### Three verification layers; none alone suffices
 - **Snapshot tests** — verify text shape
 - **Runtime load harness** — verify files load and link (see "Runtime load verification harness")
 - **Static cross-reference** — verify FFI binding types agree with IR (see "Match `tell` `#:type` to IR return type")
@@ -145,7 +144,7 @@ Class-property getters/setters have no `self` parameter. `build_export_contracts
 
     (tell #:type _void target args)
 
-Same applies to property setters with `Id`-shaped value types (still `_void`-returning). TypedMsgSend dispatch already handles this via `mapper.map_type`. The two emit sites needing explicit `#:type` are the `_id`-typed property setter (`emit_property`) and the Tell-dispatch void-method body (`emit_method`, `ret_is_void` branch). Test pattern: assert `tell #:type _void` present AND `(void (tell` absent.
+Same applies to property setters with `Id`-shaped value types (still `_void`-returning). TypedMsgSend dispatch handles this via `mapper.map_type`. The two emit sites needing explicit `#:type` are the `_id`-typed property setter (`emit_property`) and the Tell-dispatch void-method body (`emit_method`, `ret_is_void` branch). Test pattern: assert `tell #:type _void` present AND `(void (tell` absent.
 
 ### Contract export plumbing in class wrappers
 `build_export_contracts` in `emit_class.rs` pre-computes `(name, contract)` pairs for constructors, properties, instance methods, and class methods, then emits a single `provide/contract` form. New exported bindings must be added to `build_export_contracts` — otherwise they won't be provided.
@@ -154,7 +153,7 @@ Same applies to property setters with `Id`-shaped value types (still `_void`-ret
 Protocol files export exactly two bindings:
 - `make-<proto>` — `(->* () () #:rest (listof (or/c string? procedure?)) any/c)`
 - `<proto>-selectors` — `(listof string?)`
-No per-method contracts exist — delegate handlers are user-supplied lambdas, not emitted bindings. The contract mappers from `emit_functions.rs` don't apply. Constants `MAKE_DELEGATE_CONTRACT` and `SELECTOR_LIST_CONTRACT` in `emit_protocol.rs` hold the strings.
+No per-method contracts exist — delegate handlers are user-supplied lambdas, not emitted bindings. Constants `MAKE_DELEGATE_CONTRACT` and `SELECTOR_LIST_CONTRACT` in `emit_protocol.rs` hold the strings.
 
 ### `provide/contract` rest-arg limitation
 `provide/contract` cannot express positional alternation inside `#:rest` — `(listof (or/c string? procedure?))` catches type errors but cannot enforce the string/procedure pairing `make-<proto>` requires. Stronger enforcement needs a dependent contract combinator.
@@ -172,13 +171,13 @@ Variadic and inline functions are skipped — they can't be bound via `get-ffi-o
 `load_enriched_framework(name)` in `snapshot_test.rs` generalizes framework loading — adding a new framework is a file list and test function. AppKit suite has 23 curated golden files covering key class hierarchies (NSResponder→NSView→NSControl→NSButton, NSWindow, table view, menus, text, layout). Rich classes like NSButton and NSWindow exercise more typed message send variants and geometry struct handling than Foundation classes.
 
 ### `make-objc-block` crashes on `#f` input
-Passing `#f` to `make-objc-block` creates a live block that calls `(apply #f args...)` on invocation — a crash deferred to call time. Guard needed: return `(values #f #f)` for `#f` input (NULL block pointer + no block-id); `free-objc-block` must also handle `#f` gracefully. Safe workaround until fixed: use `(lambda args (void))` instead of `#f` for optional completion handlers.
+Passing `#f` to `make-objc-block` creates a live block that calls `(apply #f args...)` on invocation — a crash deferred to call time. Guard needed: return `(values #f #f)` for `#f` input (NULL block pointer + no block-id); `free-objc-block` must also handle `#f` gracefully. Safe workaround: use `(lambda args (void))` instead of `#f` for optional completion handlers.
 
 ### `function-ptr` satisfies `(or/c cpointer? #f)` contract
-A `function-ptr` constructed from `_cprocedure` satisfies the `(or/c cpointer? #f)` contract emitted for C callback parameters. No raw-symbol fallback is needed for callback params in generated bindings — the generated contract path works as-is.
+A `function-ptr` constructed from `_cprocedure` satisfies the `(or/c cpointer? #f)` contract emitted for C callback parameters. No raw-symbol fallback is needed for callback params in generated bindings.
 
 ### Racket green threads dead under `nsapplication-run`
-All Racket green-thread primitives (`thread`, `sleep`, `sync`, `sync/timeout`, `thread-wait`, `semaphore-wait`) are non-functional once `nsapplication-run` is called. The Cocoa run loop blocks the Racket place main thread, so the scheduler never advances — `(thread ...)` bodies silently never execute. Alternatives: `call-on-main-thread` / `call-on-main-thread-after` (GCD dispatch), synchronous main-thread execution, or shell-level watchdogs. Any code using `(thread ...)` alongside `nsapplication-run` is broken by design.
+All Racket green-thread primitives (`thread`, `sleep`, `sync`, `sync/timeout`, `thread-wait`, `semaphore-wait`) are non-functional once `nsapplication-run` is called. The Cocoa run loop blocks the Racket place main thread, so the scheduler never advances — `(thread ...)` bodies silently never execute. Alternatives: `call-on-main-thread` / `call-on-main-thread-after` (GCD dispatch), synchronous main-thread execution, or shell-level watchdogs.
 
 ### GCD main-thread dispatch
 `main-thread.rkt` provides `on-main-thread?`, `call-on-main-thread` (sync if on main, async via `dispatch_async_f` otherwise), and `call-on-main-thread-after` (delayed via `dispatch_after_f`). FFI details:
@@ -186,19 +185,19 @@ All Racket green-thread primitives (`thread`, `sleep`, `sync`, `sync/timeout`, `
 - Module-level `function-ptr` prevents GC collection of the C callback pointer
 
 ### Platform-availability filters at all four levels
-The platform-availability filter operates at classes, protocols, methods, and properties. No further extraction-level removals of this class are expected. Both extractors record filter decisions in `skipped_symbols` with tagged reasons: `internal_linkage`, `platform_unavailable_macos`, `swift_native`, `preprocessor_macro`, `anonymous_enum_member`. Grep `skipped_symbols` in collected IR to debug missing-symbol issues.
+The platform-availability filter operates at classes, protocols, methods, and properties. Both extractors record filter decisions in `skipped_symbols` with tagged reasons: `internal_linkage`, `platform_unavailable_macos`, `swift_native`, `preprocessor_macro`, `anonymous_enum_member`. Grep `skipped_symbols` in collected IR to debug missing-symbol issues.
 
-### Wire-format JSON changes need golden file regeneration
+### Wire-format changes require golden file regeneration
 Serde annotations on core IR structs define the JSON wire format. Field name/alias/removal changes update Rust source across all crates but do not automatically update golden files — those require `UPDATE_GOLDEN=1`. Design-doc examples and tests asserting on `serde_json::to_string` output are tightly coupled to serde annotations.
 
 ### `_cprocedure` callbacks unsafe from foreign OS threads
-Racket CS SIGILLs (exit 132) when a `_cprocedure` callback is invoked from an OS thread not registered with the Racket VM (e.g., GCD worker pool threads from libdispatch). `#:async-apply` converts the crash to a deadlock under `nsapplication-run` because the async-apply queue drains on the main Racket thread, which is stuck in the Cocoa run loop. The CGEvent tap callback is NOT a counterexample — it fires on the main OS thread via `CFRunLoopGetMain`, not on a foreign thread. Implication for generated bindings: any binding exposing a C callback type should document this constraint and warn against installing the callback on a non-main GCD queue or libdispatch worker.
+Racket CS SIGILLs (exit 132) when a `_cprocedure` callback is invoked from an OS thread not registered with the Racket VM (e.g., GCD worker pool threads from libdispatch). `#:async-apply` converts the crash to a deadlock under `nsapplication-run` because the async-apply queue drains on the main Racket thread, which is stuck in the Cocoa run loop. The CGEvent tap callback is NOT a counterexample — it fires on the main OS thread via `CFRunLoopGetMain`, not on a foreign thread. Any binding exposing a C callback type should warn against installing the callback on a non-main GCD queue or libdispatch worker.
 
 ### `call-in-os-thread` safe for pure Racket/file-I/O only
 `ffi/unsafe/os-thread` (`call-in-os-thread`) works for closures, list/hash ops, `parameterize`, file I/O (`open-input-file`, etc.). Segfaults on `tcp-connect`, `subprocess`/`system`, and anything using Racket's place scheduler I/O event pump. `net/url` uses TCP, transitively unsafe. Useful for CPU-bound work (fuzzy matching, serialization).
 
 ### `dynamic-place` for I/O off the main thread
-Each `dynamic-place` is a separate Racket VM on its own OS thread with its own scheduler. `net/url`, `tcp-connect`, `subprocess` all work correctly. Place-channel semantics: `place-channel-put` is fully buffered (non-blocking sender), `place-channel-get` blocks (fatal on main thread under `nsapplication-run`), `sync/timeout 0` on a place-channel is a non-blocking try-receive (empirically scheduler-independent — the only `sync`-family form safe under `nsapplication-run`). The "place-backed async facade with main-thread polling tick" pattern (Modaliser `services/http.rkt`) generalizes: place does I/O, main thread polls via `place-channel-try-get` on a `call-on-main-thread-after` timer. Main thread never blocks.
+Each `dynamic-place` runs a separate Racket VM on its own OS thread with its own scheduler. `net/url`, `tcp-connect`, `subprocess` work correctly inside places. Place-channel semantics: `place-channel-put` is fully buffered (non-blocking sender), `place-channel-get` blocks (fatal on main thread under `nsapplication-run`), `sync/timeout 0` on a place-channel is a non-blocking try-receive safe under `nsapplication-run`. Pattern: place does I/O; main thread polls via `place-channel-try-get` on a `call-on-main-thread-after` timer — main thread never blocks. (Reference impl: Modaliser `services/http.rkt`.)
 
 ### macOS widget quirks (Racket apps)
 - Radio button mutual exclusion requires manual target-action delegate
@@ -206,7 +205,7 @@ Each `dynamic-place` is a separate Racket VM on its own OS thread with its own s
 - NSStepper inside plain NSView in NSStackView may not receive clicks — add directly to stack view
 - NSScrollView `dy=+50` scrolls toward top (toward Cocoa unflipped origin) — opposite of natural scrolling mental model
 
-### `only-in` for generated `functions.rkt`/`constants.rkt` subsets
+### `only-in` for generated binding subsets
 Use `only-in` rather than wholesale `require` when consuming a subset of generated bindings:
 
     (only-in "../bindings/generated/oo/coregraphics/functions.rkt"
@@ -222,7 +221,7 @@ Documents exactly which generated names the consumer uses; prevents `racket/cont
 ### `NSProcessInfo setProcessName:` ignored on modern macOS
 `setProcessName:` has no effect on the bold app-name slot in the macOS menu bar. `CFBundleName` in `Info.plist` is the only path. `racket script.rkt` direct execution always shows "racket" in the menu bar. Bundling is required for correct app identity, not optional polish.
 
-### New sample app: spec.md only, no test edits
+### New sample apps need spec.md only
 Create `apps/<name>/<name>.rkt` and `knowledge/apps/<name>/spec.md` with `# <Display Name>` as the first heading. `bundle-racket-oo` reads the H1 for the canonical display name — kebab→title conversion produces wrong capitalisation for acronyms (e.g. "Ui Controls Gallery"). The integration test in `bundle-racket-oo` auto-discovers apps via directory walk; no test edits needed for a new app.
 
 ### `app-menu.rkt` uses raw typed `objc_msgSend` for SEL params
@@ -235,10 +234,10 @@ Create `apps/<name>/<name>.rkt` and `knowledge/apps/<name>/spec.md` with `# <Dis
 `guivision agent snapshot --window "Menu Bar"` only surfaces the top-level menu items (Apple, app-name). The submenu is not in the accessibility tree until the menu opens. To verify the full menu content, click the menu title via VNC (`guivision input click --connect spec.json X Y`) then `screenshot` the region. The agent's `press --role menu-item --label "Counter"` query returns `No element found matching query` because accessibility doesn't treat menu bar items as directly-pressable in the default snapshot mode.
 
 ### GUIVisionVMDriver VNC password recovery
-`vm-start.sh --viewer` exports `GUIVISION_VNC_PASSWORD` but the value does NOT survive pipeline subshells (`source ... | tail`) — the sourced env vars only exist in the pipeline-subshell scope. Source the script with output redirected to a file (`source vm-start.sh > /tmp/start.log 2>&1`) so the env ends up in the parent shell. Persist `$GUIVISION_VNC`, `$GUIVISION_VNC_PASSWORD`, and `$GUIVISION_AGENT` to `/tmp/gv_*` files plus a `/tmp/gv_connect.json` connect spec; later `guivision` calls read them via `--connect /tmp/gv_connect.json` for authenticated VNC (screenshot, find-text, input click). The password is generated fresh per `tart run`, so recovery after a lost sourcing requires re-booting the VM.
+`vm-start.sh --viewer` exports `GUIVISION_VNC_PASSWORD` but the value does NOT survive pipeline subshells — source the script with output redirected to a file (`source vm-start.sh > /tmp/start.log 2>&1`) so the env ends up in the parent shell. Persist `$GUIVISION_VNC`, `$GUIVISION_VNC_PASSWORD`, and `$GUIVISION_AGENT` to `/tmp/gv_*` files plus a `/tmp/gv_connect.json` connect spec; later `guivision` calls read them via `--connect /tmp/gv_connect.json` for authenticated VNC. The password is generated fresh per `tart run` — recovery after a lost sourcing requires re-booting the VM.
 
 ### Auto-terminating Cocoa-loop test pattern
-Tests that must enter `nsapplication-run` (CGEvent tap, delegate reentry, full lifecycle) need a structured exit strategy to avoid hanging the test runner:
+Tests entering `nsapplication-run` need a structured exit to avoid hanging the test runner:
 
 1. Inside `applicationDidFinishLaunching:` body, register a **safety-net** first:
    `(call-on-main-thread-after 5.0 (lambda () (eprintf "safety net: test timed out\n") (exit 1)))`
@@ -250,7 +249,7 @@ Tests that must enter `nsapplication-run` (CGEvent tap, delegate reentry, full l
 Outcomes: assertions pass → `(exit 0)` → `[OK]`. Assertion raises (caught by `with-handlers`) → safety net fires → `(exit 1)` → `[FAIL]`. Genuine hang → test runner's `timeout -k 1 30` → `[TIMEOUT]`. The safety-net timeout (5 s) must be longer than the normal-path delay (0.5 s).
 
 ### ObjC type encoding `q` is NSInteger on 64-bit
-NSInteger is `typedef long NSInteger` on 64-bit Apple platforms; clang encodes `long` as `q` (not `l`). Delegate trampoline mapping: `'long → "q"` in both Swift `typeEncoding` and Racket `return-kind->string`. No separate `'nsinteger` kind is needed. This is the correct encoding for `numberOfRowsInTableView:` and other NSInteger-returning delegate methods.
+NSInteger is `typedef long NSInteger` on 64-bit Apple platforms; clang encodes `long` as `q` (not `l`). Delegate trampoline mapping: `'long → "q"` in both Swift `typeEncoding` and Racket `return-kind->string`. No separate `'nsinteger` kind is needed.
 
 ### Delegate return kinds `'int` and `'long` supported
 DelegateBridge.swift defines `impInt0..3` (returning `Int32`) and `impLong0..3` (returning `Int64`). `selectIMP` and `typeEncoding` extended with `("int", N)` / `("long", N)` cases. `delegate.rkt` mirrors in `return-kind->string`, `make-delegate/swift`, `make-delegate/racket`, `delegate-set!`, plus `type-encoding-int` / `type-encoding-long` helpers. `'long` is the correct kind for NSInteger-returning delegate methods on 64-bit Apple platforms (see "ObjC type encoding `q` is NSInteger on 64-bit"). Protocol emitter generates these as entries in the `#:param-types` hash via `param_type_symbol` in `emit_protocol.rs`.
@@ -264,30 +263,23 @@ Hash mapping selectors to lists of type symbols (`'object`, `'long`, `'int`, `'b
 ### `objc-autorelease` converts owned pointer to autoreleased
 `objc-autorelease` in `objc-base.rkt` converts a +1 owned pointer to +0 autoreleased. Used when delegate callbacks return ObjC objects (e.g. NSString from `tableView:objectValueForTableColumn:row:`).
 
-### `->string` converts NSString to Racket string polymorphically
+### `->string` converts NSString polymorphically
 `->string` in `runtime/type-mapping.rkt` (re-exported via `coerce.rkt`) accepts `objc-object`, `cpointer`, `string?`, or `#f`. Replaces per-app `ns->str` helpers.
 
 ### All 4 sample apps use zero `ffi/unsafe` imports
-`hello-window`, `counter`, `ui-controls-gallery`, `file-lister` contain no `ffi/unsafe` requires. Achieved via `#:param-types` auto-wrapping, `->string` for NSString returns, and SEL-as-string at class wrapper boundaries. VM-verified.
+`hello-window`, `counter`, `ui-controls-gallery`, `file-lister` contain no `ffi/unsafe` requires. Achieved via `#:param-types` auto-wrapping, `->string` for NSString returns, and SEL-as-string at class wrapper boundaries.
 
 ### `dynamic-class.rkt` exports libobjc subclass surface
 `generation/targets/racket-oo/runtime/dynamic-class.rkt` exports: `objc-get-class`, `allocate-subclass`, `add-method!`, `register-subclass!`, `get-instance-method`, `method-type-encoding`, and `make-dynamic-subclass` (chains allocate→add-method→register in the correct order). Type aliases `_Class`/`_SEL`/`_Method`/`_IMP` exported for raw-msgSend consumers. Must be added to both `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in the harness.
 
 ### libdispatch `_id` params emitted as `_pointer`
-`dispatch_queue_t`, `dispatch_group_t`, etc. resolve to `id` in the IR (under `OS_OBJECT_USE_OBJC=1`), but no wrapper classes exist in the generated bindings. The emitter maps `_id` → `_pointer` in libdispatch's `functions.rkt` so consumers can pass raw cpointers (from `ffi-obj-ref`, `dlsym`, etc.) without a `(cast ... _pointer _id)` ceremony. The ABI is identical. This override is scoped to `framework == "libdispatch"` in `generate_functions_file`. Non-libdispatch frameworks keep `_id`. If future frameworks gain the same OS-object pattern (e.g. `xpc_object_t`), extend the same override.
+`dispatch_queue_t`, `dispatch_group_t`, etc. resolve to `id` in the IR (under `OS_OBJECT_USE_OBJC=1`), but no wrapper classes exist in the generated bindings. The emitter maps `_id` → `_pointer` in libdispatch's `functions.rkt` so consumers can pass raw cpointers without a `(cast ... _pointer _id)` ceremony. The ABI is identical. This override is scoped to `framework == "libdispatch"` in `generate_functions_file`. If future frameworks gain the same OS-object pattern (e.g. `xpc_object_t`), extend the same override.
 
 ### Struct-typed global constants use `ffi-obj-ref`
 Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dispatch_source_type_*`, `kCFTypeDictionaryKeyCallBacks`, geometry zero-constants) are emitted as `(define sym (ffi-obj-ref 'sym lib))` — returning the symbol's address. Non-struct constants keep `(get-ffi-obj 'sym lib type)` — dereferencing the symbol. The distinction is in `generate_constants_file` via `is_struct_data_symbol()`. Contract for struct globals is `cpointer?`. `constants.rkt` does not require `type-mapping.rkt` — struct globals use `ffi-obj-ref`, not a typed getter needing a cstruct.
 
-### `wkwebview.rkt` requires `type-mapping.rkt` for `_NSEdgeInsets`
-`wkwebview.rkt` references `_NSEdgeInsets` (used in `WKWebView` geometry properties).
-`_NSEdgeInsets` is defined and provided by `runtime/type-mapping.rkt`. If `type-mapping.rkt`
-is not transitively required — or if `_NSEdgeInsets` is absent from `type-mapping.rkt`'s
-`(provide ...)` list — the generated file fails to load with an unbound-identifier error,
-preventing any file that requires WKWebView from loading. The fix is already in place:
-`_NSEdgeInsets` is in `type-mapping.rkt`'s provide list. This note documents the symptom so
-future geometry-struct additions (see "`type-mapping.rkt` must `provide` every cstruct") know
-to verify provide coverage before declaring the struct done.
+### `wkwebview.rkt` needs `_NSEdgeInsets` from `type-mapping.rkt`
+`wkwebview.rkt` references `_NSEdgeInsets` (used in `WKWebView` geometry properties), defined and provided by `runtime/type-mapping.rkt`. If `_NSEdgeInsets` is absent from `type-mapping.rkt`'s `(provide ...)` list, the generated file fails to load with an unbound-identifier error. Fix is in place: `_NSEdgeInsets` is in the provide list. See "`type-mapping.rkt` must `provide` every cstruct" for the general procedure.
 
 ### `make-dynamic-subclass` guards against duplicate registration
 `objc_allocateClassPair` returns NULL for a name already registered — subsequent `class_addMethod` would crash. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. Required for modules that register a subclass at load time and may be required twice in the same Racket VM.
@@ -295,7 +287,7 @@ to verify provide coverage before declaring the struct done.
 ### Record typedefs extract to `TypeRefKind::Struct`
 `map_typedef` in `extract-objc` emits `TypeRefKind::Struct { name }` (not `Alias`) for `TypeKind::Record` typedefs. Enables `is_struct_data_symbol` in the constants emitter to recognize CF struct globals (`kCFTypeDictionaryKeyCallBacks`, `NSInt*CallBacks`, geometry zero-constants like `NSZeroPoint`/`NSEdgeInsetsZero`) and emit `ffi-obj-ref` instead of `get-ffi-obj`. Requires re-collect to propagate.
 
-### `const char *` maps to `TypeRefKind::CString`, emits `_string`/`string?`
+### `const char *` maps to `TypeRefKind::CString`
 `is_c_string_pointee()` in `extract-objc` accepts `CharS | CharU` pointees only — excludes `signed char` / `unsigned char`. IR carries `TypeRefKind::CString`; FFI mapper emits `_string`; contract mapper emits `string?`. Requires re-collect to propagate to generated files.
 
 ### Property dedup uses Racket getter name, not IR name
