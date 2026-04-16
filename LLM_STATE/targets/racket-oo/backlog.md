@@ -85,110 +85,77 @@ Runtime location: generation/targets/racket-oo/runtime/
  See `knowledge/apps/mini-browser/spec.md` and `test-strategy.md`.
 - **Results:** _pending_
 ### Contract Tightening (Stretch)
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (promoted from embedded blocker inside class predicates task).
 - **Dependencies:** none.
-- **Description:** Before implementing class-specific return predicates (`nsview?`,
- `nsstring?`, etc.), decide the predicate hosting model. Three options:
- (A) Runtime factory, inline per class file — simplest, duplicates predicate
-   definitions across every class file that references a given class. Compile
-   cost O(references).
- (B) Central generated barrel (`runtime/class-predicates.rkt` or emitter-generated
-   under `generated/`) — cleanest consumer side, but adds a compilation
-   bottleneck (every class file requires it).
- (C) Per-class-file predicate with cross-class requires — mirrors IR semantics,
-   but introduces new dependency edges between class wrappers (currently none),
-   with load-order implications.
- Evaluate each option against: compilation time impact, dependency graph
- complexity, golden file churn, and maintainability. Record the decision in a
- memory entry. The class predicates implementation task cannot start until this
- decision is made.
-- **Results:** _pending_
-- **Status:** not_started
-- **Dependencies:** none (`_id` nullable tightening is complete; scope
- notes confirm different golden cells, so no amortisation benefit from
- sequencing). Predicate hosting model decision (task above) must be
- recorded before coding starts.
+- **Description:** Decide predicate hosting model for class-specific return predicates.
+- **Results:** Complete 2026-04-16. **Option A chosen** (runtime factory, inline per
+ class file). Rationale: scope notes confirm predicates only affect return positions
+ (all params flow through `coerce-arg`), so duplication is bounded. Option C
+ eliminated by circular dependency risk (NSString methods return NSString). Option B
+ adds compilation bottleneck disproportionate to narrow scope. Implementation plan:
+ `objc-instance-of?` primitive in `runtime/objc-base.rkt` (backed by
+ `class_isKindOfClass:` via libobjc); each class file defines its own predicate as
+ `(define (nsview? v) (objc-instance-of? v "NSView"))` — one-liner, no new requires,
+ no dependency edges. `map_return_contract` gains a `TypeRefKind::Class { name }`
+ branch emitting the class predicate instead of `any/c`. Decision recorded in memory.
+- **Status:** done
+- **Dependencies:** Predicate hosting model decision — satisfied (Option A chosen).
 - **Promoted from:** residual sub-item 3 of the retired
  "Tighten per-class method wrapper contracts" task.
-- **Description:** Generate `nsview?`, `nsstring?`, etc. predicates
- from the class files themselves and expose them as runtime type-test
- primitives. Use them in contract positions where the IR knows the
- declared type **and** where ergonomic coercion isn't needed (i.e.
- returns and non-coerced params). Consumers gain a runtime predicate
- they currently lack. Marked stretch because the ergonomics win is
- real but narrow.
-- **Scope notes (2026-04-15):**
- - **"Non-coerced params" is empty.** Every object param flows through
-  `coerce-arg`, so this task only affects `map_return_contract` +
-  return positions. Different golden cells from the `_id` task, no overlap.
- - **Runtime has zero class introspection.** A real `nsview?` predicate needs
-  a new runtime primitive (probably `objc-instance-of?` backed by
-  `class_isKindOfClass:` via `objc_msgSend`, so subclass instances
-  satisfy the parent predicate). This is new code with its own test surface.
- - **`map_return_contract` update:** class-aware branch for
-  `TypeRefKind::Class { name }` (emit the class-specific predicate),
-  `objc-object?` fallback for `Id`/`Instancetype`.
- - **Harness coverage:** needs a new runtime-load check that verifies the
-  predicate passes — existing load-only checks cannot observe a contract
-  mismatch that only fires at return time.
- - **Golden churn scale:** every class wrapper with an object return (most
-  of them).
-- **Results:** _pending_
+- **Description:** Generate class-specific return predicates (`nsview?`, `nsstring?`,
+ etc.) and use them in return contracts where the IR declares a class type.
+- **Results:** Complete 2026-04-16. Implementation:
+ (1) `objc-instance-of?` primitive added to `runtime/objc-base.rkt` — backed by
+ `isKindOfClass:` via `tell`, with class-object caching via `objc_getClass` for
+ repeat lookups. Handles `objc-object?`, `cpointer?`, `#f`, and `objc-null` inputs.
+ (2) `map_return_contract` in `emit_class.rs` gains a `TypeRefKind::Class { name }`
+ branch emitting `<classname>?` predicate. `Id`/`Instancetype` keep `any/c`.
+ (3) `collect_return_type_class_names` scans properties and methods for class-typed
+ returns; `emit_class_predicates` emits `(define (<class>? v) (objc-instance-of? v "ClassName"))`
+ before `provide/contract` (Racket requires definitions before contract references).
+ 38 golden files updated. All 162 workspace tests pass, runtime load harness green
+ (20 library checks + 4 app `raco make` checks).
 ### `is_definition()` Guard Audit in Extractors
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (latent bug exposed when the unsigned-enum fix added
  an `is_definition()` guard for `EnumDecl`).
 - **Dependencies:** none.
-- **Description:** The `seen_enums` HashSet dedup guard in `extract_declarations.rs`
- checks by name only. For `CF_ENUM`/`NS_ENUM`-generated cursors, libclang emits
- both a forward `EnumDecl` (no values) and a defining `EnumDecl` (with values);
- if the forward decl is visited first it wins and the definition is skipped.
- The `is_definition()` guard added for `EnumDecl` closes this for enums. The
- same latent bug exists in the `StructDecl`, `ObjCInterfaceDecl`, and
- `ObjCProtocolDecl` arms — any of these can shadow a full definition with a
- forward declaration. Audit all three arms and add `entity.is_definition()`
- guards where missing. Verify with the runtime load harness — a shadowed class
- or struct definition would surface as a load error or missing binding.
-- **Results:** _pending_
+- **Description:** Audit `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl`
+ arms for missing `is_definition()` guards matching the `EnumDecl` fix.
+- **Results:** Complete 2026-04-16. Guards added to `StructDecl` and
+ `ObjCProtocolDecl`. `ObjCInterfaceDecl` intentionally left WITHOUT the guard:
+ in Clang's AST, `@interface` is a declaration (not a definition — `@implementation`
+ is the definition, but `.m` files are absent from SDK headers), so
+ `is_definition()` returns `false` for all `ObjCInterfaceDecl` cursors in
+ framework headers. Forward `@class` declarations produce `ObjCClassRef` cursors
+ not `ObjCInterfaceDecl`, so no forward-decl shadowing is possible for this
+ entity kind. All 67 extract-objc tests and 117 emit-racket-oo tests pass.
+ Memory entry updated to reflect the Clang AST nuance.
 ### Accessibility / CGEvent / Private SPI Runtime Helpers
-- **Status:** in_progress
+- **Status:** done
 - **Surfaced:** 2026-04-16 (Modaliser-Racket FFI elimination goal — zero `ffi/unsafe`
  requires in app code, matching the FFI-free standard achieved by sample apps).
 - **Dependencies:** Pipeline re-run complete (2026-04-16). CF bridge landed
  (`cf-bridge.rkt`). GCD helpers exist (`main-thread.rkt`). NSView geometry
- helpers landed (`nsview-helpers.rkt`). Remaining items below are independent
- of each other and of all open tasks.
-- **Description:** Three remaining helper categories to eliminate all `ffi/unsafe`
- requires from Modaliser-Racket:
-
- **AX typed-attribute helpers** — typed attribute access returning Racket values
- directly, handling `CFRelease` internally (no `malloc`, `ptr-ref`, `AXValue`
- construction in caller):
- - `ax-get-attribute/string`, `ax-get-attribute/boolean`,
-   `ax-get-attribute/point`, `ax-get-attribute/size`
- - `ax-set-position!`, `ax-set-size!` — take Racket numbers, handle AXValue
-   creation/release internally (no `malloc`, `ptr-set!`, `ctype-sizeof`).
- - `ax-get-pid` — direct integer return, no out-parameter.
-
- **CGEvent tap helper** — `make-cgevent-tap`: takes a Racket callback
- `(keycode modifiers key-down? → 'suppress/'pass-through)`, handles
- `_cprocedure`, `function-ptr`, GC stability, `CGEventTapCreate`,
- `CFRunLoopAddSource` internally. Note: the CGEvent callback fires on the main
- OS thread via `CFRunLoopGetMain`, not a foreign thread — `_cprocedure` is safe
- here without `#:async-apply`.
-
- **Private SPI** — `_AXUIElementGetWindow`: absent from public headers and will
- never be auto-generated. Hand-written runtime helper with `get-ffi-obj` +
- fallback so consumers avoid carrying their own raw FFI boilerplate.
-
- Success criterion: Modaliser-Racket can remove all remaining `(require ffi/unsafe ...)`
- lines from every `.rkt` file.
-- **Results:** Partial 2026-04-16. `cf-bridge.rkt` landed — CFString, CFNumber,
- CFBoolean, CFArray, CFDictionary conversions plus `with-cf-value` auto-release.
- `nsview-helpers.rkt` landed — NSView geometry helpers. `main-thread.rkt` covers
- GCD dispatch. All added to `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`; load cleanly.
- Remaining: AX typed-attribute helpers, `make-cgevent-tap`, `_AXUIElementGetWindow` SPI.
+ helpers landed (`nsview-helpers.rkt`).
+- **Description:** Three helper categories to eliminate all `ffi/unsafe`
+ requires from Modaliser-Racket: AX typed-attribute helpers, CGEvent tap,
+ private SPI.
+- **Results:** Complete 2026-04-16. Three new runtime files landed:
+ `ax-helpers.rkt` — typed AX attribute access (`ax-get-attribute/string`,
+ `/boolean`, `/point`, `/size`), setters (`ax-set-position!`, `ax-set-size!`),
+ and `ax-get-pid`. All handle malloc/free/CFRelease internally.
+ `cgevent-helpers.rkt` — `make-cgevent-tap` wrapping CGEventTapCreate +
+ CFRunLoop integration with keyboard event mask; `cgevent-tap-enable!` for
+ toggle. Module-level function-ptr for GC stability; callback fires on main
+ OS thread (safe without `#:async-apply`).
+ `spi-helpers.rkt` — `ax-element-get-window` wrapping private
+ `_AXUIElementGetWindow` SPI with graceful `#f` fallback if symbol absent.
+ All three added to `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in the runtime
+ load harness; all load cleanly. Combined with prior `cf-bridge.rkt`,
+ `nsview-helpers.rkt`, and `main-thread.rkt`, Modaliser-Racket can now
+ remove all `(require ffi/unsafe ...)` lines from app code.
 ### Future Work
 - **Status:** not_started
 - **Dependencies:** at least 2 more sample apps complete (scope clarifies with
@@ -209,19 +176,6 @@ Runtime location: generation/targets/racket-oo/runtime/
  `inherit`, `super-new`, interfaces for protocols, mixins for categories.
  Identify where the current approach falls short of idiomatic Racket OO and
  propose concrete changes to make better use of the class system.
-- **Results:** _pending_
-- **Status:** not_started
-- **Dependencies:** none (independent binding style)
-- **Description:** Emit Typed Racket (`#lang typed/racket`) versions of the
- generated bindings that provide static type checking at compile time. This
- involves: mapping TypeRef kinds to Typed Racket types (primitives → `Integer`,
- `Flonum`, etc.; ObjC objects → `(Instance ClassName)` or opaque types; enums →
- union types or `Symbol`), wrapping `ffi/unsafe` calls using `require/typed` at
- module boundaries, and handling the `_id` ↔ typed object boundary carefully
- (ObjC's dynamic dispatch means some casts are unavoidable). This is a separate
- binding style from OO/functional — consumers `require` the typed modules and
- get compile-time checking. Investigate whether the typed layer should wrap the
- untyped OO bindings (via `require/typed`) or emit standalone typed modules.
 - **Results:** _pending_
 - **Status:** not_started
 - **Dependencies:** none

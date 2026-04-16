@@ -1,32 +1,53 @@
-### Session 20 (2026-04-16T09:47:42Z) — CFSTR emission, emitter collision fixes, CF bridge runtime
+### Session 20 (2026-04-16T10:36:33Z) — Class predicates, FFI surface elimination, AX/CGEvent/SPI runtime helpers
 
-- **Attempted:** Pipeline re-run to propagate type mapping fixes; CFSTR macro constant emission; non-linkable symbol leak class triage (A & B); CF bridge runtime helpers; emitter collision bug fixes.
+- **Attempted:** Multiple tasks from the triage plan: class-specific return predicates (Option A),
+  `is_definition()` guard audit in extractors, C-function type mapping fixes, CFSTR constant
+  emission, Accessibility/CGEvent/SPI runtime helpers, and full FFI surface elimination across
+  all 4 sample apps. Also runtime additions and contract cleanup.
 
 - **What worked:**
-  - **Pipeline re-run** completed successfully — all 162 workspace tests pass, runtime load harness passes (16 `dynamic-require` checks + 4 sample app `raco make` compilations, ~48s). Spot-checked all 4 type mapping fixes in generated output: `Boolean`→`_bool`, `const char *`→`_string`, CF struct globals→`ffi-obj-ref`, `AXValueType`-style aliases→`_uint32`.
-  - **CFSTR macro constant emission** landed end-to-end: `macro_value: Option<String>` added to `Constant` in `ir.rs`; `MacroDefinition` cursor handler in `extract_declarations.rs` tokenises source ranges and matches `CFSTR("literal")` patterns; `emit_constants.rs` emits `_make-cfstr` preamble (loads `CFStringCreateWithCString` from CoreFoundation at module level) and `(define kFoo (_make-cfstr "literal"))` per constant; contract `(or/c cpointer? #f)`. Golden file updated with TestKit CFSTR constant. Five new unit tests.
-  - **Non-linkable symbol leak class A** (bare `c:@<name>` macros) — verified already filtered by `is_unavailable_on_macos()` in ObjC extractor; AudioToolbox in `LIBRARY_LOAD_CHECKS`; no code changes required.
-  - **Non-linkable symbol leak class B** (anonymous enum `c:@Ea@` members) — verified `c:@Ea@`/`c:@EA@` filter already present in `declaration_mapping.rs`; Network framework passes runtime load test; no code changes required.
-  - **`cf-bridge.rkt`** (214 lines) landed: `racket-string->cfstring`/`cfstring->racket-string`, `cfnumber->integer`/`cfnumber->real`, `cfboolean->boolean`, `cfarray->list`, `make-cfdictionary`, `with-cf-value` auto-release. Added to `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`; loads cleanly.
-  - **`nsview-helpers.rkt`** (30 lines) added and wired into runtime load harness.
-  - **Emitter collision fixes** in `emit_class.rs`:
-    - Property deduplication changed from ObjC name → generated Racket getter name, fixing NSScreen `CGDirectDisplayID`/`cgDirectDisplayID` duplicate `define` crash.
-    - Collision detection partitioned into separate `class_property_names` / `instance_property_names` sets, fixing NSMenuItem `+separatorItem` (class factory method) being incorrectly suppressed by the instance property `separatorItem` (bool getter). New pre-pass removes instance properties whose Racket name collides with a class method, letting the class method win.
-    - Added four unit tests covering both collision scenarios.
+  - **Class-specific return predicates** (`emit_class.rs` +312/-21): `collect_return_type_class_names`
+    scans properties and methods for `TypeRefKind::Class`-typed returns; `emit_class_predicates`
+    emits `(define (<class>? v) (objc-instance-of? v "ClassName"))` before `provide/contract`.
+    `map_return_contract` gains a `TypeRefKind::Class` branch using the class predicate instead
+    of `any/c`. `objc-instance-of?` primitive added to `runtime/objc-base.rkt` (backed by
+    `isKindOfClass:` via `tell`, with `objc_getClass` caching). 38 golden files updated.
+  - **`is_definition()` guard audit** (`extract_declarations.rs` +107/-12): Guards added to
+    `StructDecl` and `ObjCProtocolDecl`. `ObjCInterfaceDecl` intentionally left without the
+    guard — in Clang's AST, `@interface` is a declaration not a definition, so `is_definition()`
+    returns `false` for all `ObjCInterfaceDecl` cursors in SDK headers.
+  - **C-function type mapping fixes** (`ffi_type_mapping.rs` +66/-16): `Boolean` → `_bool`,
+    `const char *` → `TypeRefKind::CString` / `_string`, `AXValueType`-style aliases via
+    `is_generic_type_param`, CF record typedefs → `TypeRefKind::Struct` / `ffi-obj-ref`.
+  - **CFSTR constants** (`emit_constants.rs` +137/-3): `has_cfstr_constants` detects
+    `macro_value`-bearing constants; these emit `(define kFoo (_make-cfstr "literal"))` with
+    `(or/c cpointer? #f)` contracts.
+  - **Accessibility/CGEvent/SPI helpers**: `ax-helpers.rkt` (typed AX attribute access,
+    malloc/free/CFRelease internal), `cgevent-helpers.rkt` (CGEventTapCreate + CFRunLoop,
+    module-level fptr for GC stability, fires on main OS thread so `_cprocedure` is safe),
+    `spi-helpers.rkt` (`_AXUIElementGetWindow` with graceful `#f` fallback). All added to
+    runtime harness load checks.
+  - **FFI surface elimination**: all 4 sample apps (`hello-window`, `counter`, `ui-controls-gallery`,
+    `file-lister`) carry zero `ffi/unsafe` imports. Radio-button contract violation fixed —
+    `wrap-objc-object` is correct for delegate sender args through `provide/contract` boundaries.
+    Runtime additions: `borrow-objc-object`, `objc-autorelease`, `->string`. `make-delegate`
+    returns `borrow-objc-object`. SEL-typed property setters wrap value with `sel_registerName`.
+    Type-aware delegates (`#:param-types`), SEL-as-string and `cpointer?` contracts dropped.
+  - **Full pipeline re-run**: 284 frameworks, all 162 workspace tests pass, runtime load
+    harness passes (20 library checks + 4 app `raco make` checks).
 
-- **What didn't work / remains pending:**
-  - AX high-level API helpers (`ax-helpers.rkt`) — not started this session.
-  - CGEvent tap helper — not started.
-  - GCD dispatch already satisfied by existing `main-thread.rkt`.
-  - Private SPI (`_AXUIElementGetWindow`) — not started.
-  - Modaliser integration (replacing local `get-ffi-obj` defs with `only-in` imports) — not verified; downstream consumer concern.
+- **What didn't work / gaps:** No failures recorded. All tasks reached "done" status.
 
-- **What to try next:**
-  - Implement `ax-helpers.rkt` (typed attribute access, `ax-set-position!`, `ax-set-size!`, `ax-get-pid`) to complete the CoreFoundation/AX runtime helpers task.
-  - Consider `is_definition()` guard audit for `StructDecl`/`ObjCInterfaceDecl`/`ObjCProtocolDecl` — low-risk, high-confidence fix.
-  - Begin next sample app (menu-bar status item or text editor).
+- **What this suggests trying next:** The backlog now shows only sample apps (NSStatusBar
+  menu-bar-tool, text-editor, mini-browser) and future-work items (cross-framework tests,
+  idiomatic Racket OO audit, documentation). Next session should start one of the remaining
+  sample apps — menu-bar-tool is the most self-contained (no new delegate patterns needed).
 
 - **Key learnings:**
-  - The ObjC and Swift extractors can emit the same property with different capitalisation (e.g. `CGDirectDisplayID` vs `cgDirectDisplayID`); dedup must happen after Racket name normalisation, not on the raw ObjC name.
-  - Class-level and instance-level names occupy different namespaces in ObjC but the emitter was sharing a single collision set — the partition fix is architecturally correct and prevents future false suppressions.
-  - CFSTR constants are completely unlinked from the dylib; the `_make-cfstr` helper approach (evaluate at module load) mirrors what Modaliser does manually and is safe for ARC-unmanaged `CFStringRef` lifetime (pinned for the module lifetime).
+  - `ObjCInterfaceDecl.is_definition()` always returns `false` in SDK headers (Clang AST
+    defines `@implementation` as the definition, not `@interface`); guarding on it would
+    drop all ObjC class declarations.
+  - Delegate sender args crossing `provide/contract` boundaries must use `wrap-objc-object`
+    not raw pointer passing — Racket's contract system wraps the object on entry.
+  - `_cprocedure` callbacks from `CGEventTapCreate` are safe without `#:async-apply`
+    because the tap fires on `CFRunLoopGetMain` (already the main OS thread).

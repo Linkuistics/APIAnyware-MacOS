@@ -41,8 +41,8 @@ Adding a new filter: (a) add a skip-reason branch in `non_c_linkable_skip_reason
 
 Dylib-unexported symbols are a separate concern — see "Emit-time filter for dylib-unexported symbols".
 
-### `seen` guard misses `EnumDecl` forward-decls
-`seen_enums` in `extract_declarations.rs` deduplicates by name only. For `CF_ENUM`/`NS_ENUM`, libclang emits both a forward `EnumDecl` (no values) and a defining `EnumDecl` (with values); if the forward decl is visited first it wins the seen-set and the definition is skipped. Fix: add `entity.is_definition()` check in the `EnumDecl` arm before inserting. The same latent bug exists in `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl` — `is_definition()` guard audit for all three is open.
+### `is_definition()` guards in `extract_declarations.rs`
+`EnumDecl`, `StructDecl`, and `ObjCProtocolDecl` arms have `entity.is_definition()` guards to skip forward declarations that would shadow populated definitions in the `seen_*` HashSets. `ObjCInterfaceDecl` intentionally has NO guard: in Clang's AST, `@interface` is a *declaration* (the *definition* is `@implementation`, absent from SDK headers), so `is_definition()` returns `false` for all `ObjCInterfaceDecl` cursors in framework headers. Forward `@class` declarations produce `ObjCClassRef` cursors, not `ObjCInterfaceDecl`, so no forward-decl shadowing is possible for this entity kind.
 
 ### Unsigned enums need `get_canonical_type()` check
 `is_unsigned_int_kind` in `extract_declarations.rs` must canonicalize via `get_canonical_type()` before checking the underlying enum type. Without this, `NS_ENUM(NSUInteger, ...)` presents as `Typedef` kind and misses the unsigned branch. Clang's `get_enum_constant_value()` returns `(i64, u64)` — use `.1` (unsigned) for unsigned-backed enums. Values exceeding `i64::MAX` are skipped with `tracing::warn!` (the IR schema is i64; silent wrapping would corrupt value semantics). Pipeline regeneration is required to propagate this to generated output.
@@ -129,6 +129,9 @@ Self uses `SELF_CONTRACT` (`"objc-object?"`) in `emit_class.rs` for instance met
 - **SEL params**: `string?` at contract boundary; wrapper calls `sel_registerName`. Applies to both methods and property setters.
 - **Object returns**: `any/c` via `map_return_contract`.
 `objc-object?` in scope via `coerce.rkt` re-exporting `runtime/objc-base.rkt`. Class-property methods omit `self` (see "Class-property methods omit `self`").
+
+### Class-specific return predicates: Option A (inline factory)
+Decision: each class file defines its own predicate (e.g. `(define (nsview? v) (objc-instance-of? v "NSView"))`) — no cross-class requires, no central barrel. `objc-instance-of?` primitive in `runtime/objc-base.rkt` backs all predicates via `class_isKindOfClass:` from libobjc (subclass instances satisfy parent predicate). Predicates only affect `map_return_contract` return positions — all params flow through `coerce-arg`. `TypeRefKind::Class { name }` emits the class predicate; `Id`/`Instancetype` keep `any/c`. Option C (cross-class requires) eliminated by circular dependency risk; Option B (central barrel) disproportionate bottleneck for narrow scope.
 
 ### `objc-object?` is a struct predicate, not cpointer
 `(cast ptr _pointer _id)` tags the pointer for FFI but does NOT create an `objc-object` struct — it fails the `objc-object?` contract at class wrapper boundaries. For `make-delegate` with `#:param-types`, `'object`-typed callback args are wrapped automatically via `borrow-objc-object`. For `tell`-based code not using `#:param-types`, use `wrap-objc-object` manually. Do NOT use `tell` as a bypass for non-object parameters (int, bool, SEL) — `tell` rejects them with `id->C: argument is not 'id' pointer`.
