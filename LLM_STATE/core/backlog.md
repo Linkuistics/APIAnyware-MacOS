@@ -16,6 +16,13 @@ entry triaged during a prior cycle. Provenance is recorded per-task in the
 pending cluster is `high → medium → low`; within a priority band, the
 listing order is a suggested work order, not a hard constraint.
 
+### Fix `make-objc-block` to treat `#f` as a no-op lambda `[runtime]` `[medium]`
+- **Surfaced by:** Modaliser-Racket development (2026-04-16); users pass `#f` for optional completion handler arguments
+- **Symptom:** `make-objc-block` in `runtime/block.rkt` does not handle `#f` as input. When `#f` is passed (e.g. for an optional completion handler the caller wants to ignore), the returned block stores `#f` as the callback procedure. On invocation the block attempts `(apply #f ...)`, which raises a Racket error and crashes the callback. Users are currently forced to pass an explicit no-op lambda (`(lambda args (void))`) every time they want to suppress a completion handler.
+- **Suspected root cause:** `make-objc-block` stores its `proc` argument directly with no guard. The fix is a one-line normalisation at the top of `make-objc-block`: treat `#f` as `(lambda args (void))` before storing the callback.
+- **Fix direction:** Normalise `#f` → no-op lambda inside `make-objc-block` itself so every call site benefits automatically. Do not push the workaround to callers.
+- **Scope:** Change is confined to `runtime/block.rkt`. Add a unit test: `(make-objc-block #f <type-sig>)` must produce an invocable block that returns without error. Existing tests for non-`#f` inputs must remain green.
+
 ### Add HIServices/AX functions and constants to ApplicationServices extraction `[collection]` `[medium]`
 - **Surfaced by:** racket-oo Task #7 (migration of `ffi/*.rkt` to generated bindings)
 - **Symptom:** `applicationservices/main.rkt` is an 8-line stub; no `functions.rkt` is
@@ -52,6 +59,13 @@ listing order is a suggested work order, not a hard constraint.
   Option (b) is lower-risk and avoids a fork of the external crate.
 - **Verification canary:** After fix, a full collection run must complete without panic
   when the Quartz subframeworks are reachable.
+
+### Audit `is_definition()` guard in StructDecl / ObjCInterfaceDecl / ObjCProtocolDecl dedup arms `[collection]` `[low]`
+- **Surfaced by:** racket-oo cycle learnings (2026-04-16); latent risk identified when EnumDecl forward-decl shadow was fixed
+- **Symptom:** None confirmed yet. The `EnumDecl` arm in `extract_declarations.rs` was fixed with an `entity.is_definition()` guard (2026-04-15) to prevent a forward-declaration from winning the `seen_enums` dedup set before the actual definition is visited. The same structural pattern — a `HashSet` inserted on first encounter without an `is_definition()` guard — may exist in the `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl` arms if those arms use similar seen-sets.
+- **Suspected root cause:** Forward declarations for ObjC interfaces and protocols (e.g., `@class Foo;`, `@protocol Bar;`) appear in header imports before the defining `@interface`/`@protocol` body. If a seen-set inserts on the first cursor visit, the actual definition is skipped, yielding an empty or stub IR entry.
+- **Scope:** Read the three arms in `extract_declarations.rs`. Confirm whether each uses a `HashSet`-based dedup guard. If so, check whether `entity.is_definition()` is already guarded. Add the guard where missing. Write a synthetic test with a forward-declaration followed by a definition. Blast-radius check: regenerate and diff per-framework counts before/after.
+- **Note:** The `EnumDecl` fix (2026-04-15) confirmed that forward-decl shadowing produces silently empty IR sections — the cost of missing this guard is high and silent.
 
 ### Investigate and filter bare `c:@<name>` macro USRs (leak class A) `[collection]` `[low]`
 - **Surfaced by:** racket-oo Task #7 (migration of `ffi/*.rkt` to generated bindings)

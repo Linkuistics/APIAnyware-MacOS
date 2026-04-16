@@ -272,5 +272,28 @@ DelegateBridge.swift defines `impInt0..3` (returning `Int32`) and `impLong0..3` 
 ### Struct-typed global constants use `ffi-obj-ref`
 Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dispatch_source_type_*`) are emitted as `(define sym (ffi-obj-ref 'sym lib))` — returning the symbol's address. Non-struct constants keep `(get-ffi-obj 'sym lib type)` — dereferencing the symbol. The distinction is in `generate_constants_file` via `is_struct_data_symbol()`. Contract for struct globals is `cpointer?`.
 
+### `wkwebview.rkt` requires `type-mapping.rkt` for `_NSEdgeInsets`
+`wkwebview.rkt` references `_NSEdgeInsets` (used in `WKWebView` geometry properties).
+`_NSEdgeInsets` is defined and provided by `runtime/type-mapping.rkt`. If `type-mapping.rkt`
+is not transitively required — or if `_NSEdgeInsets` is absent from `type-mapping.rkt`'s
+`(provide ...)` list — the generated file fails to load with an unbound-identifier error,
+preventing any file that requires WKWebView from loading. The fix is already in place:
+`_NSEdgeInsets` is in `type-mapping.rkt`'s provide list. This note documents the symptom so
+future geometry-struct additions (see "`type-mapping.rkt` must `provide` every cstruct") know
+to verify provide coverage before declaring the struct done.
+
 ### `make-dynamic-subclass` guards against duplicate registration
 `objc_allocateClassPair` returns NULL for a name already registered — subsequent `class_addMethod` would crash. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. Required for modules that register a subclass at load time and may be required twice in the same Racket VM.
+
+### FFI surface elimination design decision (2026-04-16)
+All FFI concepts must be invisible to app code. Three-phase solution:
+- **Phase 1:** `borrow-objc-object` (lightweight struct, no retain/release) + `#:param-types` on `make-delegate` for auto-wrapping callback args (object→borrow-objc-object, int/long→cast, bool→convert) + fix `method_return_kind` bug (int/long misclassified as void) + emit param-type metadata from protocol IR.
+- **Phase 2:** Selector params accept strings (wrapper calls `sel_registerName`), drop `cpointer?` from `map_param_contract`, add `->string` runtime helper.
+- **Phase 3:** Rewrite apps to remove all `ffi/unsafe` requires, verify in harness + VM.
+Key rejected alternative: contract relaxation (`cpointer?` in self contract) weakens safety. `borrow-objc-object` + trampoline-side wrapping gives type safety without user ceremony.
+
+### Protocol emitter return-type bug
+`method_return_kind` in `emit_protocol.rs:148` only handles void/bool/id returns. Int/long/uint primitives fall through to "void" default. `numberOfRowsInTableView:` (returns int64 / NSInteger) is misclassified as void-returning in generated protocol files. Users must manually override with `#:return-types`. Fix: add int32→`'int`, int64→`'long` branches.
+
+### Latent delegate arg contract bugs in sample apps
+`ui-controls-gallery.rkt` slider and stepper callbacks pass raw `sender` pointer to wrappers like `(nsslider-double-value sender)`. The `objc-object?` contract on self will reject the raw `cpointer?` at runtime. Not caught because `raco make` compiles but doesn't execute callback paths. Same bug class as the radio-button contract violation. Blocked on FFI surface elimination phase 1 (type-aware delegate callbacks auto-wrap sender args).
