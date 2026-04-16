@@ -123,25 +123,19 @@ The harness uses `(dynamic-require \`(file ,p) #f)`, not `(dynamic-require p #f)
 ### Contract-based API boundaries
 Every FFI boundary uses `provide/contract`. Three contract mappers:
 - `map_contract` in `emit_functions.rs` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, geometry structs → `any/c`, void → `void?`. Reused by functions, constants, and class wrappers. Note: `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
-- `map_param_contract` in `emit_class.rs` (class wrapper params): `Id`/`Class`/`Instancetype` → nullable-aware union mirroring `coerce-arg`'s accepted set (non-nullable: 3-element, nullable: 4-element with `#f`), `(or/c procedure? #f)` for blocks, delegates to `map_contract` for primitives. `type_ref.nullable` selects the variant.
+- `map_param_contract` in `emit_class.rs` (class wrapper params): `Id`/`Class`/`Instancetype` → `(or/c string? objc-object? #f)` for all object params (always includes `#f`; `cpointer?` excluded), SEL → `string?`, `(or/c procedure? #f)` for blocks, delegates to `map_contract` for primitives.
 - `map_return_contract` in `emit_class.rs` (class wrapper returns): `any/c` for objects, delegates to `map_contract` for void/primitives.
 Protocol files use fixed contracts (see "Protocol file contract shape is fixed").
 
-### Class wrapper self uses `objc-object?`, params use typed unions
-Self uses `SELF_CONTRACT` (`"objc-object?"`) in `emit_class.rs` for instance methods and instance property getters/setters.
-- **Self** is always a wrapped instance — rejecting non-`objc-object` values catches misuse with caller blame instead of segfaulting in `objc_msgSend`.
-- **Object params** (`Id`/`Class`/`Instancetype`) use a nullable-aware union matching `coerce-arg`'s accepted set. `type_ref.nullable` selects between 3-element (non-nullable) and 4-element (includes `#f`) variants. Errors surface at the wrapper with caller blame, not deep in `coerce-arg`.
-- **Object returns** stay `any/c` via `map_return_contract`. Class-specific return predicates are a queued follow-up.
-`objc-object?` is in scope via the require chain: `coerce.rkt` re-exports from `runtime/objc-base.rkt`. Class-property methods omit `self` (see "Class-property methods omit `self`").
+### Class wrapper contracts: self `objc-object?`, params typed unions
+Self uses `SELF_CONTRACT` (`"objc-object?"`) in `emit_class.rs` for instance methods and property getters/setters — rejects misuse at caller blame.
+- **Object params** (`Id`/`Class`/`Instancetype`): `(or/c string? objc-object? #f)` — always includes `#f` (ObjC nil messaging is always a no-op). `cpointer?` excluded.
+- **SEL params**: `string?` at contract boundary; wrapper calls `sel_registerName`. Applies to both methods and property setters.
+- **Object returns**: `any/c` via `map_return_contract`.
+`objc-object?` in scope via `coerce.rkt` re-exporting `runtime/objc-base.rkt`. Class-property methods omit `self` (see "Class-property methods omit `self`").
 
-### Delegate callback sender args need `wrap-objc-object`
-`objc-object?` is a **struct predicate** (`struct objc-object` in `objc-base.rkt`), NOT a cpointer tag check. `(cast ptr _pointer _id)` tags the pointer for FFI but does NOT create an `objc-object` struct — it fails the `objc-object?` contract. When delegate trampoline args (e.g. target-action `sender`) must flow through a class wrapper's `provide/contract` boundary, the correct pattern is:
-
-    (wrapper-fn (wrap-objc-object (cast sender _pointer _id)) args...)
-
-Default `#:retained #f` adds a balanced retain/release pair, safe for borrowed refs. Do NOT use `tell` as a bypass for non-object parameters (int, bool, SEL) — `tell` types all params as `_id` and rejects integers with `id->C: argument is not 'id' pointer`.
-
-File Lister's `(cast col _pointer _id)` works only because it feeds into `tell` directly, never through a `provide/contract` boundary. If the value ever flows through a wrapper, it will need `wrap-objc-object` too. The ceremony is correct but intrusive for app authors — transparent object wrapping for delegate callback args is an open design problem.
+### `objc-object?` is a struct predicate, not a cpointer tag
+`(cast ptr _pointer _id)` tags the pointer for FFI but does NOT create an `objc-object` struct — it fails the `objc-object?` contract at class wrapper boundaries. For `make-delegate` with `#:param-types`, `'object`-typed callback args are wrapped automatically via `borrow-objc-object`. For `tell`-based code not using `#:param-types`, use `wrap-objc-object` manually. Do NOT use `tell` as a bypass for non-object parameters (int, bool, SEL) — `tell` rejects them with `id->C: argument is not 'id' pointer`.
 
 ### Class-property methods omit `self`
 Class-property getters/setters have no `self` parameter. `build_export_contracts` drops `self` for `prop.class_property`. `emit_property`'s setter branches substitute `class_name` for `(coerce-arg self)` as the target. TestKit has no class-method properties, so arity divergence is only caught by the real-framework canary (`nsmenuitem.rkt` in `LIBRARY_LOAD_CHECKS`).
@@ -259,7 +253,22 @@ Outcomes: assertions pass → `(exit 0)` → `[OK]`. Assertion raises (caught by
 NSInteger is `typedef long NSInteger` on 64-bit Apple platforms; clang encodes `long` as `q` (not `l`). Delegate trampoline mapping: `'long → "q"` in both Swift `typeEncoding` and Racket `return-kind->string`. No separate `'nsinteger` kind is needed. This is the correct encoding for `numberOfRowsInTableView:` and other NSInteger-returning delegate methods.
 
 ### Delegate return kinds `'int` and `'long` supported
-DelegateBridge.swift defines `impInt0..3` (returning `Int32`) and `impLong0..3` (returning `Int64`). `selectIMP` and `typeEncoding` extended with `("int", N)` / `("long", N)` cases. `delegate.rkt` mirrors in `return-kind->string`, `make-delegate/swift`, `make-delegate/racket`, `delegate-set!`, plus `type-encoding-int` / `type-encoding-long` helpers. `'long` is the correct kind for NSInteger-returning delegate methods on 64-bit Apple platforms (see "ObjC type encoding `q` is NSInteger on 64-bit").
+DelegateBridge.swift defines `impInt0..3` (returning `Int32`) and `impLong0..3` (returning `Int64`). `selectIMP` and `typeEncoding` extended with `("int", N)` / `("long", N)` cases. `delegate.rkt` mirrors in `return-kind->string`, `make-delegate/swift`, `make-delegate/racket`, `delegate-set!`, plus `type-encoding-int` / `type-encoding-long` helpers. `'long` is the correct kind for NSInteger-returning delegate methods on 64-bit Apple platforms (see "ObjC type encoding `q` is NSInteger on 64-bit"). Protocol emitter generates these as entries in the `#:param-types` hash via `param_type_symbol` in `emit_protocol.rs`.
+
+### `borrow-objc-object` wraps raw pointer as `objc-object?`
+`borrow-objc-object` in `objc-base.rkt` creates a struct satisfying `objc-object?` from a raw cpointer, with no retain/release. `make-delegate` returns one so delegates satisfy `objc-object?` at class wrapper boundaries (e.g. `nsbutton-set-target!`). The `#:param-types` trampoline uses `borrow-objc-object` to wrap `'object`-typed callback args automatically.
+
+### `#:param-types` on `make-delegate` auto-coerces callback args
+Hash mapping selectors to lists of type symbols (`'object`, `'long`, `'int`, `'bool`, `'pointer`). The trampoline coerces each arg before the handler runs; `delegate-set!` also reads stored param-types. Protocol emitter generates the hash via `param_type_symbol` in `emit_protocol.rs` from IR param types.
+
+### `objc-autorelease` converts owned pointer to autoreleased
+`objc-autorelease` in `objc-base.rkt` converts a +1 owned pointer to +0 autoreleased. Used when delegate callbacks return ObjC objects (e.g. NSString from `tableView:objectValueForTableColumn:row:`).
+
+### `->string` converts NSString to Racket string polymorphically
+`->string` in `runtime/type-mapping.rkt` (re-exported via `coerce.rkt`) accepts `objc-object`, `cpointer`, `string?`, or `#f`. Replaces per-app `ns->str` helpers.
+
+### All 4 sample apps use zero `ffi/unsafe` imports
+`hello-window`, `counter`, `ui-controls-gallery`, `file-lister` contain no `ffi/unsafe` requires. Achieved via `#:param-types` auto-wrapping, `->string` for NSString returns, and SEL-as-string at class wrapper boundaries. VM-verified.
 
 ### `dynamic-class.rkt` exports libobjc subclass surface
 `generation/targets/racket-oo/runtime/dynamic-class.rkt` exports: `objc-get-class`, `allocate-subclass`, `add-method!`, `register-subclass!`, `get-instance-method`, `method-type-encoding`, and `make-dynamic-subclass` (chains allocate→add-method→register in the correct order). Type aliases `_Class`/`_SEL`/`_Method`/`_IMP` exported for raw-msgSend consumers. Must be added to both `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in the harness.
@@ -283,15 +292,3 @@ to verify provide coverage before declaring the struct done.
 ### `make-dynamic-subclass` guards against duplicate registration
 `objc_allocateClassPair` returns NULL for a name already registered — subsequent `class_addMethod` would crash. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. Required for modules that register a subclass at load time and may be required twice in the same Racket VM.
 
-### FFI surface elimination design decision (2026-04-16)
-All FFI concepts must be invisible to app code. Three-phase solution:
-- **Phase 1:** `borrow-objc-object` (lightweight struct, no retain/release) + `#:param-types` on `make-delegate` for auto-wrapping callback args (object→borrow-objc-object, int/long→cast, bool→convert) + fix `method_return_kind` bug (int/long misclassified as void) + emit param-type metadata from protocol IR.
-- **Phase 2:** Selector params accept strings (wrapper calls `sel_registerName`), drop `cpointer?` from `map_param_contract`, add `->string` runtime helper.
-- **Phase 3:** Rewrite apps to remove all `ffi/unsafe` requires, verify in harness + VM.
-Key rejected alternative: contract relaxation (`cpointer?` in self contract) weakens safety. `borrow-objc-object` + trampoline-side wrapping gives type safety without user ceremony.
-
-### Protocol emitter return-type bug
-`method_return_kind` in `emit_protocol.rs:148` only handles void/bool/id returns. Int/long/uint primitives fall through to "void" default. `numberOfRowsInTableView:` (returns int64 / NSInteger) is misclassified as void-returning in generated protocol files. Users must manually override with `#:return-types`. Fix: add int32→`'int`, int64→`'long` branches.
-
-### Latent delegate arg contract bugs in sample apps
-`ui-controls-gallery.rkt` slider and stepper callbacks pass raw `sender` pointer to wrappers like `(nsslider-double-value sender)`. The `objc-object?` contract on self will reject the raw `cpointer?` at runtime. Not caught because `raco make` compiles but doesn't execute callback paths. Same bug class as the radio-button contract violation. Blocked on FFI surface elimination phase 1 (type-aware delegate callbacks auto-wrap sender args).

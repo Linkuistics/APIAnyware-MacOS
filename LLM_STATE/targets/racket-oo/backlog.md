@@ -286,6 +286,136 @@ Runtime location: generation/targets/racket-oo/runtime/
   all NSView subclass wrappers. Decide and record the approach before implementing.
 - **Results:** _pending_
 
+### C-Function Type Mapping Fixes (Modaliser-Racket FFI Elimination)
+
+- **Status:** not_started
+- **Surfaced:** 2026-04-16 (Modaliser-Racket accessibility/permissions/main-thread
+  migration exposed these; 7 functions kept as local hand-written definitions due
+  to type mismatches with generated signatures).
+- **Dependencies:** none.
+- **Description:** Four classes of type-mapping issue prevent Modaliser-Racket from
+  using generated C-function bindings for all functions:
+
+  1. **`_uint8` where `_bool` is needed.** C functions returning `Boolean` (unsigned
+     char) are emitted with `_uint8` return type. In Racket, `0` is truthy (only `#f`
+     is falsy), so `_uint8` silently breaks any boolean-context usage. Affected:
+     `CFBooleanGetValue`, `CFStringGetCString`, `CFNumberGetValue`, `AXValueGetValue`,
+     `AXIsProcessTrusted`, `AXIsProcessTrustedWithOptions`. Fix: detect `Boolean`,
+     `bool`, `_Bool`, `unsigned char` (when used as boolean) return types in the IR
+     and emit `_bool` instead of `_uint8`.
+
+  2. **`_pointer` where `_string` is needed.** `const char *` parameters that receive
+     C string arguments are emitted as `_pointer`. Racket's `_string` auto-converts
+     Racket strings to C strings; `_pointer` does not, requiring manual marshalling.
+     Affected: `CFStringCreateWithCString` (2nd param). Fix: detect `const char *`
+     (or `char *`) params in the IR and emit `_string`. The contract should be
+     `string?`.
+
+  3. **`_id` for non-ObjC enum typedef params.** Some integer enum types
+     (`AXValueType`) are typedef'd through ObjC-compatible paths, causing the emitter
+     to treat them as `_id` (ObjC object). Plain integers are rejected at runtime.
+     Affected: `AXValueCreate` (1st param), `AXValueGetValue` (2nd param). Fix:
+     recognise that `AXValueType` is a C enum (underlying type `uint32_t`) and emit
+     `_uint32`, not `_id`.
+
+  4. **`ffi-obj-ref` not applied to CoreFoundation struct-typed globals.** The
+     `ffi-obj-ref` fix for struct-typed data symbols landed for libdispatch
+     (2026-04-16) but `kCFTypeDictionaryKeyCallBacks` and
+     `kCFTypeDictionaryValueCallBacks` in `corefoundation/constants.rkt` still use
+     `get-ffi-obj ... _uint64`, reading struct bytes instead of the symbol address.
+     These are `CFDictionaryKeyCallBacks`/`CFDictionaryValueCallBacks` structs.
+     Fix: apply the same struct-vs-pointer detection to CoreFoundation globals.
+
+  Verification: Modaliser-Racket should be able to replace all 7 locally-retained
+  `get-ffi-obj` definitions in `ffi/accessibility.rkt` and the 2 local constants
+  in `ffi/permissions.rkt` with `only-in` imports from generated bindings.
+- **Results:** _pending_
+
+### CFSTR Macro Constant Emission
+
+- **Status:** not_started
+- **Surfaced:** 2026-04-16 (Modaliser-Racket accessibility migration).
+- **Dependencies:** none.
+- **Description:** macOS SDK headers define many important constants as
+  `CFSTR("...")` macros (e.g., `kAXWindowsAttribute`, `kAXFocusedWindowAttribute`,
+  `kAXMainAttribute`, `kAXPositionAttribute`, `kAXSizeAttribute`,
+  `kAXTitleAttribute`, `kAXSubroleAttribute`, `kAXMinimizedAttribute`,
+  `kAXFocusedAttribute`, `kAXFullScreenAttribute`, `kAXRaiseAction`).
+  These are not exported symbols — there is nothing to link against. Modaliser
+  currently creates them at runtime via `CFStringCreateWithCString` and
+  pre-allocates at module load.
+
+  The generator should emit these as pre-built `CFString` constants in the
+  relevant `constants.rkt` file. The emitter would need to:
+  1. Recognise `#define kFoo CFSTR("Bar")` patterns in preprocessor output or
+     the IR's macro/constant layer.
+  2. Emit `(define kFoo (CFStringCreateWithCString #f "Bar" kCFStringEncodingUTF8))`
+     in the constants file, with appropriate requires for the CF function.
+  3. Export via `provide/contract` with `(or/c cpointer? #f)`.
+
+  This eliminates the last category of hand-written constant definitions in
+  Modaliser's FFI layer. 12 constants in `ffi/accessibility.rkt` would be replaced
+  by generated imports.
+- **Results:** _pending_
+
+### CoreFoundation / Accessibility / GCD Runtime Helpers
+
+- **Status:** not_started
+- **Surfaced:** 2026-04-16 (Modaliser-Racket FFI elimination goal — the user wants
+  zero `ffi/unsafe` requires in app code, matching the FFI-free standard achieved
+  by sample apps in Phase 3 of FFI Surface Elimination).
+- **Dependencies:** C-function type mapping fixes (above) should land first so the
+  generated functions are usable; but helpers can also wrap current signatures.
+- **Description:** The FFI Surface Elimination (Phase 1-3) achieved zero `ffi/unsafe`
+  imports for sample apps using AppKit/WebKit. Modaliser-Racket uses lower-level C
+  APIs (CoreFoundation, Accessibility, CGEvent, GCD) that still require raw FFI
+  operations: `malloc`, `ptr-ref`, `ptr-set!`, `cast`, `_cprocedure`, `function-ptr`,
+  `ctype-sizeof`, CF memory management. The runtime should provide high-level helpers
+  so that real-world apps using these APIs also need zero FFI imports.
+
+  **CF type bridge** (runtime helpers, probably `runtime/cf-bridge.rkt`):
+  - `racket-string->cfstring` / `cfstring->racket-string` — create/extract without
+    exposing `CFStringCreateWithCString`, `CFStringGetCStringPtr`, encoding constants,
+    `malloc`, `cast`, or `CFRelease`.
+  - `cfnumber->integer` / `cfnumber->real` — extract CF numbers to Racket values
+    without `malloc`, `ptr-ref`, type constants.
+  - `cfboolean->boolean` — extract to `#t`/`#f` without the `_uint8` hazard.
+  - `cfarray->list` — iterate with auto-retain, release array, return Racket list.
+    Optional element-converter parameter.
+  - `make-cfdictionary` — build from Racket key-value pairs without `malloc`,
+    `ptr-set!`, callback-struct constants, `CFRelease`.
+  - Auto-release wrappers or `with-cf-value` form for Create/Copy-rule objects.
+
+  **AX high-level API** (runtime helpers, probably `runtime/ax-helpers.rkt`):
+  - `ax-get-attribute/string`, `ax-get-attribute/boolean`,
+    `ax-get-attribute/point`, `ax-get-attribute/size` — typed attribute access
+    that returns Racket values directly and handles CFRelease internally.
+  - `ax-set-position!`, `ax-set-size!` — take Racket numbers, handle AXValue
+    creation/release internally (no `malloc`, `ptr-set!`, `ctype-sizeof`).
+  - `ax-get-pid` — direct integer return, no out-parameter.
+
+  **GCD dispatch** (runtime helpers, probably `runtime/gcd.rkt`):
+  - `call-on-main-thread` / `call-on-main-thread-after` — thunk-based GCD
+    dispatch with internal thunk registry, `_cprocedure` callback, and
+    `function-ptr` GC management. App code just passes a lambda.
+  - `on-main-thread?` — wraps `pthread_main_np`.
+  - This is essentially what `ffi/main-thread.rkt` does today, but as a
+    reusable runtime module.
+
+  **CGEvent tap** (runtime helper):
+  - `make-cgevent-tap` — takes a Racket callback `(keycode modifiers key-down? → 'suppress/'pass-through)`,
+    handles `_cprocedure`, `function-ptr`, GC stability, `CGEventTapCreate`,
+    `CFRunLoopAddSource` internally. App code never touches raw callback machinery.
+
+  **Private SPI**:
+  - `_AXUIElementGetWindow` — private API, never in public headers, will never
+    be auto-generated. Should be a hand-written runtime helper rather than
+    requiring consumer apps to maintain their own `get-ffi-obj` with fallback.
+
+  Success criteria: Modaliser-Racket can remove all `(require ffi/unsafe ...)` lines
+  from every `.rkt` file, achieving the same FFI-free standard as the sample apps.
+- **Results:** _pending_
+
 ### Future Work
 
 - **Status:** not_started
