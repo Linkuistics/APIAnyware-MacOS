@@ -34,13 +34,10 @@ Non-linkable symbols (preprocessor macros, internal-linkage decls, Swift-native 
 2. **extract-swift `s:` USR filter** — skips Swift-native identifiers whose USR begins with `s:` (e.g. `NSLocalizedString`, `NSNotFound`).
 3. **extract-swift `c:@macro@` USR filter** — skips C-preprocessor macros via the Swift digester (e.g. `kCTVersionNumber10_10`).
 4. **Stale-checkpoint ghost symbols** — symbols in `swift.skipped_symbols` (e.g. `NEFilterFlowBytesMax`, `CoreSpotlightAPIVersion`) reappearing in downstream IR. Root cause: stale downstream checkpoints, not a code bug. Pipeline regeneration removes them.
+5. **extract-objc `is_unavailable_on_macos()` filter** — skips bare `c:@<name>` preprocessor macros (e.g. `kAudioServicesDetailIntendedSpatialExperience`, AudioToolbox). AudioToolbox in `LIBRARY_LOAD_CHECKS`.
+6. **extract-swift `c:@Ea@`/`c:@EA@` USR filter** — skips anonymous enum members in `declaration_mapping.rs` (e.g. `nw_browse_result_change_identical`, Network). Network in runtime load test.
 
-**Open leak classes:**
-
-A. **Bare `c:@<name>` preprocessor macros.** libclang sometimes exposes a macro through a naked `c:@<name>` USR without `@macro@` — neither extractor catches this. Canary: `kAudioServicesDetailIntendedSpatialExperience` (AudioToolbox, `AudioServices.h:401`, ObjC source).
-B. **`c:@Ea@...` anonymous enum members as constants.** Clang's `Ea` USR prefix marks anonymous-enum members extracted as constants. Canary: `nw_browse_result_change_identical` (Network, Swift source).
-
-Adding a new filter: (a) add a skip-reason branch in `non_c_linkable_skip_reason`; (b) add a canary framework to harness coverage. Coverage extension is a discovery mechanism — all open classes above were surfaced by coverage tasks.
+Adding a new filter: (a) add a skip-reason branch in `non_c_linkable_skip_reason`; (b) add a canary framework to harness coverage. Coverage extension is a discovery mechanism — all known classes above were surfaced by coverage tasks.
 
 Note: dylib-unexported symbols are a separate concern — see "Emit-time filter for dylib-unexported symbols".
 
@@ -298,3 +295,9 @@ Single uppercase letter followed by lowercase chars (e.g., `ObjectType`, `KeyTyp
 
 ### Property/method collision sets must partition by class vs instance
 `PropertyNameSets` in `emit_class.rs` separates `class_property_names` and `instance_property_names`. A flat merged set causes cross-level false positives — e.g., an instance bool-property getter name suppressing a same-named class factory method. Class methods collide only with class property names; instance properties whose getter name matches a class method name are suppressed (class method wins).
+
+### CFSTR constants emitted via `_make-cfstr` module-level helper
+`CFSTR(...)` macro constants are not linked to any dylib. `ir.rs` carries `macro_value: Option<String>` on `Constant`; the ObjC extractor tokenises source ranges to match `CFSTR("literal")` patterns. Emitter outputs a module-level `_make-cfstr` preamble (loads `CFStringCreateWithCString` from CoreFoundation) and `(define kFoo (_make-cfstr "literal"))` per constant. `CFStringRef` lifetime is pinned to the module (no ARC). Contract: `(or/c cpointer? #f)`.
+
+### `cf-bridge.rkt` and `nsview-helpers.rkt` runtime helpers
+`cf-bridge.rkt` (214 lines) exports: `racket-string->cfstring`/`cfstring->racket-string`, `cfnumber->integer`/`cfnumber->real`, `cfboolean->boolean`, `cfarray->list`, `make-cfdictionary`, `with-cf-value` (auto-release). `nsview-helpers.rkt` (30 lines) provides NSView geometry helpers. Both listed in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
