@@ -1,53 +1,56 @@
-### Session 20 (2026-04-16T10:36:33Z) — Class predicates, FFI surface elimination, AX/CGEvent/SPI runtime helpers
+### Session 20 (2026-04-16T11:34:02Z) — Type mapping, CFSTR extraction, class predicates, expanded harness
 
-- **Attempted:** Multiple tasks from the triage plan: class-specific return predicates (Option A),
-  `is_definition()` guard audit in extractors, C-function type mapping fixes, CFSTR constant
-  emission, Accessibility/CGEvent/SPI runtime helpers, and full FFI surface elimination across
-  all 4 sample apps. Also runtime additions and contract cleanup.
+- **What was attempted:** Four parallel improvements to the collection/generation pipeline:
+  (1) type system gaps (CString, CF struct typedefs, Boolean), (2) CFSTR macro constant
+  extraction and emission, (3) class-specific return-type predicates for `provide/contract`,
+  (4) expanded runtime load test harness coverage.
 
 - **What worked:**
-  - **Class-specific return predicates** (`emit_class.rs` +312/-21): `collect_return_type_class_names`
-    scans properties and methods for `TypeRefKind::Class`-typed returns; `emit_class_predicates`
-    emits `(define (<class>? v) (objc-instance-of? v "ClassName"))` before `provide/contract`.
-    `map_return_contract` gains a `TypeRefKind::Class` branch using the class predicate instead
-    of `any/c`. `objc-instance-of?` primitive added to `runtime/objc-base.rkt` (backed by
-    `isKindOfClass:` via `tell`, with `objc_getClass` caching). 38 golden files updated.
-  - **`is_definition()` guard audit** (`extract_declarations.rs` +107/-12): Guards added to
-    `StructDecl` and `ObjCProtocolDecl`. `ObjCInterfaceDecl` intentionally left without the
-    guard — in Clang's AST, `@interface` is a declaration not a definition, so `is_definition()`
-    returns `false` for all `ObjCInterfaceDecl` cursors in SDK headers.
-  - **C-function type mapping fixes** (`ffi_type_mapping.rs` +66/-16): `Boolean` → `_bool`,
-    `const char *` → `TypeRefKind::CString` / `_string`, `AXValueType`-style aliases via
-    `is_generic_type_param`, CF record typedefs → `TypeRefKind::Struct` / `ffi-obj-ref`.
-  - **CFSTR constants** (`emit_constants.rs` +137/-3): `has_cfstr_constants` detects
-    `macro_value`-bearing constants; these emit `(define kFoo (_make-cfstr "literal"))` with
-    `(or/c cpointer? #f)` contracts.
-  - **Accessibility/CGEvent/SPI helpers**: `ax-helpers.rkt` (typed AX attribute access,
-    malloc/free/CFRelease internal), `cgevent-helpers.rkt` (CGEventTapCreate + CFRunLoop,
-    module-level fptr for GC stability, fires on main OS thread so `_cprocedure` is safe),
-    `spi-helpers.rkt` (`_AXUIElementGetWindow` with graceful `#f` fallback). All added to
-    runtime harness load checks.
-  - **FFI surface elimination**: all 4 sample apps (`hello-window`, `counter`, `ui-controls-gallery`,
-    `file-lister`) carry zero `ffi/unsafe` imports. Radio-button contract violation fixed —
-    `wrap-objc-object` is correct for delegate sender args through `provide/contract` boundaries.
-    Runtime additions: `borrow-objc-object`, `objc-autorelease`, `->string`. `make-delegate`
-    returns `borrow-objc-object`. SEL-typed property setters wrap value with `sel_registerName`.
-    Type-aware delegates (`#:param-types`), SEL-as-string and `cpointer?` contracts dropped.
-  - **Full pipeline re-run**: 284 frameworks, all 162 workspace tests pass, runtime load
-    harness passes (20 library checks + 4 app `raco make` checks).
+  - `TypeRefKind::CString` added to `type_ref.rs`; `const char *` / `char *` now mapped
+    in `extract_declarations.rs` type_mapping via `is_c_string_pointee()`, emitted as
+    `_string` in `ffi_type_mapping.rs`. Closes FFI marshalling gap for C-string params.
+  - CF record typedefs (e.g. `AXValueRef`) now map to `TypeRefKind::Struct` in
+    `type_mapping.rs`; `ffi_type_mapping.rs` emits `ffi-obj-ref` for struct-data constants
+    in `emit_constants.rs`. `Boolean` primitive now maps to `_bool`.
+  - `is_generic_type_param()` in `ffi_type_mapping.rs` distinguishes ObjC generic type
+    params (`ObjectType`, `KeyType`) from framework-prefixed enum aliases (`AXValueType`,
+    `CGColorRenderingIntent`), fixing over-broad `_id` emission for enum-alias types.
+  - `MacroDefinition` entity handling added to `extract_declarations.rs`:
+    `extract_cfstr_macro_constant()` tokenises the source range and matches `CFSTR("...")`.
+    `ir::Constant` gains `macro_value: Option<String>`. `emit_constants.rs` emits
+    `(_make-cfstr "literal")` using an inlined CFStringCreateWithCString preamble.
+    `is_definition()` guards added for `ObjCProtocolDecl` and `StructDecl` to prevent
+    forward declarations shadowing full definitions.
+  - `collect_return_type_class_names()` and `emit_class_predicates()` added to
+    `emit_class.rs`: every class wrapper now emits inline `(define (nsview? v) ...)`
+    predicates backed by `objc-instance-of?`, and return contracts use these specific
+    predicates instead of `any/c`. Method/property collision detection partitioned into
+    separate class vs. instance name sets to prevent cross-level suppression.
+  - `runtime_load_test.rs` expanded: `nsview-helpers.rkt`, `cf-bridge.rkt`,
+    `ax-helpers.rkt`, `cgevent-helpers.rkt`, `spi-helpers.rkt` added to `RUNTIME_FILES`
+    and `LIBRARY_LOAD_CHECKS`; `ApplicationServices`, `libdispatch`, `Network`,
+    `NetworkExtension` added to `REQUIRED_FRAMEWORKS`. All golden snapshot files updated.
 
-- **What didn't work / gaps:** No failures recorded. All tasks reached "done" status.
+- **What didn't work / wasn't attempted:** Full pipeline re-run not performed in this
+  session — changes are in working directory, not committed. Runtime load harness
+  (`RUNTIME_LOAD_TEST=1`) not re-run against updated output; test correctness assumed
+  from golden file diffs and prior harness structure.
 
-- **What this suggests trying next:** The backlog now shows only sample apps (NSStatusBar
-  menu-bar-tool, text-editor, mini-browser) and future-work items (cross-framework tests,
-  idiomatic Racket OO audit, documentation). Next session should start one of the remaining
-  sample apps — menu-bar-tool is the most self-contained (no new delegate patterns needed).
+- **Key learnings / discoveries:**
+  - `is_definition()` is safe for `ObjCProtocolDecl` and `StructDecl` but must NOT be
+    applied to `ObjCInterfaceDecl` — SDK headers use `@interface` (declaration) without
+    `@implementation` (definition), so the guard would drop all classes.
+  - Class-method vs. instance-level property collision detection requires separate name
+    sets; a single shared set incorrectly suppressed class factory methods whose names
+    matched instance boolean properties (e.g. `+[NSMenuItem separatorItem]` vs.
+    `separatorItem: bool`).
+  - CFSTR token extraction requires matching the four-token sequence `CFSTR ( "..." )`
+    because the preprocessor does not expand macros in the AST token stream; raw source
+    tokenization is needed.
+  - `map_return_contract()` using class-specific predicates propagates a stronger contract
+    guarantee at module boundaries, enabling Racket to detect class mismatches at call
+    site rather than deep in `coerce-arg`.
 
-- **Key learnings:**
-  - `ObjCInterfaceDecl.is_definition()` always returns `false` in SDK headers (Clang AST
-    defines `@implementation` as the definition, not `@interface`); guarding on it would
-    drop all ObjC class declarations.
-  - Delegate sender args crossing `provide/contract` boundaries must use `wrap-objc-object`
-    not raw pointer passing — Racket's contract system wraps the object on entry.
-  - `_cprocedure` callbacks from `CGEventTapCreate` are safe without `#:async-apply`
-    because the tap fires on `CFRunLoopGetMain` (already the main OS thread).
+- **What this suggests trying next:** Full pipeline re-run to regenerate IR and committed
+  output; runtime load harness re-verification; then proceed to next sample app (Menu Bar
+  Tool or Text Editor).

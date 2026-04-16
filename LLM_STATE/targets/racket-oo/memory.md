@@ -170,8 +170,8 @@ Variadic and inline functions are skipped — they can't be bound via `get-ffi-o
 ### Snapshot testing infrastructure
 `load_enriched_framework(name)` in `snapshot_test.rs` generalizes framework loading — adding a new framework is a file list and test function. AppKit suite has 23 curated golden files covering key class hierarchies (NSResponder→NSView→NSControl→NSButton, NSWindow, table view, menus, text, layout). Rich classes like NSButton and NSWindow exercise more typed message send variants and geometry struct handling than Foundation classes.
 
-### `make-objc-block` crashes on `#f` input
-Passing `#f` to `make-objc-block` creates a live block that calls `(apply #f args...)` on invocation — a crash deferred to call time. Guard needed: return `(values #f #f)` for `#f` input (NULL block pointer + no block-id); `free-objc-block` must also handle `#f` gracefully. Safe workaround: use `(lambda args (void))` instead of `#f` for optional completion handlers.
+### `make-objc-block` nil guard (landed)
+`make-objc-block` returns `(values #f #f)` for `#f` input (NULL block pointer + no block-id). `free-objc-block` handles `#f` gracefully (no-op via `hash-ref` miss). `call-with-objc-block` passes `#f` through to body. Tested via `runtime_block_nil_guard` in `runtime_load_test.rs` (gated on `RUNTIME_LOAD_TEST=1`).
 
 ### `function-ptr` satisfies `(or/c cpointer? #f)` contract
 A `function-ptr` constructed from `_cprocedure` satisfies the `(or/c cpointer? #f)` contract emitted for C callback parameters. No raw-symbol fallback is needed for callback params in generated bindings.

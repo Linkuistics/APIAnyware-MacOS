@@ -92,7 +92,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 ### `make-objc-block` Nil Guard
-- **Status:** not_started
+- **Status:** done
 - **Dependencies:** none
 - **Description:** `make-objc-block` currently defers the crash to call time when
   passed `#f` — it creates a live block that invokes `(apply #f args...)` on
@@ -101,6 +101,70 @@ Runtime location: generation/targets/racket-oo/runtime/
   This guard is required before the Text Editor app, which uses block callbacks
   for completion handlers and undo/redo integration. Safe workaround until fixed:
   use `(lambda args (void))` instead of `#f` for optional completion handlers.
+- **Results:** Implementation already landed in `block.rkt` (commit f7a906c) —
+  `(if (not proc) (values #f #f) ...)` guard at top of `make-objc-block`;
+  `free-objc-block` handles `#f` gracefully via `(hash-ref active-blocks #f #f)`
+  returning `#f`. `call-with-objc-block` passes `#f` through correctly to body.
+  Added `runtime_block_nil_guard` test to `runtime_load_test.rs` (gated on
+  `RUNTIME_LOAD_TEST=1`) — 3 checks: make returns `(values #f #f)`, free no-ops,
+  call-with passes `#f` to body. All pass (0.58s). Stale memory entry updated.
+
+### Non-const `char *` params mapped to `_string` (should be `_pointer`) `[emitter, type-mapping]`
+- **Status:** not_started
+- **Priority:** 4 — runtime breakage for any function with writable buffer params
+- **Dependencies:** none
+- **Filed by:** Modaliser-Racket (2026-04-16)
+- **Description:** The `const char *` → `_string` type mapping fix (2026-04-16)
+  appears to also map non-const `char *` to `_string`. For output buffer parameters,
+  `_string` is wrong — it auto-converts a Racket string to a temporary C `char*`
+  on input, but the C function writes into the buffer and the written data is lost
+  when the temporary is freed. Output buffers need `_pointer` so callers can pass
+  `malloc`'d memory and read back results.
+  
+  **Concrete example:** `CFStringGetCString(theString, buffer, bufferSize, encoding)`
+  — second param `char *buffer` is an output buffer. Generated:
+  `(_fun _pointer _string _int64 _uint32 -> _bool)`. Should be:
+  `(_fun _pointer _pointer _int64 _uint32 -> _bool)`.
+  
+  **Fix:** Only map `const char *` to `_string`; map non-const `char *` to `_pointer`.
+  The const qualifier distinguishes input strings from output buffers at the C level.
+  
+  **Scope:** Likely affects many functions across frameworks — any function that
+  takes a writable `char *` buffer (e.g., `CFStringGetCString`, `CFURLGetFileSystemRepresentation`,
+  `AXValueGetValue`-style out-params). A grep for `_string` in parameter position
+  combined with checking the C declaration's const qualification would identify all cases.
+- **Results:** _pending_
+
+### Nullable `_string` returns need `(or/c string? #f)` contract `[emitter, contracts]`
+- **Status:** not_started
+- **Priority:** 4 — runtime contract violation for any function returning nullable strings
+- **Dependencies:** none
+- **Filed by:** Modaliser-Racket (2026-04-16)
+- **Description:** Functions returning `const char *` are mapped to `_string` return
+  type. Racket's `_string` FFI type correctly converts NULL to `#f`, but the
+  generated contract says `string?` (non-nullable), which rejects `#f` at the
+  contract boundary before the caller can handle it.
+  
+  **Concrete example:** `CFStringGetCStringPtr(theString, encoding)` returns
+  `const char *` which is NULL when the internal encoding doesn't match the
+  requested one. Generated contract: `(c-> (or/c cpointer? #f) exact-nonnegative-integer? string?)`.
+  Should be: `(c-> (or/c cpointer? #f) exact-nonnegative-integer? (or/c string? #f))`.
+  
+  At runtime:
+  ```
+  CFStringGetCStringPtr: broke its own contract
+    promised: string?
+    produced: #f
+  ```
+  
+  **Fix:** When a C function's return type maps to `_string`, emit
+  `(or/c string? #f)` in the contract (matching the FFI type's actual behavior).
+  All `const char *` returns are potentially nullable in C.
+  
+  **Scope:** Affects `CFStringGetCStringPtr` and likely every function returning
+  `const char *`. The general pattern: any FFI type that maps to a Racket type
+  capable of producing `#f` (nullable pointers, `_string` for NULL) should have
+  `#f` in the contract.
 - **Results:** _pending_
 
 ### Future Work
