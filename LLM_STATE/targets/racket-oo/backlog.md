@@ -54,7 +54,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 ### Pipeline Re-run: Propagate Type Mapping Fixes
 
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (type mapping fixes landed in collection crates but not yet propagated to generated output; re-collect required).
 - **Dependencies:** none.
 - **Description:** Three collection-crate fixes require a full re-collect + re-emit to
@@ -79,7 +79,17 @@ Runtime location: generation/targets/racket-oo/runtime/
   then re-emit. Verify with `RUNTIME_LOAD_TEST=1 cargo test`. Success criterion: Modaliser-Racket
   can replace the 7 locally-retained `get-ffi-obj` definitions in `ffi/accessibility.rkt` and
   the 2 local constants in `ffi/permissions.rkt` with `only-in` imports from generated bindings.
-- **Results:** _pending_
+- **Results:** Done 2026-04-16. Full pipeline re-run: collect (284 frameworks) →
+  resolve → annotate (heuristic merge, no LLM calls) → enrich → generate racket-oo.
+  All workspace tests pass (162 tests). Runtime load harness passes (16 library
+  `dynamic-require` checks + 4 sample app `raco make` compilations, 48s).
+  Spot-checked all 4 fixes in generated output:
+  (1) `CFBooleanGetValue` → `_bool` return, `AXIsProcessTrusted` → `_bool` return ✓
+  (2) `CFStringCreateWithCString` 2nd param → `_string`, contract `string?` ✓
+  (3) `kCFTypeDictionaryKeyCallBacks`/`ValueCallBacks` → `ffi-obj-ref` ✓
+  (4) `AXValueCreate` 1st param → `_uint64` (numeric, not `_id`) ✓
+  Modaliser integration (replacing local `get-ffi-obj` defs with `only-in` imports)
+  not verified here — that's a downstream consumer concern.
 
 ### Sample Apps
 
@@ -186,7 +196,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 ### Non-Linkable Symbol Leak Class A: Bare `c:@<name>` Macros
 
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (documented as open leak class; canary identified via
   extractor filter audit).
 - **Dependencies:** none.
@@ -200,11 +210,16 @@ Runtime location: generation/targets/racket-oo/runtime/
   AudioToolbox to `LIBRARY_LOAD_CHECKS` in the runtime harness as the validation
   canary. Coverage extension is reflexive — see "Standing rule" in the runtime
   load harness memory entry.
-- **Results:** _pending_
+- **Results:** Verified 2026-04-16. The canary `kAudioServicesDetailIntendedSpatialExperience`
+  is already filtered by `is_unavailable_on_macos()` in the ObjC extractor (skipped as
+  `platform_unavailable_macos`). AudioToolbox is in `LIBRARY_LOAD_CHECKS` and passes
+  the runtime load test. The `c:@macro@` USR filter in the Swift extractor catches the
+  general macro case. No additional code changes needed — the existing filters cover all
+  known instances of this leak class.
 
 ### Non-Linkable Symbol Leak Class B: Anonymous Enum Members (`c:@Ea@...`)
 
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (documented as open leak class; canary identified via
   extractor filter audit).
 - **Dependencies:** none.
@@ -216,11 +231,14 @@ Runtime location: generation/targets/racket-oo/runtime/
   `non_c_linkable_skip_reason` matching USRs beginning with `c:@Ea@`, tagged as
   `anonymous_enum_member`; (b) add Network to `LIBRARY_LOAD_CHECKS` in the
   runtime harness as the validation canary.
-- **Results:** _pending_
+- **Results:** Verified 2026-04-16. The `c:@Ea@`/`c:@EA@` filter already exists in
+  `non_c_linkable_skip_reason` (declaration_mapping.rs:149-150). All 7
+  `nw_browse_result_change_*` symbols are properly skipped as `anonymous_enum_member`.
+  Network is in `LIBRARY_LOAD_CHECKS` and passes the runtime load test.
 
 ### CFSTR Macro Constant Emission
 
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (Modaliser-Racket accessibility migration).
 - **Dependencies:** Pipeline re-run (above) should land first — validates that CF
   struct globals emit correctly via `ffi-obj-ref`, confirming the CF infrastructure
@@ -245,11 +263,22 @@ Runtime location: generation/targets/racket-oo/runtime/
   This eliminates the last category of hand-written constant definitions in
   Modaliser's FFI layer. 12 constants in `ffi/accessibility.rkt` would be replaced
   by generated imports.
-- **Results:** _pending_
+- **Results:** Done 2026-04-16. Three-layer implementation:
+  (1) **IR**: Added `macro_value: Option<String>` to `Constant` struct.
+  (2) **Extraction**: Added `MacroDefinition` handler in `extract_declarations.rs`
+  that tokenizes macro source ranges and matches `CFSTR("literal")` patterns.
+  Tested against ApplicationServices — `kAXWindowsAttribute` extracts with
+  `macro_value = "AXWindows"`. All CFSTR constants from HIServices headers now
+  enter the IR.
+  (3) **Emission**: `emit_constants.rs` emits a `_make-cfstr` helper preamble
+  (wrapping `CFStringCreateWithCString` from CoreFoundation) when any constant
+  has `macro_value`. Each CFSTR constant emits `(define kFoo (_make-cfstr "literal"))`.
+  Contract: `(or/c cpointer? #f)`. Golden file updated with TestKit CFSTR constant.
+  Pipeline re-run propagates CFSTR extraction to all 284 frameworks.
 
 ### CoreFoundation / Accessibility / GCD Runtime Helpers
 
-- **Status:** not_started
+- **Status:** in_progress
 - **Surfaced:** 2026-04-16 (Modaliser-Racket FFI elimination goal — the user wants
   zero `ffi/unsafe` requires in app code, matching the FFI-free standard achieved
   by sample apps in Phase 3 of FFI Surface Elimination).
@@ -305,7 +334,12 @@ Runtime location: generation/targets/racket-oo/runtime/
 
   Success criteria: Modaliser-Racket can remove all `(require ffi/unsafe ...)` lines
   from every `.rkt` file, achieving the same FFI-free standard as the sample apps.
-- **Results:** _pending_
+- **Results:** Partial 2026-04-16. `cf-bridge.rkt` landed — covers CFString, CFNumber,
+  CFBoolean, CFArray, CFDictionary conversions plus `with-cf-value` auto-release.
+  Added to `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in the harness; loads cleanly.
+  Remaining: AX helpers, CGEvent tap, GCD (already exists as `main-thread.rkt`),
+  private SPI. GCD dispatch is essentially done — `main-thread.rkt` provides
+  `call-on-main-thread`, `call-on-main-thread-after`, `on-main-thread?`.
 
 ### Future Work
 
