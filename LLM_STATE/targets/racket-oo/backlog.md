@@ -38,6 +38,10 @@ VM-validated via GUIVisionVMDriver. Runtime additions: `borrow-objc-object`,
 `objc-autorelease`, `->string`. Object param contracts always include `#f` (nil
 messaging is always a no-op). `make-delegate` returns `borrow-objc-object`.
 SEL-typed property setters wrap value with `sel_registerName`.
+C-function type mapping fixes landed (2026-04-16): `Boolean` → `_bool`, `const char *`
+→ `TypeRefKind::CString` / `_string`, `AXValueType`-style aliases via
+`is_generic_type_param`, CF record typedefs → `TypeRefKind::Struct` / `ffi-obj-ref`.
+Requires pipeline re-run to take effect in generated output.
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -47,6 +51,35 @@ Emitter crate: emit-racket-oo
 Runtime location: generation/targets/racket-oo/runtime/
 ```
 ## Task Backlog
+
+### Pipeline Re-run: Propagate Type Mapping Fixes
+
+- **Status:** not_started
+- **Surfaced:** 2026-04-16 (type mapping fixes landed in collection crates but not yet propagated to generated output; re-collect required).
+- **Dependencies:** none.
+- **Description:** Three collection-crate fixes require a full re-collect + re-emit to
+  take effect in generated `functions.rkt` and `constants.rkt` files:
+  1. **`Boolean` → `_bool`** — `map_typedef` now maps `Boolean` to `bool` primitive;
+     without re-collect, affected functions (e.g. `CFBooleanGetValue`, `AXIsProcessTrusted`)
+     still emit `_uint8` return types.
+  2. **`const char *` → `_string`** — `is_c_string_pointee` now emits `TypeRefKind::CString`;
+     without re-collect, C-string params (e.g. `CFStringCreateWithCString` 2nd param) still
+     emit `_pointer`.
+  3. **Record typedefs → `TypeRefKind::Struct`** — `map_typedef` now emits `Struct` for
+     `TypeKind::Record` typedefs; without re-collect, CF struct globals
+     (`kCFTypeDictionaryKeyCallBacks`, `kCFTypeDictionaryValueCallBacks`) still emit
+     `(get-ffi-obj ... _uint64)` instead of `(ffi-obj-ref ...)`.
+
+  Note: the `is_generic_type_param` fix (AXValueType-style aliases → `_uint32` not `_id`)
+  lives in the emitter, not the collector — it applies automatically on next emit without
+  re-collect.
+
+  Steps: re-run the collection pipeline for affected frameworks (CoreFoundation,
+  ApplicationServices/Accessibility, any framework using `Boolean` or `const char *` params),
+  then re-emit. Verify with `RUNTIME_LOAD_TEST=1 cargo test`. Success criterion: Modaliser-Racket
+  can replace the 7 locally-retained `get-ffi-obj` definitions in `ffi/accessibility.rkt` and
+  the 2 local constants in `ffi/permissions.rkt` with `only-in` imports from generated bindings.
+- **Results:** _pending_
 
 ### Sample Apps
 
@@ -133,42 +166,6 @@ Runtime location: generation/targets/racket-oo/runtime/
     of them).
 - **Results:** _pending_
 
-### Bug Fixes and Cleanup
-
-- **Status:** done
-- **Surfaced:** 2026-04-16 (confirmed via Modaliser-Racket real-world usage).
-- **Dependencies:** none.
-- **Description:** `make-objc-block` `#f` guard.
-- **Results:** Already fixed in commit f7a906c. The `#f` guard (`(if (not proc) (values #f #f) ...)`)
-  and `free-objc-block` `#f` handling (via `hash-ref` fallback) are both in place. Backlog entry
-  was stale — verified 2026-04-16.
-
-- **Status:** done
-- **Surfaced:** 2026-04-16. **Fixed:** 2026-04-16.
-- **Description:** NSScreen duplicate `define` from ObjC/Swift property casing mismatch.
-- **Results:** Root cause: ObjC extracts `CGDirectDisplayID`, Swift extracts `cgDirectDisplayID` —
-  both kebab-case to the same Racket name. Fix: `effective_properties` now deduplicates by
-  generated Racket getter name instead of raw IR property name. 4 new tests, golden files updated,
-  all 112 emitter tests + runtime load harness green.
-
-- **Status:** done
-- **Surfaced:** 2026-04-16. **Fixed:** 2026-04-16.
-- **Description:** NSMenuItem `+separatorItem` class method suppressed by instance property.
-- **Results:** Root cause: `method_collides_with_property` used a single property name set for both
-  class and instance levels, so the instance property `separatorItem` (bool) suppressed the class
-  method `+separatorItem` (factory). Fix: (1) partitioned property name sets by class/instance level
-  so class methods only collide with class property names; (2) suppress instance properties whose
-  getter name collides with a class method (class method wins). 4 new tests, golden file updated.
-  The IR was actually correct (`class_method: true` on the method) — the bug was purely in the
-  emitter's collision logic.
-
-- **Status:** done
-- **Surfaced:** 2026-04-16. **Fixed:** 2026-04-16.
-- **Description:** WKWebView missing `setAutoresizingMask:` (inherited from NSView).
-- **Results:** Created `runtime/nsview-helpers.rkt` with `set-autoresizing-mask!` helper using
-  typed `objc_msgSend` binding (NSUInteger param). Works on any NSView subclass. Added to both
-  `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in the harness. Loads clean.
-
 ### `is_definition()` Guard Audit in Extractors
 
 - **Status:** not_started
@@ -221,70 +218,13 @@ Runtime location: generation/targets/racket-oo/runtime/
   runtime harness as the validation canary.
 - **Results:** _pending_
 
-### C-Function Type Mapping Fixes (Modaliser-Racket FFI Elimination)
-
-- **Status:** done
-- **Surfaced:** 2026-04-16 (Modaliser-Racket accessibility/permissions/main-thread
-  migration exposed these; 7 functions kept as local hand-written definitions due
-  to type mismatches with generated signatures).
-- **Dependencies:** none.
-- **Description:** Four classes of type-mapping issue prevent Modaliser-Racket from
-  using generated C-function bindings for all functions:
-
-  1. **`_uint8` where `_bool` is needed.** C functions returning `Boolean` (unsigned
-     char) are emitted with `_uint8` return type. In Racket, `0` is truthy (only `#f`
-     is falsy), so `_uint8` silently breaks any boolean-context usage. Affected:
-     `CFBooleanGetValue`, `CFStringGetCString`, `CFNumberGetValue`, `AXValueGetValue`,
-     `AXIsProcessTrusted`, `AXIsProcessTrustedWithOptions`. Fix: detect `Boolean`,
-     `bool`, `_Bool`, `unsigned char` (when used as boolean) return types in the IR
-     and emit `_bool` instead of `_uint8`.
-
-  2. **`_pointer` where `_string` is needed.** `const char *` parameters that receive
-     C string arguments are emitted as `_pointer`. Racket's `_string` auto-converts
-     Racket strings to C strings; `_pointer` does not, requiring manual marshalling.
-     Affected: `CFStringCreateWithCString` (2nd param). Fix: detect `const char *`
-     (or `char *`) params in the IR and emit `_string`. The contract should be
-     `string?`.
-
-  3. **`_id` for non-ObjC enum typedef params.** Some integer enum types
-     (`AXValueType`) are typedef'd through ObjC-compatible paths, causing the emitter
-     to treat them as `_id` (ObjC object). Plain integers are rejected at runtime.
-     Affected: `AXValueCreate` (1st param), `AXValueGetValue` (2nd param). Fix:
-     recognise that `AXValueType` is a C enum (underlying type `uint32_t`) and emit
-     `_uint32`, not `_id`.
-
-  4. **`ffi-obj-ref` not applied to CoreFoundation struct-typed globals.** The
-     `ffi-obj-ref` fix for struct-typed data symbols landed for libdispatch
-     (2026-04-16) but `kCFTypeDictionaryKeyCallBacks` and
-     `kCFTypeDictionaryValueCallBacks` in `corefoundation/constants.rkt` still use
-     `get-ffi-obj ... _uint64`, reading struct bytes instead of the symbol address.
-     These are `CFDictionaryKeyCallBacks`/`CFDictionaryValueCallBacks` structs.
-     Fix: apply the same struct-vs-pointer detection to CoreFoundation globals.
-
-  Verification: Modaliser-Racket should be able to replace all 7 locally-retained
-  `get-ffi-obj` definitions in `ffi/accessibility.rkt` and the 2 local constants
-  in `ffi/permissions.rkt` with `only-in` imports from generated bindings.
-- **Results:** 3 of 4 sub-issues fixed (2026-04-16):
-  1. **Boolean → _bool: FIXED.** Added `"Boolean"` to the well-known typedef list in
-     `map_typedef` (collection/crates/extract-objc/src/type_mapping.rs). Needs re-collect
-     to propagate to IR.
-  2. **const char * → _string: FIXED.** Added `CString` TypeRefKind variant to IR schema.
-     ObjC extractor detects `char *`/`const char *` pointees via `is_c_string_pointee`.
-     FFI mapper emits `_string`, contract mapper emits `string?`. Needs re-collect to
-     propagate to IR.
-  3. **AXValueType → _uint64: FIXED.** Replaced fragile prefix-list heuristic with
-     `is_generic_type_param()` that detects ObjC generic type params (single uppercase
-     then lowercase, e.g. "ObjectType") vs framework-prefixed aliases (2+ uppercase,
-     e.g. "AXValueType"). 2 new tests.
-  4. **CF struct globals → ffi-obj-ref: FIXED.** Changed `map_typedef` to emit
-     `TypeRefKind::Struct` (not `Alias`) for struct typedefs. `is_struct_data_symbol`
-     now catches CF struct globals. Needs re-collect to propagate. 1 new test.
-
 ### CFSTR Macro Constant Emission
 
 - **Status:** not_started
 - **Surfaced:** 2026-04-16 (Modaliser-Racket accessibility migration).
-- **Dependencies:** none.
+- **Dependencies:** Pipeline re-run (above) should land first — validates that CF
+  struct globals emit correctly via `ffi-obj-ref`, confirming the CF infrastructure
+  the CFSTR emitter will depend on.
 - **Description:** macOS SDK headers define many important constants as
   `CFSTR("...")` macros (e.g., `kAXWindowsAttribute`, `kAXFocusedWindowAttribute`,
   `kAXMainAttribute`, `kAXPositionAttribute`, `kAXSizeAttribute`,
@@ -313,8 +253,10 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Surfaced:** 2026-04-16 (Modaliser-Racket FFI elimination goal — the user wants
   zero `ffi/unsafe` requires in app code, matching the FFI-free standard achieved
   by sample apps in Phase 3 of FFI Surface Elimination).
-- **Dependencies:** C-function type mapping fixes (above) should land first so the
-  generated functions are usable; but helpers can also wrap current signatures.
+- **Dependencies:** Pipeline re-run (above) should land first so generated C-function
+  bindings have correct types (`_bool` returns, `_string` params, `ffi-obj-ref` for CF
+  struct globals) before wrapping them in high-level helpers. Helpers can also wrap
+  current signatures as an interim measure if needed.
 - **Description:** The FFI Surface Elimination (Phase 1-3) achieved zero `ffi/unsafe`
   imports for sample apps using AppKit/WebKit. Modaliser-Racket uses lower-level C
   APIs (CoreFoundation, Accessibility, CGEvent, GCD) that still require raw FFI
