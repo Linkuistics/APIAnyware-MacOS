@@ -135,42 +135,39 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 ### Bug Fixes and Cleanup
 
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (confirmed via Modaliser-Racket real-world usage).
 - **Dependencies:** none.
-- **Description:** `nsscreen.rkt` has a duplicate symbol definition that causes a
-  load error — any file that `require`s NSScreen fails immediately. Current
-  workaround in Modaliser-Racket: use raw `tell` instead of the generated wrapper.
-  Fix: locate the duplicate in the emitter (likely a property getter/setter or
-  category method emitted twice for NSScreen) and deduplicate in `emit_class.rs`.
-  Verify with the runtime load harness by adding NSScreen to `LIBRARY_LOAD_CHECKS`.
-- **Results:** _pending_
+- **Description:** `make-objc-block` `#f` guard.
+- **Results:** Already fixed in commit f7a906c. The `#f` guard (`(if (not proc) (values #f #f) ...)`)
+  and `free-objc-block` `#f` handling (via `hash-ref` fallback) are both in place. Backlog entry
+  was stale — verified 2026-04-16.
 
-- **Status:** not_started
-- **Surfaced:** 2026-04-16 (confirmed via Modaliser-Racket real-world usage).
-- **Dependencies:** none.
-- **Description:** The generated `nsmenuitem.rkt` binding treats `+separatorItem`
-  (a class method) as an instance property rather than a class method, making the
-  emitted `nsmenuitem-separator-item` binding unusable. Workaround: call
-  `(tell NSMenuItem separatorItem)` directly. Fix: ensure the IR correctly marks
-  `separatorItem` as a class method (not an instance property), and that
-  `emit_class.rs` emits it under the class method path. Add a snapshot assertion
-  confirming the emitted form is a class-method wrapper, not a property getter.
-- **Results:** _pending_
+- **Status:** done
+- **Surfaced:** 2026-04-16. **Fixed:** 2026-04-16.
+- **Description:** NSScreen duplicate `define` from ObjC/Swift property casing mismatch.
+- **Results:** Root cause: ObjC extracts `CGDirectDisplayID`, Swift extracts `cgDirectDisplayID` —
+  both kebab-case to the same Racket name. Fix: `effective_properties` now deduplicates by
+  generated Racket getter name instead of raw IR property name. 4 new tests, golden files updated,
+  all 112 emitter tests + runtime load harness green.
 
-- **Status:** not_started
-- **Surfaced:** 2026-04-16 (confirmed via Modaliser-Racket Mini Browser work).
-- **Dependencies:** none.
-- **Description:** The generated `wkwebview.rkt` does not expose
-  `setAutoresizingMask:`, which is inherited from NSView. The generated bindings
-  only emit methods declared directly on the class, not inherited ones. Workaround:
-  call `objc_msgSend` directly. **Chosen approach: option (b)** — expose a generic
-  `set-autoresizing-mask!` helper in the runtime (probably `runtime/nsview-helpers.rkt`)
-  that works on any NSView subclass via `tell`. Lower risk than option (a)
-  (emitting inherited NSView methods into every subclass wrapper at generation
-  time) and avoids golden file churn across all NSView subclass wrappers.
-  Update harness coverage to verify the new helper loads and calls correctly.
-- **Results:** _pending_
+- **Status:** done
+- **Surfaced:** 2026-04-16. **Fixed:** 2026-04-16.
+- **Description:** NSMenuItem `+separatorItem` class method suppressed by instance property.
+- **Results:** Root cause: `method_collides_with_property` used a single property name set for both
+  class and instance levels, so the instance property `separatorItem` (bool) suppressed the class
+  method `+separatorItem` (factory). Fix: (1) partitioned property name sets by class/instance level
+  so class methods only collide with class property names; (2) suppress instance properties whose
+  getter name collides with a class method (class method wins). 4 new tests, golden file updated.
+  The IR was actually correct (`class_method: true` on the method) — the bug was purely in the
+  emitter's collision logic.
+
+- **Status:** done
+- **Surfaced:** 2026-04-16. **Fixed:** 2026-04-16.
+- **Description:** WKWebView missing `setAutoresizingMask:` (inherited from NSView).
+- **Results:** Created `runtime/nsview-helpers.rkt` with `set-autoresizing-mask!` helper using
+  typed `objc_msgSend` binding (NSUInteger param). Works on any NSView subclass. Added to both
+  `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in the harness. Loads clean.
 
 ### `is_definition()` Guard Audit in Extractors
 
@@ -226,7 +223,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 ### C-Function Type Mapping Fixes (Modaliser-Racket FFI Elimination)
 
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (Modaliser-Racket accessibility/permissions/main-thread
   migration exposed these; 7 functions kept as local hand-written definitions due
   to type mismatches with generated signatures).
@@ -267,7 +264,21 @@ Runtime location: generation/targets/racket-oo/runtime/
   Verification: Modaliser-Racket should be able to replace all 7 locally-retained
   `get-ffi-obj` definitions in `ffi/accessibility.rkt` and the 2 local constants
   in `ffi/permissions.rkt` with `only-in` imports from generated bindings.
-- **Results:** _pending_
+- **Results:** 3 of 4 sub-issues fixed (2026-04-16):
+  1. **Boolean → _bool: FIXED.** Added `"Boolean"` to the well-known typedef list in
+     `map_typedef` (collection/crates/extract-objc/src/type_mapping.rs). Needs re-collect
+     to propagate to IR.
+  2. **const char * → _string: FIXED.** Added `CString` TypeRefKind variant to IR schema.
+     ObjC extractor detects `char *`/`const char *` pointees via `is_c_string_pointee`.
+     FFI mapper emits `_string`, contract mapper emits `string?`. Needs re-collect to
+     propagate to IR.
+  3. **AXValueType → _uint64: FIXED.** Replaced fragile prefix-list heuristic with
+     `is_generic_type_param()` that detects ObjC generic type params (single uppercase
+     then lowercase, e.g. "ObjectType") vs framework-prefixed aliases (2+ uppercase,
+     e.g. "AXValueType"). 2 new tests.
+  4. **CF struct globals → ffi-obj-ref: FIXED.** Changed `map_typedef` to emit
+     `TypeRefKind::Struct` (not `Alias`) for struct typedefs. `is_struct_data_symbol`
+     now catches CF struct globals. Needs re-collect to propagate. 1 new test.
 
 ### CFSTR Macro Constant Emission
 
