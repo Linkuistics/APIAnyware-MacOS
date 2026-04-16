@@ -134,7 +134,7 @@ Self uses `SELF_CONTRACT` (`"objc-object?"`) in `emit_class.rs` for instance met
 - **Object returns** stay `any/c` via `map_return_contract`. Class-specific return predicates are a queued follow-up.
 `objc-object?` is in scope via the require chain: `coerce.rkt` re-exports from `runtime/objc-base.rkt`. Class-property methods omit `self` (see "Class-property methods omit `self`").
 
-### Delegate callback sender args need `wrap-objc-object`, not bare cast
+### Delegate callback sender args need `wrap-objc-object`
 `objc-object?` is a **struct predicate** (`struct objc-object` in `objc-base.rkt`), NOT a cpointer tag check. `(cast ptr _pointer _id)` tags the pointer for FFI but does NOT create an `objc-object` struct — it fails the `objc-object?` contract. When delegate trampoline args (e.g. target-action `sender`) must flow through a class wrapper's `provide/contract` boundary, the correct pattern is:
 
     (wrapper-fn (wrap-objc-object (cast sender _pointer _id)) args...)
@@ -180,10 +180,10 @@ Variadic and inline functions are skipped — they can't be bound via `get-ffi-o
 ### Block nil handling convention
 `make-objc-block` returns `(values #f #f)` when `proc` is `#f` (NULL block pointer + no block-id), rather than wrapping `#f` in a crashing lambda. `free-objc-block` handles `#f` gracefully.
 
-**Confirmed bug (Modaliser-Racket, 2026-04-16):** If the `#f` guard is not in place (or is bypassed), passing `#f` to `make-objc-block` creates a live block object that calls `(apply #f args...)` on invocation — a non-obvious crash deferred to call time. The fix (`(values #f #f)` guard) must be verified for optional completion-handler parameters specifically, not only the primary proc path. Workaround until confirmed: pass a no-op lambda `(lambda args (void))` instead of `#f` for optional completion handlers.
+Without the `(values #f #f)` guard, passing `#f` to `make-objc-block` creates a live block that calls `(apply #f args...)` on invocation — a crash deferred to call time. Verify the guard on optional completion-handler parameters specifically, not only the primary proc path. Safe alternative for optional completion handlers: `(lambda args (void))` instead of `#f`.
 
 ### `function-ptr` satisfies `(or/c cpointer? #f)` contract
-Confirmed 2026-04-16 (Modaliser-Racket `ffi/cgevent.rkt` migration): a `function-ptr` constructed from `_cprocedure` satisfies the `(or/c cpointer? #f)` contract that the racket-oo generator emits for C callback parameters. Demonstrated end-to-end with `CGEventTapCreate`'s callback param. No raw-symbol fallback is needed for callback params in generated bindings — the generated contract path works as-is.
+A `function-ptr` constructed from `_cprocedure` satisfies the `(or/c cpointer? #f)` contract emitted for C callback parameters. No raw-symbol fallback is needed for callback params in generated bindings — the generated contract path works as-is.
 
 ### Racket green threads dead under `nsapplication-run`
 All Racket green-thread primitives (`thread`, `sleep`, `sync`, `sync/timeout`, `thread-wait`, `semaphore-wait`) are non-functional once `nsapplication-run` is called. The Cocoa run loop blocks the Racket place main thread, so the scheduler never advances — `(thread ...)` bodies silently never execute. Alternatives: `call-on-main-thread` / `call-on-main-thread-after` (GCD dispatch), synchronous main-thread execution, or shell-level watchdogs. Any code using `(thread ...)` alongside `nsapplication-run` is broken by design.
