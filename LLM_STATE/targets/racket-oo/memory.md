@@ -37,7 +37,7 @@ Non-linkable symbols (preprocessor macros, internal-linkage decls, Swift-native 
 5. **extract-objc `is_unavailable_on_macos()` filter** — skips bare `c:@<name>` preprocessor macros (e.g. `kAudioServicesDetailIntendedSpatialExperience`, AudioToolbox). AudioToolbox in `LIBRARY_LOAD_CHECKS`.
 6. **extract-swift `c:@Ea@`/`c:@EA@` USR filter** — skips anonymous enum members in `declaration_mapping.rs` (e.g. `nw_browse_result_change_identical`, Network). Network in runtime load test.
 
-Adding a new filter: (a) add a skip-reason branch in `non_c_linkable_skip_reason`; (b) add a canary framework to harness coverage. Coverage extension is a discovery mechanism — all known classes above were surfaced by coverage tasks.
+Adding a new filter: (a) add a skip-reason branch in `non_c_linkable_skip_reason`; (b) add a canary framework to harness coverage — extensions are a discovery mechanism that surfaces new leak classes.
 
 Dylib-unexported symbols are a separate concern — see "Emit-time filter for dylib-unexported symbols".
 
@@ -45,7 +45,7 @@ Dylib-unexported symbols are a separate concern — see "Emit-time filter for dy
 `EnumDecl`, `StructDecl`, and `ObjCProtocolDecl` arms have `entity.is_definition()` guards to skip forward declarations that would shadow populated definitions in the `seen_*` HashSets. `ObjCInterfaceDecl` intentionally has NO guard: in Clang's AST, `@interface` is a *declaration* (the *definition* is `@implementation`, absent from SDK headers), so `is_definition()` returns `false` for all `ObjCInterfaceDecl` cursors in framework headers. Forward `@class` declarations produce `ObjCClassRef` cursors, not `ObjCInterfaceDecl`, so no forward-decl shadowing is possible for this entity kind.
 
 ### Unsigned enums need `get_canonical_type()` check
-`is_unsigned_int_kind` in `extract_declarations.rs` must canonicalize via `get_canonical_type()` before checking the underlying enum type. Without this, `NS_ENUM(NSUInteger, ...)` presents as `Typedef` kind and misses the unsigned branch. Clang's `get_enum_constant_value()` returns `(i64, u64)` — use `.1` (unsigned) for unsigned-backed enums. Values exceeding `i64::MAX` are skipped with `tracing::warn!` (the IR schema is i64; silent wrapping would corrupt value semantics). Pipeline regeneration is required to propagate this to generated output.
+`is_unsigned_int_kind` in `extract_declarations.rs` must canonicalize via `get_canonical_type()` before checking the underlying enum type. Without this, `NS_ENUM(NSUInteger, ...)` presents as `Typedef` kind and misses the unsigned branch. Clang's `get_enum_constant_value()` returns `(i64, u64)` — use `.1` (unsigned) for unsigned-backed enums. Values exceeding `i64::MAX` are skipped with `tracing::warn!` (the IR schema is i64; silent wrapping would corrupt value semantics). Requires re-collect to propagate.
 
 ### libclang resolves symlinked subframeworks to canonical path
 ColorSync, CoreGraphics, CoreText, and ImageIO live under `ApplicationServices.framework` as symlinks, but libclang resolves their declarations to the canonical top-level framework paths (`System/Library/Frameworks/CoreGraphics.framework/...`). Only genuinely non-symlinked subframeworks (HIServices, ATS, PrintCore) need an allowlist entry in `is_from_framework`. The symlinked ones are accepted via their own top-level entries.
@@ -108,7 +108,7 @@ Lives at `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`. Two test
 
 Gated on `RUNTIME_LOAD_TEST=1`, auto-skips if `racket`/`raco` missing or enriched IR absent. ~40s on M1. Builds a hermetic tempdir matching the canonical target tree so it doesn't race the `compiled/` cache.
 
-**Standing rule**: coverage extension to a new framework is reflexive — add it whenever a new `LIBRARY_LOAD_CHECKS` candidate appears, not gated on runtime cost. Amortised Racket startup means adding several new frameworks costs well under 1s on top of the base. Extensions have uncovered orthogonal leak classes (see "Non-linkable-symbol filters in extractors"). New runtime files (e.g. `dynamic-class.rkt`) must be added to both `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
+**Standing rule**: add coverage whenever a new `LIBRARY_LOAD_CHECKS` candidate appears — several new frameworks cost well under 1s (amortized Racket startup). Extensions surface new leak classes (see "Non-linkable-symbol filters in extractors"). New runtime files (e.g. `dynamic-class.rkt`) must be added to both `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
 
 ### `dynamic-require` needs `(file ,path)`
 The harness uses `(dynamic-require \`(file ,p) #f)`, not `(dynamic-require p #f)`. A raw path string trips a `module-path?` contract violation. The `(file ...)` quasi-form wraps absolute filesystem paths.
@@ -200,7 +200,7 @@ Racket CS SIGILLs (exit 132) when a `_cprocedure` callback is invoked from an OS
 `ffi/unsafe/os-thread` (`call-in-os-thread`) works for closures, list/hash ops, `parameterize`, file I/O (`open-input-file`, etc.). Segfaults on `tcp-connect`, `subprocess`/`system`, and anything using Racket's place scheduler I/O event pump. `net/url` uses TCP, transitively unsafe. Useful for CPU-bound work (fuzzy matching, serialization).
 
 ### `dynamic-place` for I/O off the main thread
-Each `dynamic-place` runs a separate Racket VM on its own OS thread with its own scheduler. `net/url`, `tcp-connect`, `subprocess` work correctly inside places. Place-channel semantics: `place-channel-put` is fully buffered (non-blocking sender), `place-channel-get` blocks (fatal on main thread under `nsapplication-run`), `sync/timeout 0` on a place-channel is a non-blocking try-receive safe under `nsapplication-run`. Pattern: place does I/O; main thread polls via `place-channel-try-get` on a `call-on-main-thread-after` timer — main thread never blocks. (Reference impl: Modaliser `services/http.rkt`.)
+Each `dynamic-place` runs a separate Racket VM on its own OS thread with its own scheduler. `net/url`, `tcp-connect`, `subprocess` work correctly inside places. Place-channel semantics: `place-channel-put` is fully buffered (non-blocking sender), `place-channel-get` blocks (fatal on main thread under `nsapplication-run`), `sync/timeout 0` on a place-channel is a non-blocking try-receive safe under `nsapplication-run`. Pattern: place does I/O; main thread polls via `place-channel-try-get` on a `call-on-main-thread-after` timer — main thread never blocks.
 
 ### macOS widget quirks (Racket apps)
 - Radio button mutual exclusion requires manual target-action delegate
@@ -293,7 +293,7 @@ Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dis
 ### `const char *` maps to `TypeRefKind::CString`
 `is_c_string_pointee()` in `extract-objc` accepts `CharS | CharU` pointees only and requires `is_const_qualified()` on the pointee (not the pointer). Non-const `char *` (output buffers) maps to `Pointer`. IR carries `TypeRefKind::CString`; FFI mapper emits `_string`. Requires re-collect to propagate to generated files.
 
-### Property dedup uses Racket getter name, not IR name
+### Property dedup by Racket getter name, not IR name
 ObjC/Swift dual-extracted properties can differ only in casing (e.g., `CGDirectDisplayID` vs `cgDirectDisplayID`), which kebab-cases to the same Racket identifier. `effective_properties` must deduplicate by generated Racket getter name; IR-name dedup leaves duplicate `define` forms in emitted class files.
 
 ### `is_generic_type_param` identifies ObjC generic params by case pattern
