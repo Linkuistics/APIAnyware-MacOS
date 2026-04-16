@@ -170,7 +170,7 @@ Variadic and inline functions are skipped — they can't be bound via `get-ffi-o
 ### Snapshot testing infrastructure
 `load_enriched_framework(name)` in `snapshot_test.rs` generalizes framework loading — adding a new framework is a file list and test function. AppKit suite has 23 curated golden files covering key class hierarchies (NSResponder→NSView→NSControl→NSButton, NSWindow, table view, menus, text, layout). Rich classes like NSButton and NSWindow exercise more typed message send variants and geometry struct handling than Foundation classes.
 
-### `make-objc-block` nil guard (landed)
+### `make-objc-block` nil guard
 `make-objc-block` returns `(values #f #f)` for `#f` input (NULL block pointer + no block-id). `free-objc-block` handles `#f` gracefully (no-op via `hash-ref` miss). `call-with-objc-block` passes `#f` through to body. Tested via `runtime_block_nil_guard` in `runtime_load_test.rs` (gated on `RUNTIME_LOAD_TEST=1`).
 
 ### `function-ptr` satisfies `(or/c cpointer? #f)` contract
@@ -303,7 +303,7 @@ Single uppercase letter followed by lowercase chars (e.g., `ObjectType`, `KeyTyp
 `CFSTR(...)` macro constants are not linked to any dylib. `ir.rs` carries `macro_value: Option<String>` on `Constant`; the ObjC extractor tokenises source ranges to match `CFSTR("literal")` patterns. Emitter outputs a module-level `_make-cfstr` preamble (loads `CFStringCreateWithCString` from CoreFoundation) and `(define kFoo (_make-cfstr "literal"))` per constant. `CFStringRef` lifetime is pinned to the module (no ARC). Contract: `(or/c cpointer? #f)`.
 
 ### `cf-bridge.rkt` and `nsview-helpers.rkt` runtime helpers
-`cf-bridge.rkt` (214 lines) exports: `racket-string->cfstring`/`cfstring->racket-string`, `cfnumber->integer`/`cfnumber->real`, `cfboolean->boolean`, `cfarray->list`, `make-cfdictionary`, `with-cf-value` (auto-release). `nsview-helpers.rkt` (30 lines) provides NSView geometry helpers. Both listed in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
+`cf-bridge.rkt` exports: `racket-string->cfstring`/`cfstring->racket-string`, `cfnumber->integer`/`cfnumber->real`, `cfboolean->boolean`, `cfarray->list`, `make-cfdictionary`, `with-cf-value` (auto-release). `nsview-helpers.rkt` provides NSView geometry helpers. Both listed in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
 
 ### AX, CGEvent, and SPI runtime helper files
 Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
