@@ -1,23 +1,60 @@
-### Session 20 (2026-04-16T12:38:56Z) — Three contract/type bugs fixed; class-return predicates and runtime helpers added
+### Session 20 (2026-04-16T13:49:52Z) — Class predicates, C-type fixes, runtime helpers, FFI surface elimination
 
-- **What was attempted:** Close three filed bug tasks (non-const `char *` mapping, nullable `_string` return contracts, foreign-thread callback warnings) plus add class-return predicates backed by `isKindOfClass:` and three new runtime helper modules.
+- **What was attempted:** A multi-front improvement session targeting: (1) per-class return-type
+  predicates in generated class wrappers; (2) C-function type-mapping correctness for Boolean,
+  const char *, and CF record typedefs; (3) CFSTR macro constant emission; (4) five new runtime
+  helper files; (5) FFI surface elimination across all four sample apps; (6) collection-layer
+  `is_definition()` guards for struct and protocol declarations.
 
 - **What worked:**
-  - **Non-const `char *` fix** (`collection/crates/extract-objc/src/type_mapping.rs`): Added `is_c_string_pointee()` helper and `pointee.is_const_qualified()` guard at both `map_type_kind` and `map_typedef` call sites. Only `const char *` → `CString`; non-const `char *` (output buffers) → `Pointer`. `CFStringGetCString.buffer` now correctly emits `_pointer` in regenerated output. `type_ref.rs` doc updated to record the distinction.
-  - **Nullable `_string` return contract** (`emit_functions.rs`): `map_contract()` now returns `(or/c string? #f)` for `CString` return types (matching `_string` FFI behaviour where NULL → `#f`) and `string?` for param types. Delegates through `map_return_contract` in `emit_class.rs`. 6 TDD unit tests added; golden files updated for Foundation (nsstring, nsurl, nsfilemanager).
-  - **Foreign-thread safety warnings** (`emit_functions.rs`): `generate_functions_file()` detects `FunctionPointer` and `Block` param types and emits a 3-line `; WARNING:` comment before the `define` form, naming `_cprocedure`, SIGILL, and `#:async-apply`/deadlock. 2 TDD unit tests added. Confirmed in regenerated CoreGraphics `functions.rkt`.
-  - **Class-return predicates** (`emit_class.rs`): `collect_return_type_class_names()` collects unique ObjC class names from method/property return positions; `emit_class_predicates()` emits `(define (nsview? v) (objc-instance-of? v "NSView"))` inline definitions before the `provide/contract` block. `map_return_contract()` uses these predicates for typed return contracts instead of `cpointer?`. Visible in all AppKit golden files (nsbutton.rkt, nscolor.rkt, etc.).
-  - **`objc-instance-of?`** (`objc-base.rkt`): Added `objc_getClass` FFI binding, `class-cache` hash (avoids repeated `objc_getClass` calls), `get-objc-class` helper, and `objc-instance-of?` backed by `isKindOfClass:`. Added to `provide` list.
-  - **`is_definition()` guards** (`extract_declarations.rs`): `ObjCProtocolDecl` and `StructDecl` now call `entity.is_definition()` before extraction, preventing forward declarations from shadowing the full definitions in the dedup sets. `ObjCInterfaceDecl` intentionally unguarded (SDK headers contain declarations, not @implementation definitions).
-  - **New runtime helpers**: `ax-helpers.rkt`, `cgevent-helpers.rkt`, `spi-helpers.rkt` added to `generation/targets/racket-oo/runtime/`; all registered in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in the harness.
-  - Full pipeline re-run after all changes; 65 files changed, all workspace tests pass, runtime load harness passes.
+  - **Class-return predicates** — `collect_return_type_class_names` in `emit_class.rs` scans
+    property/method return types for `TypeRefKind::Class` and emits inline `(define (nsview? v)
+    (objc-instance-of? v "NSView"))` predicates ahead of `provide/contract`. `map_return_contract`
+    now emits `nsview?` instead of `any/c` for typed class returns, tightening the contract
+    surface. `objc-instance-of?` added to `objc-base.rkt` and its `provide` list.
+  - **C-type mapping fixes** (`emit_functions.rs`, `ffi_type_mapping.rs`, `type_mapping.rs`):
+    `Boolean` → `_bool`, `const char *` → `TypeRefKind::CString`/`_string`, CF record typedefs
+    (CGRect etc. appearing as structs) → `TypeRefKind::Struct`/`ffi-obj-ref`. Non-const `char *`
+    → `_pointer`. Nullable `_string` return contracts now correctly emit `(or/c string? #f)`.
+    Foreign-thread safety warnings added to C callback (`FunctionPointer`) bindings.
+  - **CFSTR macro constants** (`emit_constants.rs`) — `has_cfstr_constants` detects
+    `macro_value`-carrying constants; generates `(define kFoo (_make-cfstr "literal"))` using
+    the `_make-cfstr` helper, with `(or/c cpointer? #f)` contract.
+  - **Runtime helpers** — `ax-helpers.rkt`, `cgevent-helpers.rkt`, `spi-helpers.rkt` landed
+    alongside earlier `cf-bridge.rkt` and `nsview-helpers.rkt`. All added to `RUNTIME_FILES`
+    and `LIBRARY_LOAD_CHECKS` in `runtime_load_test.rs`.
+  - **FFI surface elimination** — all four sample apps (`hello-window`, `counter`,
+    `ui-controls-gallery`, `file-lister`) purged of `ffi/unsafe` imports. Radio-button contract
+    violation fixed: delegate sender args must flow through `wrap-objc-object` (not raw pointer)
+    at `provide/contract` boundaries.
+  - **Bug fix** — `cf-bridge.rkt` and `ax-helpers.rkt` were calling `(free buf)` on
+    `(malloc …)` buffers that are GC-managed in Racket CS; `free` expects C-heap pointers and
+    caused SIGABRT. All 9 `free` calls across the two files were removed.
+  - **Collection guards** (`extract_declarations.rs`) — `is_definition()` check added for
+    `ObjCProtocolDecl` (forward `@protocol Foo;` declarations now skipped) and `StructDecl`
+    (opaque struct forward declarations skipped). `ObjCInterfaceDecl` intentionally ungarded.
+  - Golden files across AppKit, Foundation, and TestKit updated to reflect predicate emission,
+    contract tightening, and type-mapping corrections. 162 workspace tests pass; runtime load
+    harness passes (`RUNTIME_LOAD_TEST=1`).
 
-- **What didn't work:** Nothing notable failed. All three bug tasks closed cleanly with TDD before pipeline re-run.
+- **What didn't work / discoveries:**
+  - The `free`-on-GC-memory SIGABRT was not caught by any test — it only surfaces at runtime
+    when the malloc'd buffer is actually freed. Lesson: runtime helper files with C-interop
+    patterns (malloc, free) need explicit ownership reasoning at write time.
+  - `_NSEdgeInsets` alias was missing from `is_known_geometry_struct` — Mini Browser task
+    remains blocked on WKWebView's `_NSEdgeInsets` binding.
 
-- **What this suggests trying next:** The three remaining sample apps (Menu Bar Tool, Text Editor, Mini Browser) are the highest-value next targets. Class-return predicates and the new runtime helpers (`ax-helpers`, `cgevent-helpers`) are now in place to support Accessibility and CGEvent-based apps. Text Editor is the most demanding due to block callbacks and NSUndoManager; Menu Bar Tool exercises the no-main-window lifecycle.
+- **What this suggests trying next:**
+  - Note Editor sample app (`not_started`) — NSSplitView, NSTextView, WKWebView, NSSavePanel,
+    NSUndoManager, NSNotificationCenter; exercises completion blocks and cross-framework rendering.
+  - ObjC interop re-export from runtime module (`not_started`) — unblocks 9 Modaliser files
+    from needing `ffi/unsafe` directly.
+  - Raw AX attribute getter and CGEvent tap handler blockers remain open for Modaliser
+    FFI elimination.
 
 - **Key learnings:**
-  - The `is_const_qualified()` check on the pointee (not the pointer itself) is the correct way to distinguish input-string `const char *` from output-buffer `char *` in libclang.
-  - `_string` FFI type silently converts NULL to `#f` — the contract must accept `#f` for return types but not for params (params are always Racket strings passed in).
-  - Inline class predicates (`nsview?` etc.) backed by `isKindOfClass:` are more correct than `cpointer?` for return contracts — they catch wrong-class returns at the boundary rather than accepting any pointer.
-  - Forward-declaration `@protocol Foo;` entities are visited by the Clang AST traversal; `is_definition()` is required to distinguish them from the full `@protocol Foo { ... }` body.
+  - Return-type contracts on class wrappers are now class-specific (`nsview?`) rather than `any/c`,
+    giving much better call-site blame when methods return wrong types.
+  - Racket CS `(malloc …)` returns GC-tracked memory — never pass to `free`; use `(free (cast buf _racket _pointer))` only for C-heap allocations.
+  - `is_definition()` on `ObjCProtocolDecl` is essential; forward `@protocol` declarations
+    in SDK headers would otherwise shadow the real definition and produce empty protocol files.

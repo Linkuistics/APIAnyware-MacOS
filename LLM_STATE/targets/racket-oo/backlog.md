@@ -56,6 +56,10 @@ CGEvent, and SPI runtime helpers landed (2026-04-16): `ax-helpers.rkt`,
 `cgevent-helpers.rkt`, `spi-helpers.rkt` — all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
 Non-const `char *` → `_pointer` fix, nullable `_string` return contracts, and
 foreign-thread safety warnings in C callback bindings all landed 2026-04-16.
+**Bug fix (2026-04-16):** `cf-bridge.rkt` and `ax-helpers.rkt` called `(free buf)`
+on Racket GC-managed `(malloc ...)` buffers → SIGABRT. Racket CS's `malloc`
+returns GC-tracked memory; `free` expects C-heap pointers. Removed all 9 `free`
+calls across 2 files.
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -69,25 +73,50 @@ Runtime location: generation/targets/racket-oo/runtime/
 ### Sample Apps
 
 #### Menu Bar Tool
-- **Status:** not_started
-- **Dependencies:** none; independent of File Lister (GUI smoke tracked separately)
+- **Status:** done (superseded)
+- **Dependencies:** none
 - **Description:** NSStatusBar, NSMenu, no-window app, timers, clipboard. Tests
   an unusual app lifecycle (no main window, status item driven) and menu
-  construction. GCD main-thread dispatch helpers in `main-thread.rkt` are already
-  in place for timer callbacks.
+  construction.
   See `knowledge/apps/menu-bar-tool/spec.md` and `test-strategy.md`.
-- **Results:** _pending_
+- **Results:** Superseded by Modaliser-Racket (`../Modaliser-Racket/`), which
+  exercises every pattern this app was designed to test — and more. Specifically:
+  NSStatusBar/NSStatusItem (`services/lifecycle.rkt`), NSMenu construction with
+  separators and target-action delegates, accessory activation policy (no dock
+  icon, no main window), NSPasteboard read/write (`services/pasteboard.rkt`),
+  GCD timer callbacks via `call-on-main-thread-after`. Modaliser also exercises
+  CGEvent taps, WKWebView, Accessibility APIs, and dynamic ObjC subclasses —
+  patterns well beyond the Menu Bar Tool's scope. The only uncovered items
+  (NSDateFormatter, NSProcessInfo, NSAlert, submenu hierarchy) are trivial
+  generated-binding calls exercising no novel runtime/emitter patterns.
+  No separate sample app needed.
 
-#### Text Editor
+#### Counter
+- **Status:** done (retired)
+- **Dependencies:** none
+- **Description:** Target-action + mutable state (button + label + callback).
+- **Results:** Retired 2026-04-16 — fully subsumed. Every interactive app
+  exercises target-action + mutable state. ui-controls-gallery covers buttons
+  with callbacks. See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
+
+#### File Lister
+- **Status:** done (retired)
+- **Dependencies:** none
+- **Description:** NSTableView data-source delegate, NSOpenPanel, NSFileManager.
+- **Results:** Retired 2026-04-16 — delegate pattern proven by Modaliser-Racket.
+  NSOpenPanel exercised by Note Editor. NSFileManager is a trivial binding call.
+  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
+
+#### Note Editor
 - **Status:** not_started
-- **Dependencies:** File Lister complete — **satisfied 2026-04-15**.
-  Delegate-pattern shakedown is in the books (data-source delegate for
-  NSTableView landed and compiles clean in the harness).
-- **Description:** Block callbacks, error-out, undo/redo, notifications, find.
-  Tests complex callback patterns and NSUndoManager integration — the most
-  demanding OO interaction patterns. Runtime block nil handling (`make-objc-block`
-  returning `(values #f #f)` for `#f` proc) is now in place.
-  See `knowledge/apps/text-editor/spec.md` and `test-strategy.md`.
+- **Dependencies:** none
+- **Description:** Markdown editor with live preview. NSSplitView (editor +
+  preview), NSTextView, WKWebView (loadHTMLString with JS markdown rendering),
+  NSUndoManager, NSNotificationCenter (text-change observation), NSSavePanel
+  (completion block), NSOpenPanel, NSAlert (unsaved-changes), window dirty-state
+  tracking. Exercises completion blocks, notification observation, and
+  cross-framework rendering (AppKit + WebKit) — patterns no existing app tests.
+  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
 
 #### Mini Browser
@@ -95,16 +124,104 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Dependencies:** `wkwebview.rkt` has a generator bug — `_NSEdgeInsets`
   unbound due to `any_struct_type` not detecting `NSEdgeInsets` in WKWebView's
   property set; the fix is tracked in the core backlog (filed 2026-04-16).
-  **Option A:** wait for core fix and add `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS`.
-  **Option B (unblocked now):** implement using raw `tell` calls against WKWebView
-  instead of the generated class wrapper — same API, bypasses the broken require.
-  WebKit OO emission is otherwise verified (164 classes, 29 protocols, 196 files
-  load cleanly in Racket).
-- **Description:** Cross-framework WebKit, WKNavigationDelegate, URL handling.
-  Tests cross-framework imports (AppKit + WebKit) and delegate protocols from a
-  non-Foundation framework.
-  See `knowledge/apps/mini-browser/spec.md` and `test-strategy.md`.
+  Workaround: use raw `tell` calls against WKWebView.
+- **Description:** Minimal web browser. WKWebView, WKNavigationDelegate (async
+  multi-step delegate: didStart → didFinish/didFail), NSURL/NSURLRequest,
+  back/forward/reload, NSProgressIndicator, NSAlert (error display).
+  Tests async multi-callback delegate pattern and cross-framework imports
+  (AppKit + WebKit + Foundation). Modaliser uses WKWebView for HTML rendering
+  but does NOT exercise WKNavigationDelegate or URL-based navigation.
+  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
+
+#### Drawing Canvas
+- **Status:** not_started
+- **Dependencies:** none
+- **Description:** Freehand drawing app. Custom NSView subclass via
+  `make-dynamic-subclass` with 4+ `add-method!` overrides (drawRect:,
+  mouseDown:, mouseDragged:, mouseUp:). CoreGraphics drawing (CGContext,
+  paths, stroke color/width), NSColorPanel, NSSlider, mouse event handling.
+  Most architecturally novel app — dynamic ObjC subclass as primary pattern,
+  CoreGraphics API first exercise, mutable shared state from ObjC callbacks.
+  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
+- **Results:** _pending_
+
+#### SceneKit Viewer
+- **Status:** not_started
+- **Dependencies:** none
+- **Description:** 3D scene viewer with animated geometry. SCNView (3D viewport),
+  SCNScene, SCNNode, SCNBox/SCNSphere/SCNTorus/SCNCylinder, SCNMaterial,
+  SCNLight, SCNCamera, SCNAction (rotation animation), NSPopUpButton (geometry
+  picker), NSColorPanel. "Wow factor" app — 3D rendering from Racket. Tests
+  SceneKit framework end-to-end, chained object construction (scene graph),
+  cross-framework NSView subclass, float-heavy API.
+  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
+- **Results:** _pending_
+
+#### PDFKit Viewer
+- **Status:** blocked
+- **Dependencies:** Quartz/PDFKit collection fix — PDFKit lives under the
+  Quartz umbrella framework, excluded from the subframework allowlist in
+  `sdk.rs` due to a `clang-2.0.0` crate UTF-8 panic. Unblocking: fix the
+  panic and add Quartz to the allowlist, or add PDFKit as a narrow
+  subframework-allowlist entry.
+- **Description:** PDF viewer with page navigation and text search. PDFView,
+  PDFDocument, PDFPage, PDFSelection, NSNotificationCenter
+  (PDFViewPageChangedNotification), NSOpenPanel (filtered to .pdf). Tests
+  whether a non-AppKit/WebKit/SceneKit framework's generated bindings work
+  end-to-end.
+  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
+- **Results:** _pending_
+
+### Modaliser FFI Elimination — Upstream Blockers
+
+#### ObjC interop re-export from runtime module
+- **Status:** not_started
+- **Priority:** high — blocks 9 Modaliser files from eliminating `ffi/unsafe`
+- **Dependencies:** none
+- **Description:** Consumer apps (e.g. Modaliser) using `tell`, `import-class`,
+  `sel_registerName` must currently `(require ffi/unsafe ffi/unsafe/objc)`. To
+  achieve zero `ffi/unsafe` outside `bindings/`, the runtime needs a module
+  (e.g. `runtime/objc-interop.rkt`) that re-exports:
+  - From `ffi/unsafe/objc`: `tell`, `import-class`, `sel_registerName`
+  - From `ffi/unsafe`: `_string`, `_long`, `_int32`, `_uint64`, `_bool`,
+    `_double`, `_pointer`, `_id`, `_fpointer`, `_void`, `_intptr`, `cast`,
+    `cpointer?`, `ptr-equal?`
+  This is a re-export convenience — no new implementation needed.
+  Filed 2026-04-16 from Modaliser FFI elimination work.
+
+#### Raw AX attribute getter and array helper in ax-helpers.rkt
+- **Status:** not_started
+- **Priority:** medium — blocks `ffi/accessibility.rkt` full migration
+- **Dependencies:** none
+- **Description:** `ax-helpers.rkt` provides typed attribute getters
+  (`ax-get-attribute/string`, `/boolean`, `/point`, `/size`) but no raw
+  `CFTypeRef`-returning variant. Modaliser needs:
+  - `ax-get-attribute/raw el attr-string` → `cpointer? or #f` (returns
+    the raw `CFTypeRef` from `AXUIElementCopyAttributeValue`, +1 ownership)
+  - `ax-get-attribute/array el attr-string` → `list?` (converts the
+    CFArray result via `cfarray->list`, each element `CFRetain`ed)
+  These cover element-type attributes (focused app, focused window) and
+  array-type attributes (window list) that don't fit the typed variants.
+  Without these, consumer code needs `malloc _pointer` + `ptr-ref _pointer`
+  out-param pattern from `ffi/unsafe`.
+  Filed 2026-04-16 from Modaliser FFI elimination work.
+
+#### CGEvent tap handler: expose raw event type for disabled-by-timeout
+- **Status:** not_started
+- **Priority:** medium — blocks `ffi/cgevent.rkt` full migration
+- **Dependencies:** none
+- **Description:** `cgevent-helpers.rkt`'s `make-cgevent-tap` handler
+  signature is `(keycode modifiers key-down? → 'suppress or 'pass-through)`.
+  This doesn't expose the raw CGEvent type, so the handler can't detect
+  `kCGEventTapDisabledByTimeout` / `kCGEventTapDisabledByUserInput` events
+  and re-enable the tap. Modaliser's tap callback handles these specially.
+  Options: (a) pass raw event type as 4th arg to handler, (b) add an
+  optional `#:on-disabled` callback param to `make-cgevent-tap`, (c) expose
+  a richer handler protocol returning `(values action event-or-#f)`.
+  Without this, Modaliser must keep its own `_cprocedure`/`function-ptr`
+  callback in `ffi/cgevent.rkt`.
+  Filed 2026-04-16 from Modaliser FFI elimination work.
 
 ### Future Work
 
@@ -122,8 +239,8 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 #### Racket Class System Analysis
 - **Status:** not_started
-- **Dependencies:** all 3 remaining sample apps complete (Menu Bar Tool, Text
-  Editor, Mini Browser — real usage reveals which patterns matter)
+- **Dependencies:** Note Editor, Mini Browser, Drawing Canvas, and SceneKit
+  Viewer complete (real usage reveals which patterns matter)
 - **Description:** Analyse the current racket-oo emitter output and runtime to
   determine whether it truly models macOS APIs using Racket's class system
   (`racket/class`) as much as possible — e.g., using `class*`, `define/public`,
