@@ -118,7 +118,7 @@ The harness uses `(dynamic-require \`(file ,p) #f)`, not `(dynamic-require p #f)
 
 ### Contract-based API boundaries
 Every FFI boundary uses `provide/contract`. Three contract mappers:
-- `map_contract` in `emit_functions.rs` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, geometry structs → `any/c`, void → `void?`. Reused by functions, constants, and class wrappers. `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
+- `map_contract` in `emit_functions.rs` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, CString return → `(or/c string? #f)` (`_string` converts NULL → `#f`), CString param → `string?`, geometry structs → `any/c`, void → `void?`. Reused by functions, constants, and class wrappers. `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
 - `map_param_contract` in `emit_class.rs` (class wrapper params): `Id`/`Class`/`Instancetype` → `(or/c string? objc-object? #f)` for all object params (always includes `#f`; `cpointer?` excluded), SEL → `string?`, `(or/c procedure? #f)` for blocks, delegates to `map_contract` for primitives.
 - `map_return_contract` in `emit_class.rs` (class wrapper returns): `any/c` for objects, delegates to `map_contract` for void/primitives.
 Protocol files use fixed contracts (see "Protocol file contract shape is fixed").
@@ -192,6 +192,9 @@ Serde annotations on core IR structs define the JSON wire format. Field name/ali
 
 ### `_cprocedure` callbacks unsafe from foreign OS threads
 Racket CS SIGILLs (exit 132) when a `_cprocedure` callback is invoked from an OS thread not registered with the Racket VM (e.g., GCD worker pool threads from libdispatch). `#:async-apply` converts the crash to a deadlock under `nsapplication-run` because the async-apply queue drains on the main Racket thread, which is stuck in the Cocoa run loop. The CGEvent tap callback is NOT a counterexample — it fires on the main OS thread via `CFRunLoopGetMain`, not on a foreign thread. Any binding exposing a C callback type should warn against installing the callback on a non-main GCD queue or libdispatch worker.
+
+### Emitter auto-warns on `FunctionPointer`/`Block` params
+`generate_functions_file()` emits a 3-line `; WARNING:` comment before any `define` with `FunctionPointer` or `Block` param types, citing `_cprocedure`, SIGILL risk, and `#:async-apply`/deadlock. See "`_cprocedure` callbacks unsafe from foreign OS threads".
 
 ### `call-in-os-thread` safe for pure Racket/file-I/O only
 `ffi/unsafe/os-thread` (`call-in-os-thread`) works for closures, list/hash ops, `parameterize`, file I/O (`open-input-file`, etc.). Segfaults on `tcp-connect`, `subprocess`/`system`, and anything using Racket's place scheduler I/O event pump. `net/url` uses TCP, transitively unsafe. Useful for CPU-bound work (fuzzy matching, serialization).
@@ -288,7 +291,7 @@ Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dis
 `map_typedef` in `extract-objc` emits `TypeRefKind::Struct { name }` (not `Alias`) for `TypeKind::Record` typedefs. Enables `is_struct_data_symbol` in the constants emitter to recognize CF struct globals (`kCFTypeDictionaryKeyCallBacks`, `NSInt*CallBacks`, geometry zero-constants like `NSZeroPoint`/`NSEdgeInsetsZero`) and emit `ffi-obj-ref` instead of `get-ffi-obj`. Requires re-collect to propagate.
 
 ### `const char *` maps to `TypeRefKind::CString`
-`is_c_string_pointee()` in `extract-objc` accepts `CharS | CharU` pointees only — excludes `signed char` / `unsigned char`. IR carries `TypeRefKind::CString`; FFI mapper emits `_string`; contract mapper emits `string?`. Requires re-collect to propagate to generated files.
+`is_c_string_pointee()` in `extract-objc` accepts `CharS | CharU` pointees only and requires `is_const_qualified()` on the pointee (not the pointer). Non-const `char *` (output buffers) maps to `Pointer`. IR carries `TypeRefKind::CString`; FFI mapper emits `_string`. Requires re-collect to propagate to generated files.
 
 ### Property dedup uses Racket getter name, not IR name
 ObjC/Swift dual-extracted properties can differ only in casing (e.g., `CGDirectDisplayID` vs `cgDirectDisplayID`), which kebab-cases to the same Racket identifier. `effective_properties` must deduplicate by generated Racket getter name; IR-name dedup leaves duplicate `define` forms in emitted class files.
