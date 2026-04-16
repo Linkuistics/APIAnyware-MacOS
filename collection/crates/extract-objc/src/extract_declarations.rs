@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use clang::{Entity, EntityKind, EntityVisitResult, Linkage};
+use clang::{Entity, EntityKind, EntityVisitResult, Linkage, TypeKind};
 
 use apianyware_macos_types::ir;
 use apianyware_macos_types::provenance::{
@@ -89,10 +89,16 @@ pub fn extract_from_translation_unit(
                 );
             }
             EntityKind::EnumDecl => {
-                if let Some(name) = entity.get_name() {
-                    if !name.is_empty() && seen_enums.insert(name.clone()) {
-                        if let Some(en) = extract_enum(&entity, sdk_path) {
-                            result.enums.push(en);
+                // CF_ENUM/NS_ENUM macros expand to a forward declaration
+                // followed by the actual definition (two EnumDecl entities
+                // sharing one name). Skip the forward declaration so the
+                // seen_enums guard doesn't shadow the populated definition.
+                if entity.is_definition() {
+                    if let Some(name) = entity.get_name() {
+                        if !name.is_empty() && seen_enums.insert(name.clone()) {
+                            if let Some(en) = extract_enum(&entity, sdk_path) {
+                                result.enums.push(en);
+                            }
                         }
                     }
                 }
@@ -533,15 +539,45 @@ fn extract_enum(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Enum> {
     let enum_clang_type = entity.get_enum_underlying_type()?;
     let enum_type = map_type(&enum_clang_type);
 
+    // Pick signed vs unsigned interpretation per the underlying type.
+    // libclang sign-extends top-bit-set values into the i64 component, so
+    // for unsigned-backed enums (CF_ENUM(uint32_t, ...) etc.) the signed
+    // component reports e.g. -2 for the bit pattern 0xFFFFFFFE. Reading
+    // the u64 component instead and casting recovers the intended value.
+    // The underlying type may be a typedef (NSUInteger → unsigned long),
+    // so canonicalise before inspecting the kind.
+    let underlying_kind = enum_clang_type.get_canonical_type().get_kind();
+    let is_unsigned = is_unsigned_int_kind(underlying_kind);
+
     let mut values = Vec::new();
     entity.visit_children(|child, _parent| {
         if child.get_kind() == EntityKind::EnumConstantDecl {
             if let Some(val_name) = child.get_name() {
-                if let Some((value, _)) = child.get_enum_constant_value() {
-                    values.push(ir::EnumValue {
-                        name: val_name,
-                        value,
-                    });
+                if let Some((signed_val, unsigned_val)) = child.get_enum_constant_value() {
+                    let value_opt = if is_unsigned {
+                        if unsigned_val > i64::MAX as u64 {
+                            // Top-bit-set u64 value — does not fit in i64.
+                            // Skip rather than wrap silently; the IR schema
+                            // stores i64 and we don't want a silent flip.
+                            tracing::warn!(
+                                enum_name = %name,
+                                value_name = %val_name,
+                                value = unsigned_val,
+                                "enum constant exceeds i64 range; skipping"
+                            );
+                            None
+                        } else {
+                            Some(unsigned_val as i64)
+                        }
+                    } else {
+                        Some(signed_val)
+                    };
+                    if let Some(value) = value_opt {
+                        values.push(ir::EnumValue {
+                            name: val_name,
+                            value,
+                        });
+                    }
                 }
             }
         }
@@ -559,6 +595,23 @@ fn extract_enum(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Enum> {
         provenance: Some(provenance),
         doc_refs: Some(doc_refs),
     })
+}
+
+/// Returns true if a clang TypeKind is one of the unsigned integer kinds.
+/// `CharU` covers platforms where plain `char` is unsigned; `UInt128` is
+/// included for completeness even though no SDK enum uses it as an
+/// underlying type.
+fn is_unsigned_int_kind(kind: TypeKind) -> bool {
+    matches!(
+        kind,
+        TypeKind::CharU
+            | TypeKind::UChar
+            | TypeKind::UShort
+            | TypeKind::UInt
+            | TypeKind::ULong
+            | TypeKind::ULongLong
+            | TypeKind::UInt128
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -869,8 +922,45 @@ fn is_from_framework(entity: &Entity<'_>, framework_name: &str, sdk_path: &Path)
     let relative = path.strip_prefix(sdk_path).unwrap_or(&path);
     let path_str = relative.to_string_lossy();
 
-    // Match declarations from this framework's headers
-    // Pattern: System/Library/Frameworks/{Name}.framework/Headers/
-    let expected_prefix = format!("System/Library/Frameworks/{framework_name}.framework/Headers/");
-    path_str.starts_with(&expected_prefix)
+    // Match declarations from this framework's headers.
+    //
+    // Primary pattern: System/Library/Frameworks/{Name}.framework/Headers/
+    //
+    // Umbrella frameworks on the allowlist also accept declarations from
+    // their nested subframeworks, so that real subframeworks with no
+    // top-level counterpart (e.g. HIServices inside ApplicationServices)
+    // get extracted as part of the parent. libclang canonicalises paths
+    // for symlinked subframeworks (CoreGraphics, CoreText inside
+    // ApplicationServices) to their top-level locations, so they are
+    // not double-counted.
+    //
+    // The allowlist is narrow because some umbrella subframeworks (e.g.
+    // certain Quartz children) trip a UTF-8 panic in the external clang
+    // crate's string handling. Only frameworks whose subframeworks are
+    // needed downstream AND extract cleanly are listed here.
+    let own_headers_prefix =
+        format!("System/Library/Frameworks/{framework_name}.framework/Headers/");
+    if path_str.starts_with(&own_headers_prefix) {
+        return true;
+    }
+    const SUBFRAMEWORK_ALLOWLIST: &[&str] = &["ApplicationServices"];
+    if SUBFRAMEWORK_ALLOWLIST.contains(&framework_name) {
+        let framework_root =
+            format!("System/Library/Frameworks/{framework_name}.framework/");
+        if path_str.starts_with(&framework_root) && path_str.contains("/Headers/") {
+            return true;
+        }
+    }
+    // Synthetic pseudo-framework: libdispatch matches headers under
+    // {SDK}/usr/include/dispatch/ and the pthread_*_np symbols under
+    // {SDK}/usr/include/pthread.h and /pthread/*.h.
+    if framework_name == "libdispatch" {
+        if path_str.starts_with("usr/include/dispatch/")
+            || path_str == "usr/include/pthread.h"
+            || path_str.starts_with("usr/include/pthread/")
+        {
+            return true;
+        }
+    }
+    false
 }

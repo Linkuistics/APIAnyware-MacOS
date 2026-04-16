@@ -1008,3 +1008,543 @@
   - Contract boundary catches that used to surface as deep
     `coerce-arg` errors now surface at the wrapper with caller blame —
     the ergonomics-neutral framing in the task description held up.
+
+### Session N (2026-04-15T04:53:46Z) — File Lister polish + sample-app bundling
+
+- **Attempted:** Polish the File Lister app that landed earlier this day
+  (structural-only), then generalise the bundling story so every sample
+  app ships as a proper macOS `.app` with the right menu-bar identity
+  and the standard About/Hide/Quit menu items. Also wire up
+  GUIVisionVMDriver (successor to TestAnyware) for interactive VM
+  verification with OCR-capable VNC.
+
+- **Worked:**
+  - **File Lister polish iterations (all verified visually in the VM):**
+    - Row height 20pt + `nstablecolumn-set-editable! #f` per column
+      → clean read-only list rendering, no double-click-to-edit.
+    - `NSStackView` horizontal + `NSLayoutAttributeFirstBaseline` for
+      the toolbar → button title and path label baselines pin via
+      Auto Layout instead of manual y-arithmetic (which kept landing
+      half a pixel off across font sizes).
+    - Scroll view flush to window edges (`(0,0,600,348)`, NSNoBorder);
+      table autoresizing mask + `NSTableViewFirstColumnOnlyAutoresizingStyle`
+      so the Name column absorbs horizontal growth on resize.
+    - Autoresizing masks on the stack view (`NSViewWidthSizable |
+      NSViewMinYMargin`) so the toolbar pins to the top during
+      window resize.
+  - **New crate `apianyware-macos-bundle-racket-oo`** at
+    `generation/crates/bundle-racket-oo/`:
+    - `AppSpec::from_script_name("file-lister")` → derives display
+      name via kebab→title, or reads `knowledge/apps/<script>/spec.md`
+      first H1 for canonical capitalisation (fixes
+      `ui-controls-gallery` → `UI Controls Gallery`, not `Ui…`).
+    - `collect_dependencies(entry, source_root)` — pure-Rust BFS
+      walker over `.rkt` `(require "...rkt")` forms with a state-
+      machine string literal scanner; rejects require targets
+      outside `source_root`; handles cycles and escaped quotes.
+    - `bundle_app(spec, source_root, output_dir)` — calls
+      `stub-launcher::create_app_bundle` for the `.app` skeleton,
+      then copies discovered files into
+      `Resources/racket-app/<rel>` preserving the source layout so
+      relative requires resolve at runtime. Optional
+      `lib/libAPIAnywareRacket.dylib` is copied if present.
+    - CLI: `cargo run --example bundle_app -p
+      apianyware-macos-bundle-racket-oo -- <script>` or `-- --all`.
+      `--all` walks `apps/` and bundles every entry.
+    - 19 unit tests + 4 integration tests (including
+      `bundles_every_sample_app` which auto-discovers new apps).
+  - **Shared `runtime/app-menu.rkt` helper** exposing
+    `install-standard-app-menu!`. Every sample app now calls it with
+    its display name to install the standard About / Hide / Hide
+    Others / Show All / Quit menu with the expected ⌘Q, ⌘H, ⌥⌘H
+    keyboard equivalents. Uses raw typed `objc_msgSend` (not `tell`)
+    because `tell` fails its `_id` coercion on SEL arguments like
+    the `action:` slot of `addItemWithTitle:action:keyEquivalent:`.
+  - **Latent `as-id` bug fixed** in `runtime/objc-base.rkt`. The
+    `(objc-object? obj)` branch was returning the raw cpointer
+    instead of `(cast … _pointer _id)`, making the function useless
+    for its stated purpose. Surfaced when `install-standard-app-menu!`
+    tried to pass the NSApplication wrapper through `as-id` and
+    crashed the launch with `id->C: argument is not 'id' pointer`.
+  - **All four sample apps bundle and run correctly:** hello-window
+    (Hello Window.app), counter (Counter.app), ui-controls-gallery
+    (UI Controls Gallery.app), file-lister (File Lister.app). Each
+    has the correct `CFBundleName`, `app:"<Display Name>"` in the
+    accessibility tree, and the full standard menu confirmed via
+    VNC click + OCR screenshot of Counter's open menu.
+  - **Testing:** `cargo test --workspace --no-fail-fast` → exit 0,
+    484 passes, 0 failures. `RUNTIME_LOAD_TEST=1 cargo test -p
+    apianyware-macos-emit-racket-oo --test runtime_load_test` green.
+    `runtime/app-menu.rkt` added to `RUNTIME_FILES` in the harness;
+    `APPS` now includes all 4 sample apps.
+  - **Docs:** README updated with a new two-tier "App Bundling"
+    section (stub-launcher language-agnostic primitive vs
+    bundle-racket-oo racket-oo convention), GUI Testing section
+    rewritten around GUIVisionVMDriver, workspace structure listing
+    updated. `knowledge/targets/racket-oo.md` gets sections on
+    sample-app bundling, delegate-callback type caveats (NSInteger
+    return via arm64 x0 smuggle, raw-cpointer args), toolbar
+    baseline alignment, and 2026-04-15 dated discoveries.
+  - **Memory:** new entries for bundling, `app-menu.rkt` raw
+    msgSend approach, `as-id` cast bug, accessibility menu
+    drill-down via VNC click, GUIVisionVMDriver VNC password
+    recovery.
+  - **`.gitignore`:** `generation/targets/*/apps/*/build/` added
+    (built bundles are regenerable via the CLI).
+
+- **Didn't work first time / corrected:**
+  - **First attempt at app-menu.rkt used `tell`** with SEL
+    arguments. Failed at runtime with `id->C: argument is not 'id'
+    pointer` on `addItemWithTitle:action:keyEquivalent:`. Rewrote
+    using raw typed `objc_msgSend` — works cleanly.
+  - **First bundling attempt hardcoded the Resources layout**
+    incorrectly (`Resources/racket-app/<everything>`), which broke
+    relative requires. Fixed by placing runtime and generated as
+    siblings of `racket-app/` → script at
+    `Resources/racket-app/apps/<name>/<name>.rkt`, deps at
+    `Resources/racket-app/runtime/` and
+    `Resources/racket-app/generated/oo/…`.
+  - **First `AppSpec::from_script_name` used kebab→title conversion**
+    and produced `Ui Controls Gallery`. Fixed by reading
+    `knowledge/apps/<script>/spec.md`'s first H1 — spec.md is now
+    the source of truth for canonical display names.
+  - **`NSProcessInfo setProcessName:` hack didn't work** (modern
+    macOS filters it). The bundling story is the only working fix
+    for the menu-bar app name — that's why bundle-racket-oo exists
+    at all.
+  - **Bundle integration test assertions drifted** twice as the
+    require tree changed (first when `nsstring.rkt` turned out not
+    to be statically required, then when the app-menu helper stopped
+    pulling in `nsmenu.rkt`/`nsmenuitem.rkt`). Each correction
+    tightened the test with a positive "this IS pulled in" + a
+    negative "this is NOT pulled in" assertion, which makes the
+    test both a structural check and a change detector.
+
+- **Suggests trying next:**
+  - **Auto-bundling from the generate CLI:** teach
+    `apianyware-macos-generate -- --lang racket-oo` to bundle the
+    sample apps as a post-emission step. Currently opt-in via the
+    bundle-racket-oo example. Out of scope this session but the
+    primitive is in place.
+  - **Menu Bar Tool app is next in the declared order** (now that
+    all existing apps are polished and bundled). The shared menu
+    helper will apply cleanly; the open challenge is the
+    no-main-window status-bar lifecycle.
+  - **Per-language bundle convention crates for chez/gerbil/etc.**
+    follow the same split as bundle-racket-oo: dependency-walker
+    tailored to the language's require semantics, plus a layout
+    convention that keeps relative imports working inside the
+    bundle. The stub-launcher primitive is language-agnostic.
+
+- **Key learnings / discoveries:**
+  - **The bundling story is non-optional** for a polished Mac sample
+    app. `NSProcessInfo setProcessName:` doesn't work. Main-menu
+    submenu titles handle the menu items but not the bold app-name
+    slot. `CFBundleName` in `Info.plist` is the only path. That
+    makes `bundle-racket-oo` a load-bearing crate, not a nicety.
+  - **`tell` can't be used with SEL parameters**, period — raw
+    typed `objc_msgSend` is the escape hatch, and the generated
+    framework bindings already use it for every non-id parameter.
+    Runtime-side helper code that needs SEL args must follow the
+    same pattern.
+  - **`as-id` had a silent bug for a long time** because nothing
+    important was calling it with a wrapped `objc-object`. All the
+    hot paths go through `coerce-arg` which has its own cast. The
+    `install-standard-app-menu!` integration surfaced it by being
+    the first runtime-side code to call `as-id` on an application
+    handle. Lesson: utility functions with "always returns X"
+    docstrings need unit tests, because callers trust the
+    docstring.
+  - **GUIVisionVMDriver agent + VNC split** is the right shape for
+    this kind of verification. Agent snapshots give structural
+    guarantees (the app's identity, what's in the accessibility
+    tree). VNC `click` + `screenshot` fills the gaps (submenu
+    contents, pixel alignment). The VNC password ephemerality is
+    the main friction — source the vm-start script once with
+    output to a file, persist the creds to `/tmp/gv_*` for
+    subsequent calls.
+  - **Spec.md as source of truth for display names** is a small
+    but load-bearing convention. It means adding a new sample app
+    is: create `apps/<kebab>/<kebab>.rkt`, create
+    `knowledge/apps/<kebab>/spec.md` starting with `# <Display
+    Name>`, and the bundler handles the rest. The integration
+    test auto-discovers via directory walk, so no test edits are
+    needed for a new app.
+
+### Session N (2026-04-15T10:23:28Z) — Modaliser gap batch (Gaps 4,1,2 closed + Gap 3 design call)
+
+- **Attempted:** The four Modaliser-Racket gaps from the "Coverage gaps
+  discovered by Modaliser-Racket Task #7" backlog task, in the user-
+  specified order 4 → 1 → 2 → 3, within a single work session.
+
+- **What worked:**
+  - **Gap 4 (CG enum empty stubs).** Root-cause diagnosis was
+    straightforward once I compared CoreGraphics's `enums.rkt` (8
+    defines, almost all bare `;; header` stubs) against Foundation's
+    (212 defines, but only for anonymous enums). The anonymous-vs-named
+    asymmetry pointed directly at the `CF_ENUM`/`NS_ENUM` macro
+    expansion that produces both a forward decl and a definition with
+    the same name. `seen_enums.insert(name)` guard let the empty
+    forward-decl win; fix is a single `entity.is_definition()` check
+    in the `EnumDecl` arm of `extract_declarations.rs`. Confirmed
+    with a failing test first (`coregraphics_cgeventfield_enum_has_values`,
+    `coregraphics_cgeventtype_enum_has_values`), then the fix turned
+    them green. CoreGraphics `enums.rkt` 8→446 defines, Foundation
+    212→1129, 63 extract-objc tests pass, snapshot goldens regenerated,
+    runtime load harness green. All 10 Modaliser canary values present
+    (`kCGEventKeyDown=10`, `kCGKeyboardEventKeycode=9`,
+    `kCGHIDEventTap=0`, `kCGEventTapOptionDefault=0`, etc.).
+  - **Gap 1 (HIServices AX functions).** Root cause: the framework
+    filter in `is_from_framework` accepted only
+    `System/Library/Frameworks/{Name}.framework/Headers/` and rejected
+    every path from real nested subframeworks like HIServices (inside
+    ApplicationServices). First attempt at a general fix (accept any
+    path under `{Name}.framework/` that contains `/Headers/`) tripped
+    a UTF-8 panic in the external `clang-2.0.0` crate during Quartz
+    extraction. Narrowed the fix to a 1-item allowlist
+    (`SUBFRAMEWORK_ALLOWLIST = &["ApplicationServices"]`) with a
+    comment explaining why Quartz isn't included. libclang
+    canonicalises symlinked subframeworks (CoreGraphics, CoreText,
+    ColorSync, ImageIO) to their top-level paths, so they don't get
+    double-counted. Pipeline now emits 384 ApplicationServices
+    functions (up from 0), all 9 Modaliser AX symbols present
+    (`AXIsProcessTrusted`, `AXUIElementCopyAttributeValue`,
+    `AXValueCreate`, etc.) plus 25 kAX* constants. New integration
+    test `extract_applicationservices.rs` covers both the AX-present
+    assertion and the no-CG/CT-leak assertion. Runtime load harness
+    extended: `applicationservices/functions.rkt` now in
+    `LIBRARY_LOAD_CHECKS`, `ApplicationServices` in `REQUIRED_FRAMEWORKS`.
+  - **Gap 2 (libdispatch/pthread).** New synthetic-pseudo-framework
+    pattern: checked-in umbrella header at
+    `collection/crates/extract-objc/synthetic-frameworks/libdispatch/libdispatch.h`
+    pulls `<dispatch/dispatch.h>` and `<pthread.h>`; `sdk.rs` appends
+    a synthetic `FrameworkInfo` via a new `synthetic_frameworks()`
+    helper; `is_from_framework` branches on `libdispatch` name and
+    accepts `usr/include/dispatch/` + `usr/include/pthread*` paths.
+    Emitter-side hookup: new `shared_signatures::framework_ffi_lib_arg`
+    helper dispatches by framework name —
+    `libdispatch → "libSystem"` because the `libdispatch` short name
+    doesn't resolve via dyld but `libSystem` does (dispatch symbols
+    are re-exported there on modern macOS). 218 functions + 17
+    constants extracted; all 5 Modaliser-required symbols
+    (`dispatch_async_f`, `dispatch_after_f`, `dispatch_time`,
+    `pthread_main_np`, `_dispatch_main_q`) present.
+    `is_libdispatch_unexported` skip list filters 5 header-declared
+    but dylib-missing symbols (`dispatch_cancel`, `dispatch_notify`,
+    `dispatch_testcancel`, `dispatch_wait`,
+    `pthread_jit_write_with_callback_np`) at emit time. End-to-end
+    verification: `(dispatch_time 0 1000000000)` returns a sensible
+    uint64; `(pthread_main_np)` returns `1`; `_dispatch_main_q` reads
+    as a non-null cpointer. Runtime load harness extended to include
+    both `libdispatch/functions.rkt` and `libdispatch/constants.rkt`.
+  - **Gap 3 (libobjc runtime) — design call.** Chose Option B (curated
+    `runtime/dynamic-class.rkt` hand-written bridge) over Option A
+    (mechanical synthetic-framework emission of libobjc). Rationale
+    recorded in the backlog Results field, in a new memory entry, and
+    in this session log: libdispatch is a small flat linkage-level
+    surface where mechanical extraction is clean, but libobjc is the
+    ObjC introspection API — hundreds of polymorphic opaque-handle
+    primitives already partially covered by Racket's built-in
+    `ffi/unsafe/objc`. Mechanically emitting libobjc would create an
+    unclear parallel API. Dynamic class creation is rare; a ~40-line
+    curated bridge is the right granularity. Implementation split
+    into its own follow-up task.
+
+- **What didn't work / had to back out:**
+  - First attempt at Gap 1's fix was too broad — accepting any
+    `{Name}.framework/` path containing `/Headers/`. This tripped a
+    pre-existing UTF-8 panic in the `clang-2.0.0` crate when visiting
+    a Quartz subframework during a full collect run. Backed out to a
+    narrow allowlist; Quartz's zero-functions count is unchanged.
+  - First choice of `libdispatch` as the ffi-lib argument failed: the
+    short name doesn't resolve via dyld's shared cache on macOS, even
+    though the symbols do exist in libSystem. Switched to the
+    `libSystem` short name.
+  - libdispatch headers declare 218 functions but 5 of them aren't
+    actually exported by the live dylib. First load attempt failed
+    at the first missing symbol (`dispatch_cancel`). Wasn't willing
+    to thread a runtime dlsym probe through the Rust extractor this
+    session; filtered the 5 known-missing symbols at emit time via
+    a hardcoded list with a clear comment explaining the verification
+    strategy (the runtime load harness catches regressions).
+
+- **Suggests trying next:**
+  - **Menu Bar Tool sample app** is now the next highest-leverage
+    item — independent of the gap work, uses GCD main-thread
+    dispatch helpers which now have real `dispatch_async_f` etc.
+    bindings available (though Menu Bar Tool uses the existing
+    `runtime/main-thread.rkt` bridge, not the generated libdispatch
+    bindings directly).
+  - Implement `runtime/dynamic-class.rkt` per the Option B decision.
+    It's a ~40-line file and would let Modaliser drop its
+    `panel-manager.rkt` hand-written libobjc FFI.
+  - Fix the signed-vs-unsigned enum-constant-representation bug
+    discovered during Gap 4: `kCGEventTapDisabledByTimeout = -2` in
+    the generated output should be `4294967294` because the
+    underlying type is `uint32_t`. Affects any unsigned-underlying
+    enum with values that have the top bit set. Filed as its own
+    backlog task.
+  - Consider expanding the subframework allowlist beyond
+    `ApplicationServices` once we find a way to skip the Quartz
+    UTF-8 panic. Candidates: Carbon, CoreServices.
+
+- **Key learnings / discoveries:**
+  - **The `is_definition()` dedup pattern applies to every
+    forward-declarable libclang cursor kind.** StructDecl,
+    ObjCInterfaceDecl, and ObjCProtocolDecl also have dedup-by-name
+    guards in `extract_declarations.rs` that could, in principle,
+    suffer the same forward-decl-shadows-definition bug. Haven't
+    confirmed whether it bites in practice — existing tests are
+    green — but it's worth a scan next time the extractor changes.
+  - **`symbol declared in headers` ≠ `symbol exported from dylib`
+    on macOS.** On the live dyld shared cache, 5/218 libdispatch
+    header-declared symbols simply aren't there. Snapshot tests
+    can't see this; only the runtime load harness can. When adding
+    new framework coverage, always run the harness before declaring
+    victory.
+  - **libclang canonicalises symlinked subframeworks to their
+    top-level path.** This is the load-bearing observation that made
+    the subframework-allowlist fix safe: ColorSync, CoreGraphics,
+    CoreText, ImageIO are all symlinks inside ApplicationServices,
+    but their declarations appear at the top-level paths, not the
+    symlinked paths. Only genuinely-non-symlinked subframeworks
+    (HIServices, ATS, PrintCore) need the allowlist to gain entry.
+  - **Running the full pipeline is mandatory after source changes.**
+    The existing memory entry "Regenerate pipeline aggressively" was
+    load-bearing this session. Every gap required a full collect →
+    analyze → generate cycle and runtime load harness run; relying
+    on cached checkpoints would have masked the UTF-8 panic and the
+    dylib-unexported-symbols issue.
+  - **Emitter-side and collection-side filters serve different
+    audiences.** The emit-time
+    `shared_signatures::is_libdispatch_unexported` filter is the
+    right layer for "this symbol is header-declared but dylib-missing"
+    because it's a macOS runtime fact, not an IR-level concern. A
+    collection-level filter would require a Rust dlopen/dlsym probe
+    per symbol, which is scope-creep. Keeping it in the emitter also
+    makes the filter a single grep-able location for "what did we
+    lie about?".
+
+### Session N (2026-04-15T11:53:43Z) — five-task batch: dynamic-class, delegate int/long, unsigned enum fix, harness coverage
+
+#### What was attempted
+User-directed sequence of tasks 9, 5, 6, 7, 8 from the racket-oo backlog,
+in that order, working through them one at a time with verification
+between each.
+
+#### What worked
+- **Task 9 — `runtime/dynamic-class.rkt`.** New curated libobjc bridge at
+  `generation/targets/racket-oo/runtime/dynamic-class.rkt`. Exports the
+  minimal subclass-construction surface (`objc-get-class`,
+  `allocate-subclass`, `add-method!`, `register-subclass!`,
+  `get-instance-method`, `method-type-encoding`) plus the
+  `make-dynamic-subclass` convenience that chains the three calls in
+  the right order. Idempotent on duplicate names — returns the existing
+  class instead of NULL-from-`objc_allocateClassPair`. Type aliases
+  `_Class` / `_SEL` / `_Method` / `_IMP` exported for raw-msgSend
+  consumers. Harness extended: file added to both `RUNTIME_FILES` and
+  `LIBRARY_LOAD_CHECKS`. Verified via runtime load harness in 14.8s.
+
+- **Task 5 — `'int` / `'long` delegate return kinds.** Two layers
+  changed in lockstep. Swift side
+  (`swift/Sources/APIAnywareRacket/DelegateBridge.swift`): 8 new IMP
+  trampolines (`impInt0..3` returning `Int32`, `impLong0..3` returning
+  `Int64`); `selectIMP` extended with `("int", N)` / `("long", N)`
+  cases; `typeEncoding` extended with `int → "i"`, `long → "q"`.
+  The `q` mapping is the load-bearing part — NSInteger is `long` on
+  64-bit Apple platforms and clang encodes it as `q`, so `'long` is
+  the correct kind for `numberOfRowsInTableView:` etc. Racket side
+  (`generation/targets/racket-oo/runtime/delegate.rkt`): mirrored
+  branches in `return-kind->string`, `make-delegate/swift`,
+  `make-delegate/racket`, `delegate-set!`, plus new `type-encoding-int`
+  / `type-encoding-long` helpers. 3 new Swift tests added
+  (`setAndInvokeIntMethod` returning 42, `setAndInvokeLongMethod`
+  returning `0x1_0000_0000 + 7` to prove no Int32 truncation,
+  `defaultIntLongReturns` checking the unhandled default of 0); all 10
+  `DelegateBridgeTests` pass. Runtime load harness still green
+  (15.1s libraries, 46.8s full).
+
+- **Task 6 — Unsigned enum sign-extension fix.** Fixed `extract_enum`
+  in `collection/crates/extract-objc/src/extract_declarations.rs`. New
+  `is_unsigned_int_kind` helper covers `CharU`, `UChar`, `UShort`,
+  `UInt`, `ULong`, `ULongLong`, `UInt128`. The underlying type is
+  canonicalised first via `enum_clang_type.get_canonical_type()` —
+  essential for typedef-wrapped underlyings like `NSUInteger →
+  unsigned long`. For unsigned-backed enums the loop reads the `.1`
+  (u64) component and casts to i64 after a bounds check; values
+  exceeding `i64::MAX` are skipped with `tracing::warn!` rather than
+  wrapped silently (the IR schema is i64; a silent flip would be
+  worse than a missing constant). Regression test in
+  `tests/extract_coregraphics.rs::coregraphics_cgeventtype_unsigned_top_bit_values_not_sign_extended`
+  asserts `kCGEventTapDisabledByTimeout == 0xFFFFFFFE_i64` and
+  `kCGEventTapDisabledByUserInput == 0xFFFFFFFF_i64`. All 66
+  extract-objc tests still green.
+
+- **Task 7 — AudioToolbox harness coverage.** Two-line extension to
+  `runtime_load_test.rs`: `"AudioToolbox"` added to
+  `REQUIRED_FRAMEWORKS`; `"generated/oo/audiotoolbox/constants.rkt"`
+  added to `LIBRARY_LOAD_CHECKS`. Confirms the 2026-04-13 closure of
+  "Platform-unavailable extern symbols leak" holds against fresh IR.
+  Harness library check still ~14.6s.
+
+- **Task 8 — 3-framework harness re-attempt.** Re-ran the previously
+  reverted 2026-04-13 extension. Added `Network`, `NetworkExtension`,
+  `CoreSpotlight` to `REQUIRED_FRAMEWORKS` and
+  `networkextension/constants.rkt`, `network/constants.rkt`,
+  `corespotlight/constants.rkt` to `LIBRARY_LOAD_CHECKS`. All four
+  previously-failing checks (including the audiotoolbox one from
+  Task 7) now pass cleanly. Total `LIBRARY_LOAD_CHECKS` entries now
+  15 (was 10); total `REQUIRED_FRAMEWORKS` 10 (was 6).
+
+#### What didn't / what was deferred
+- File Lister's pointer-smuggle in `numberOfRowsInTableView:` could now
+  be removed by switching to `:return-types #hash(("numberOfRowsInTableView:" . long))`.
+  Not done in this session to keep Task 5's diff focused — flagged as a
+  natural follow-up cleanup.
+- Modaliser-Racket's `panel-manager.rkt` migration to use the new
+  `make-dynamic-subclass` bridge is a separate Modaliser-Racket task,
+  not in this project's scope.
+- The unsigned-enum fix lands at extraction time, so the fix is only
+  visible in generated `coregraphics/enums.rkt` after a fresh pipeline
+  regeneration. Not regenerated this session — the test asserts on
+  freshly-extracted IR via the test harness, which is the verification
+  layer that matters.
+
+#### What this suggests trying next
+- File Lister NSInteger smuggle removal — small, isolates one app from
+  the deprecated workaround pattern.
+- Continue with Menu Bar Tool (the next sample app per the stated focus
+  in the backlog header). Now unblocked by the integer-return-kind work
+  for any timer callbacks that need int returns.
+- Per Task 6's fix being at extraction time, schedule a pipeline
+  regeneration before any task that depends on observing the corrected
+  values in the generated `enums.rkt` files.
+
+#### Key learnings
+- **Clang's enum constant value tuple is signed/unsigned, not first/canonical.**
+  `child.get_enum_constant_value()` returns `Option<(i64, u64)>` where
+  `.0` is the signed interpretation and `.1` is the unsigned. The two
+  bits agree for top-bit-clear values and diverge for top-bit-set ones.
+  Unsigned-detection has to canonicalise the underlying type first
+  (typedef expansion via `get_canonical_type()`) — without that step,
+  every `NS_ENUM(NSUInteger, ...)` would slip through as a `Typedef`
+  kind and miss the unsigned branch.
+- **ObjC type encoding `q` is NSInteger on 64-bit.** NSInteger is
+  `typedef long NSInteger` on 64-bit Apple platforms, and clang encodes
+  `long` as `q` (not `l`) on those platforms. So `'long → "q"` in the
+  delegate trampoline encoding is exactly the right mapping for the
+  NSInteger-returning delegate methods that motivated the task — no
+  separate `'nsinteger` kind needed.
+- **The runtime load harness is the right place to extend coverage
+  cheaply.** Adding a single `dynamic-require` check costs essentially
+  nothing on top of the amortised Racket startup (the harness uses one
+  subprocess for all checks). Adding 4 new frameworks took the library
+  check from ~14.8s to ~15.1s — 0.3s for 4 fresh framework emissions
+  plus 4 dynamic-requires. This means coverage extension should be
+  reflexive whenever a new `LIBRARY_LOAD_CHECKS` candidate appears,
+  not gated on "is it worth the runtime cost?".
+- **`make-dynamic-subclass` idempotence is load-order-critical.**
+  `objc_allocateClassPair` returns NULL for duplicate names, which would
+  crash subsequent `class_addMethod` calls. The bridge guards against
+  this by returning the existing class via `objc_getClass` first. This
+  matters for any module that registers a subclass at module load
+  time and may be loaded twice in the same Racket VM.
+
+### Session N (2026-04-16T02:58:09Z) — Fix radio-button contract violation + live GUI verification
+
+- **Attempted:** Bug fixes 1 and 2 from the backlog. Task 1 was an audit
+  (no code change). Task 2 required three iterations to find the correct
+  fix, then live GUI verification in the GUIVisionVMDriver VM.
+
+- **Task 1 — make-objc-block #f-guard audit:** Confirmed guard is live
+  and fully test-covered (8/8 block tests pass). Guard landed in commit
+  `f7a906c` (2026-04-15); Modaliser report was 2026-04-16 (pre-guard
+  checkout). Closed with no code change.
+
+- **Task 2 — radio-button contract violation (3 iterations):**
+  - **Attempt 1:** `(cast sender _pointer _id)` — fails. `objc-object?`
+    is a struct predicate, not a cpointer tag check. Cast produces a
+    tagged cpointer but not an `objc-object` struct.
+  - **Attempt 2:** `(tell #:type _void (cast sender _pointer _id)
+    setIntValue: 1)` — fails. `tell` types all params as `_id`; integer
+    `1` gets rejected with `id->C: argument is not 'id' pointer`.
+  - **Attempt 3 (final):** `(nsbutton-set-int-value!
+    (wrap-objc-object (cast sender _pointer _id)) 1)` — works.
+    `wrap-objc-object` creates the `objc-object` struct the contract
+    requires. Default `#:retained #f` adds a balanced retain/release
+    pair, safe for borrowed refs.
+
+- **Live GUI verification in VM:**
+  - Built bundle via `apianyware-macos-bundle-racket-oo`
+  - Shipped to `guivision-default` VM via tar upload + SSH extract
+  - Launched racket directly (unbundled) with stderr to `/tmp/ucg3.log`
+  - Scrolled to radio buttons section (NSScrollView flipped coords —
+    dy=+50 scrolls "up" to top of content in Cocoa unflipped space)
+  - Clicked A→B, B→C, C→A: all transitions succeeded
+  - Screenshots confirmed visual state changes (blue dot moves)
+  - Error log empty, process stayed alive (pid 16418)
+
+- **What worked:**
+  - `wrap-objc-object` is the correct pattern for delegate callback args
+    that need to pass through `provide/contract` boundaries
+  - GUIVisionVMDriver VNC + SSH hybrid (agent was wedged, SSH bypassed)
+  - Cached `compiled/` from prior runs made relaunch fast (~30s vs 5min)
+
+- **What didn't work / caveats:**
+  - GUIVisionVMDriver agent `exec` wedged after first session's commands;
+    SSH was the reliable fallback
+  - `(cast x _pointer _id)` does NOT satisfy `objc-object?` — this was
+    a wrong assumption in the original backlog description
+  - `tell` cannot send non-object parameters without typed dispatch
+  - The backlog's "pattern identical to File Lister" claim was incorrect;
+    File Lister's cast feeds into `tell`, not a contract boundary
+
+- **Suggests next:**
+  1. Task 3 (File Lister `'long` return-kind migration) — next cleanest
+     cleanup, exercises the fresh `'long` delegate return kind.
+  2. Factor `borrow-objc-object` into runtime if a third instance of the
+     `wrap-objc-object` pattern appears (currently at 1 instance).
+  3. Longer-term: delegate trampoline should pre-wrap `id`-typed args as
+     `objc-object` structs to eliminate this bug class at the source.
+
+- **Key learnings:**
+  - `objc-object?` is `(struct objc-object ...)` predicate, not a
+    cpointer tag check. Only `wrap-objc-object` and the struct
+    constructor produce values satisfying it. `(cast x _pointer _id)`
+    is necessary but not sufficient — it tags the pointer for FFI but
+    doesn't create the struct wrapper.
+  - `tell` defaults all parameters to `_id` type. Non-object parameters
+    (int, float, bool, SEL) require the typed `_msg-N` dispatch pattern
+    the generated wrappers use internally.
+  - The `wrap-objc-object` with default `#:retained #f` is the safe
+    idiom for "I have a borrowed pointer that needs to flow through an
+    `objc-object?` contract": retain on wrap, release on GC, net zero.
+  - NSScrollView in Cocoa's unflipped coordinates: `dy=+50` scrolls to
+    reveal content near origin (top of document), contrary to the macOS
+    natural scrolling mental model. Confirmed empirically.
+
+### Session 17 (2026-04-16T04:21:32Z) — Modaliser Task #7b: delegate int/long, CF_ENUM fix, struct globals, libdispatch pointer types
+
+- **What was attempted:** Six interconnected tasks from the Modaliser Task #7b batch — all completed:
+  1. **Delegate `'int`/`'long` return kinds** — added Int32 and Int64 Swift trampolines (`impInt0–3`, `impLong0–3`) to `DelegateBridge.swift`, ObjC type encodings `"i"`/`"q"`, Racket FFI dispatch (`_int32`/`_int64`), default-returns (0), and three new Swift tests (`setAndInvokeIntMethod`, `setAndInvokeLongMethod`, `defaultIntLongReturns`).
+  2. **`numberOfRowsInTableView:` pointer-smuggle removed** — `file-lister.rkt` migrated from `#:return-types (hash "numberOfRowsInTableView:" 'id)` + `(ptr-add #f count)` to `'long` return kind with `(length file-entries)` directly; updated comments to remove workaround explanation.
+  3. **Struct-data-symbol emitter fix** — `emit_constants.rs`: `is_struct_data_symbol()` branches `ffi-obj-ref` for struct-typed globals (symbol address) vs `get-ffi-obj` for pointer-typed globals (symbol contents). Contract for struct globals is `cpointer?`. `needs_structs` computation excludes struct globals. 5 new unit tests. `shared_signatures.rs` gained `framework_ffi_lib_arg()` helper (also used by `generate_functions_file`).
+  4. **libdispatch `_id`→`_pointer` override** — `emit_functions.rs`: when `framework == "libdispatch"`, `_id` FFI types become `_pointer` for both params and returns. `is_libdispatch_unexported()` added to filter symbols absent from `libSystem` at load time (5 symbols). 3 new unit tests.
+  5. **Radio-button contract fix** — `ui-controls-gallery.rkt`: delegate sender arg now wrapped as `(wrap-objc-object (cast sender _pointer _id))` to satisfy `objc-object?` contract at the class-wrapper call site.
+  6. **CF_ENUM forward-declaration shadowing fix** — `extract_declarations.rs`: `entity.is_definition()` guard prevents the forward decl (emitted by CF_ENUM/NS_ENUM macro expansion) from shadowing the populated definition in `seen_enums`. Golden files exploded: Foundation enums 212→1129, AppKit enums corrected; CoreGraphics enum stubs unblocked.
+  7. **Unsigned enum extraction fix** — canonicalise `get_canonical_type()` before inspecting kind; unsigned-backed enums read `.1` (u64 component) instead of sign-extending `.0`. Top-bit-set values that don't fit in i64 are warned and skipped. New helper `is_unsigned_int_kind()`.
+  8. **ApplicationServices subframework allowlist** — `is_from_framework` now also matches headers under the `.framework/` root (any `/Headers/` subpath) for frameworks on `SUBFRAMEWORK_ALLOWLIST = ["ApplicationServices"]`, enabling HIServices AX functions to be extracted without double-counting canonicalised subframeworks.
+  9. **Synthetic pseudo-framework pattern** — `sdk.rs`: `discover_frameworks` appends `synthetic_frameworks()`, which returns a `FrameworkInfo` for `libdispatch` pointing to `synthetic-frameworks/libdispatch/libdispatch.h` inside the crate. The umbrella header was checked in as a new untracked directory.
+  10. **Runtime load harness expanded** — `runtime_load_test.rs`: `dynamic-class.rkt` added to `RUNTIME_FILES`; `REQUIRED_FRAMEWORKS` grows 4→10 (AudioToolbox, CoreSpotlight, ApplicationServices, libdispatch, Network, NetworkExtension); `LIBRARY_LOAD_CHECKS` grows with 7 new entries (applicationservices/functions.rkt, libdispatch/functions.rkt, libdispatch/constants.rkt, audiotoolbox/constants.rkt, networkextension/constants.rkt, network/constants.rkt, corespotlight/constants.rkt, runtime/dynamic-class.rkt).
+  11. **Collection tests** — `extract_coregraphics.rs`: 3 new tests — `CGEventField` has values, `CGEventType` has values, unsigned top-bit values not sign-extended (tests `kCGEventTapDisabledByUserInput` = 0xFFFFFFFF path).
+
+- **What worked:** All tasks completed. `raco make` harness (15 libraries + 4 apps) passes. DelegateBridge Swift unit tests pass including the new int/long tests. `emit_constants` 18 tests + `emit_functions` 25 tests pass. Golden files regenerated and updated.
+
+- **What this suggests trying next:** "Research: Transparent Object Wrapping for Delegate Callback Args" — the radio-button fix required 3 iterations, exposing that `wrap-objc-object` is correct but too intrusive for app authors. This is the next backlog task. Following that: File Lister GUI smoke via GUIVisionVMDriver.
+
+- **Key learnings:**
+  - CF_ENUM/NS_ENUM macros expand to two `EnumDecl` entities sharing one name: a forward declaration (no constants) then the populated definition. The `seen_enums` guard consumed the forward decl and shadowed the definition. `entity.is_definition()` is the fix; it is not enough to rely on `get_name()` being non-empty.
+  - libclang sign-extends top-bit-set u64 values into the `i64` component of `get_enum_constant_value()`. For `CF_ENUM(uint32_t, ...)` types, the canonical underlying kind must be checked; use the `u64` component (`.1`) and range-check before casting.
+  - `DISPATCH_GLOBAL_OBJECT` symbols like `_dispatch_main_q` are structs, not pointers: `get-ffi-obj` reads the first 8 bytes of the struct (a pointer field), not the symbol's address. `ffi-obj-ref` returns the address, which is what C callers use via `&_dispatch_main_q`. The IR already distinguishes struct vs pointer kind at the Clang AST level.
+  - libdispatch dispatch object types (`dispatch_queue_t` etc.) appear as `_id` in the IR because headers use `OS_OBJECT_USE_OBJC=1`, but no ObjC wrapper classes exist for them. `_pointer` is the correct FFI type; the ABI is identical and consumers can pass raw cpointers from `ffi-obj-ref` without cast ceremony.
+  - The delegate `'long` return kind closes the NSInteger gap cleanly — NSInteger on 64-bit Apple is `typedef long`, clang encodes it `"q"`, and the Int64 trampoline passes the value through without pointer-bit tricks.

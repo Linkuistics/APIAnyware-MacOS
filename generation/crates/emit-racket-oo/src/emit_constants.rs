@@ -11,13 +11,30 @@ use apianyware_macos_emit::ffi_type_mapping::{FfiTypeMapper, RacketFfiTypeMapper
 use apianyware_macos_emit::write_line;
 use apianyware_macos_types::ir::Constant;
 
+use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
+
 use crate::emit_functions::map_contract;
-use crate::shared_signatures::any_struct_type;
+use crate::shared_signatures::{any_struct_type, framework_ffi_lib_arg};
+
+/// Returns true if a constant's declared type is a raw struct (not a
+/// pointer or typedef alias). These globals need `ffi-obj-ref` to get
+/// the symbol's address rather than `get-ffi-obj` which dereferences it.
+fn is_struct_data_symbol(type_ref: &TypeRef) -> bool {
+    matches!(type_ref.kind, TypeRefKind::Struct { .. })
+}
 
 /// Generate a Racket constants file for a framework.
 pub fn generate_constants_file(constants: &[Constant], framework: &str) -> String {
     let mapper = RacketFfiTypeMapper;
-    let needs_structs = any_struct_type(constants.iter().map(|c| &c.constant_type), &mapper);
+    // Struct data symbols use ffi-obj-ref (no FFI type needed), so exclude
+    // them from the geometry struct detection that triggers type-mapping.rkt.
+    let needs_structs = any_struct_type(
+        constants
+            .iter()
+            .filter(|c| !is_struct_data_symbol(&c.constant_type))
+            .map(|c| &c.constant_type),
+        &mapper,
+    );
     let mut w = CodeWriter::new();
     w.line("#lang racket/base");
     write_line!(w, ";; Generated constant definitions for {}", framework);
@@ -41,7 +58,11 @@ pub fn generate_constants_file(constants: &[Constant], framework: &str) -> Strin
     } else {
         w.line("(provide/contract");
         for constant in constants {
-            let contract = map_contract(&constant.constant_type, false);
+            let contract = if is_struct_data_symbol(&constant.constant_type) {
+                "cpointer?".to_string()
+            } else {
+                map_contract(&constant.constant_type, false)
+            };
             write_line!(w, "  [{} {}]", constant.name, contract);
         }
         w.line("  )");
@@ -51,20 +72,29 @@ pub fn generate_constants_file(constants: &[Constant], framework: &str) -> Strin
     // Load framework dylib
     write_line!(
         w,
-        "(define _fw-lib (ffi-lib \"/System/Library/Frameworks/{0}.framework/{0}\"))",
-        framework
+        "(define _fw-lib (ffi-lib \"{}\"))",
+        framework_ffi_lib_arg(framework)
     );
     w.blank_line();
 
     for constant in constants {
-        let ffi_type = mapper.map_type(&constant.constant_type, false);
-        write_line!(
-            w,
-            "(define {} (get-ffi-obj '{} _fw-lib {}))",
-            constant.name,
-            constant.name,
-            ffi_type
-        );
+        if is_struct_data_symbol(&constant.constant_type) {
+            write_line!(
+                w,
+                "(define {} (ffi-obj-ref '{} _fw-lib))",
+                constant.name,
+                constant.name
+            );
+        } else {
+            let ffi_type = mapper.map_type(&constant.constant_type, false);
+            write_line!(
+                w,
+                "(define {} (get-ffi-obj '{} _fw-lib {}))",
+                constant.name,
+                constant.name,
+                ffi_type
+            );
+        }
     }
 
     w.finish()
@@ -312,6 +342,97 @@ mod tests {
             !output.contains("type-mapping.rkt"),
             "Expected no type-mapping.rkt require when no struct types \
              are used. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_struct_global_uses_ffi_obj_ref() {
+        // Struct-typed globals (e.g. _dispatch_main_q) must use ffi-obj-ref
+        // to get the symbol's address, not get-ffi-obj which dereferences it.
+        let constants = vec![make_constant(
+            "_dispatch_main_q",
+            TypeRefKind::Struct {
+                name: "struct dispatch_queue_s".into(),
+            },
+        )];
+        let output = generate_constants_file(&constants, "libdispatch");
+        assert!(
+            output.contains("(define _dispatch_main_q (ffi-obj-ref '_dispatch_main_q _fw-lib))"),
+            "Struct globals must use ffi-obj-ref, not get-ffi-obj. Output was:\n{output}"
+        );
+        assert!(
+            !output.contains("get-ffi-obj"),
+            "Struct globals must not use get-ffi-obj. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_struct_global_contract_is_cpointer() {
+        // The result of ffi-obj-ref is a cpointer — the contract must match.
+        let constants = vec![make_constant(
+            "_dispatch_main_q",
+            TypeRefKind::Struct {
+                name: "struct dispatch_queue_s".into(),
+            },
+        )];
+        let output = generate_constants_file(&constants, "libdispatch");
+        assert!(
+            output.contains("[_dispatch_main_q cpointer?]"),
+            "Struct global contract should be cpointer?. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_pointer_global_still_uses_get_ffi_obj() {
+        // Pointer-typed globals (e.g. kCFRunLoopCommonModes) must keep
+        // using get-ffi-obj — the symbol's memory IS the pointer value.
+        let constants = vec![make_constant(
+            "kCFRunLoopCommonModes",
+            TypeRefKind::Class {
+                name: "NSString".into(),
+                framework: None,
+                params: vec![],
+            },
+        )];
+        let output = generate_constants_file(&constants, "CoreFoundation");
+        assert!(
+            output.contains("(define kCFRunLoopCommonModes (get-ffi-obj 'kCFRunLoopCommonModes _fw-lib _id))"),
+            "Pointer globals must still use get-ffi-obj. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_mixed_struct_and_pointer_globals() {
+        // A file with both struct and pointer globals should use the right
+        // form for each.
+        let constants = vec![
+            make_constant(
+                "_dispatch_main_q",
+                TypeRefKind::Struct {
+                    name: "struct dispatch_queue_s".into(),
+                },
+            ),
+            make_constant(
+                "_dispatch_data_destructor_free",
+                TypeRefKind::Block {
+                    params: vec![],
+                    return_type: Box::new(TypeRef {
+                        nullable: false,
+                        kind: TypeRefKind::Primitive {
+                            name: "void".into(),
+                        },
+                    }),
+                },
+            ),
+        ];
+        let output = generate_constants_file(&constants, "libdispatch");
+        assert!(
+            output.contains("(define _dispatch_main_q (ffi-obj-ref '_dispatch_main_q _fw-lib))"),
+            "Struct global must use ffi-obj-ref. Output was:\n{output}"
+        );
+        assert!(
+            output.contains("(define _dispatch_data_destructor_free (get-ffi-obj '_dispatch_data_destructor_free _fw-lib _pointer))"),
+            "Block global must use get-ffi-obj. Output was:\n{output}"
         );
     }
 }

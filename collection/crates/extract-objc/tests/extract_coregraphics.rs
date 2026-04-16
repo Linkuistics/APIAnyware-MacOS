@@ -88,6 +88,89 @@ fn coregraphics_cgeventtapcreate_callback_param_is_function_pointer() {
 }
 
 #[test]
+fn coregraphics_cgeventfield_enum_has_values() {
+    let fw = coregraphics();
+    let en = fw
+        .enums
+        .iter()
+        .find(|e| e.name == "CGEventField")
+        .expect("CGEventField enum not found");
+
+    assert!(
+        !en.values.is_empty(),
+        "CGEventField should have enum values; got empty \
+         (CF_ENUM forward declaration shadowing the definition?)"
+    );
+
+    let keycode = en
+        .values
+        .iter()
+        .find(|v| v.name == "kCGKeyboardEventKeycode")
+        .expect("kCGKeyboardEventKeycode not found in CGEventField values");
+    assert_eq!(keycode.value, 9, "kCGKeyboardEventKeycode should be 9");
+}
+
+#[test]
+fn coregraphics_cgeventtype_enum_has_values() {
+    let fw = coregraphics();
+    let en = fw
+        .enums
+        .iter()
+        .find(|e| e.name == "CGEventType")
+        .expect("CGEventType enum not found");
+
+    assert!(
+        !en.values.is_empty(),
+        "CGEventType should have enum values; got empty"
+    );
+
+    let keydown = en
+        .values
+        .iter()
+        .find(|v| v.name == "kCGEventKeyDown")
+        .expect("kCGEventKeyDown not found in CGEventType values");
+    assert_eq!(keydown.value, 10, "kCGEventKeyDown should be 10");
+}
+
+#[test]
+fn coregraphics_cgeventtype_unsigned_top_bit_values_not_sign_extended() {
+    // CGEventType is `CF_ENUM(uint32_t, ...)`. The two "tap disabled" values
+    // sit at 0xFFFFFFFE and 0xFFFFFFFF — top-bit-set in the unsigned u32
+    // underlying type. Before the unsigned-detection fix, libclang's signed
+    // interpretation reported them as -2 / -1, which would never match in a
+    // Racket consumer comparing against the unsigned value the callback
+    // actually receives at runtime.
+    let fw = coregraphics();
+    let en = fw
+        .enums
+        .iter()
+        .find(|e| e.name == "CGEventType")
+        .expect("CGEventType enum not found");
+
+    let by_timeout = en
+        .values
+        .iter()
+        .find(|v| v.name == "kCGEventTapDisabledByTimeout")
+        .expect("kCGEventTapDisabledByTimeout not found in CGEventType values");
+    assert_eq!(
+        by_timeout.value, 0xFFFFFFFE_i64,
+        "kCGEventTapDisabledByTimeout should preserve the full unsigned u32 \
+         bit pattern (0xFFFFFFFE), not sign-extend it to -2"
+    );
+
+    let by_user_input = en
+        .values
+        .iter()
+        .find(|v| v.name == "kCGEventTapDisabledByUserInput")
+        .expect("kCGEventTapDisabledByUserInput not found in CGEventType values");
+    assert_eq!(
+        by_user_input.value, 0xFFFFFFFF_i64,
+        "kCGEventTapDisabledByUserInput should preserve the full unsigned u32 \
+         bit pattern (0xFFFFFFFF), not sign-extend it to -1"
+    );
+}
+
+#[test]
 fn coregraphics_has_no_spurious_function_pointer_loss() {
     // Verify that function pointer typedefs don't silently become Pointer or Alias
     let fw = coregraphics();

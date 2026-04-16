@@ -14,7 +14,9 @@ use apianyware_macos_emit::write_line;
 use apianyware_macos_types::ir::Function;
 use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 
-use crate::shared_signatures::any_struct_type;
+use crate::shared_signatures::{
+    any_struct_type, framework_ffi_lib_arg, is_libdispatch_unexported,
+};
 
 /// Returns true if a function can be emitted as a Racket FFI binding.
 ///
@@ -145,7 +147,12 @@ pub fn generate_functions_file(functions: &[Function], framework: &str) -> Strin
     }
     w.blank_line();
 
-    let emittable: Vec<&Function> = functions.iter().filter(|f| is_emittable(f)).collect();
+    let is_libdispatch = framework == "libdispatch";
+    let emittable: Vec<&Function> = functions
+        .iter()
+        .filter(|f| is_emittable(f))
+        .filter(|f| !(is_libdispatch && is_libdispatch_unexported(&f.name)))
+        .collect();
 
     // Contract-based provide
     if emittable.is_empty() {
@@ -175,8 +182,8 @@ pub fn generate_functions_file(functions: &[Function], framework: &str) -> Strin
     // Load framework dylib
     write_line!(
         w,
-        "(define _fw-lib (ffi-lib \"/System/Library/Frameworks/{0}.framework/{0}\"))",
-        framework
+        "(define _fw-lib (ffi-lib \"{}\"))",
+        framework_ffi_lib_arg(framework)
     );
     w.blank_line();
 
@@ -185,9 +192,19 @@ pub fn generate_functions_file(functions: &[Function], framework: &str) -> Strin
         let param_types: Vec<String> = func
             .params
             .iter()
-            .map(|p| mapper.map_type(&p.param_type, false))
+            .map(|p| {
+                let t = mapper.map_type(&p.param_type, false);
+                // libdispatch OS-object types (dispatch_queue_t etc.) resolve
+                // to _id via OS_OBJECT_USE_OBJC, but no wrapper classes exist.
+                // Emit _pointer so consumers can pass raw cpointers (e.g. from
+                // ffi-obj-ref) without a (cast ... _pointer _id) ceremony.
+                if is_libdispatch && t == "_id" { "_pointer".to_string() } else { t }
+            })
             .collect();
-        let return_type = mapper.map_type(&func.return_type, true);
+        let return_type = {
+            let t = mapper.map_type(&func.return_type, true);
+            if is_libdispatch && t == "_id" { "_pointer".to_string() } else { t }
+        };
 
         let fun_type = if param_types.is_empty() {
             format!("(_fun -> {})", return_type)
@@ -783,6 +800,105 @@ mod tests {
             !output.contains("type-mapping.rkt"),
             "Skipped (inline) functions must not trigger type-mapping \
              require. Output was:\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // libdispatch _id → _pointer override
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_libdispatch_id_params_emit_pointer() {
+        // dispatch_queue_t etc. are ObjC objects under OS_OBJECT_USE_OBJC=1,
+        // but no wrapper classes exist. Emitting _pointer instead of _id
+        // lets consumers pass raw cpointers (e.g. from ffi-obj-ref) without
+        // a (cast ... _pointer _id) ceremony.
+        let functions = vec![make_function(
+            "dispatch_async_f",
+            vec![
+                make_param("queue", TypeRefKind::Id),
+                make_param("context", TypeRefKind::Pointer),
+                make_param(
+                    "work",
+                    TypeRefKind::FunctionPointer {
+                        name: Some("dispatch_function_t".into()),
+                        params: vec![TypeRef {
+                            nullable: false,
+                            kind: TypeRefKind::Pointer,
+                        }],
+                        return_type: Box::new(TypeRef {
+                            nullable: false,
+                            kind: TypeRefKind::Primitive {
+                                name: "void".into(),
+                            },
+                        }),
+                    },
+                ),
+            ],
+            TypeRefKind::Primitive {
+                name: "void".into(),
+            },
+            false,
+            false,
+        )];
+        let output = generate_functions_file(&functions, "libdispatch");
+        assert!(
+            output.contains("(_fun _pointer _pointer _pointer -> _void)"),
+            "libdispatch _id params should be emitted as _pointer. Output was:\n{output}"
+        );
+        assert!(
+            !output.contains("_id"),
+            "libdispatch functions should not contain _id. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_libdispatch_id_return_emits_pointer() {
+        // dispatch_queue_create returns dispatch_queue_t (id in IR).
+        // Should emit _pointer for libdispatch.
+        let functions = vec![make_function(
+            "dispatch_queue_create",
+            vec![
+                make_param(
+                    "label",
+                    TypeRefKind::Class {
+                        name: "NSString".into(),
+                        framework: None,
+                        params: vec![],
+                    },
+                ),
+                make_param("attr", TypeRefKind::Id),
+            ],
+            TypeRefKind::Id,
+            false,
+            false,
+        )];
+        let output = generate_functions_file(&functions, "libdispatch");
+        assert!(
+            output.contains("(_fun _pointer _pointer -> _pointer)"),
+            "libdispatch _id returns should be emitted as _pointer. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_non_libdispatch_id_params_keep_id() {
+        // Non-libdispatch frameworks must keep _id for ObjC object params.
+        let functions = vec![make_function(
+            "CGDirectDisplayCopyCurrentMetalDevice",
+            vec![make_param(
+                "display",
+                TypeRefKind::Primitive {
+                    name: "uint64".into(),
+                },
+            )],
+            TypeRefKind::Id,
+            false,
+            false,
+        )];
+        let output = generate_functions_file(&functions, "CoreGraphics");
+        assert!(
+            output.contains("-> _id"),
+            "Non-libdispatch _id returns must stay as _id. Output was:\n{output}"
         );
     }
 }

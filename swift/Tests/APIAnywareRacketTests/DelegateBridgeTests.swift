@@ -35,6 +35,22 @@ private let idCallback0: @convention(c) () -> UnsafeMutableRawPointer? = {
     return nil
 }
 
+/// int (Int32) callback: 0 args — returns 42 to assert the value flows
+/// through the Int32 trampoline cleanly without sign or width corruption.
+private let intCallback0: @convention(c) () -> Int32 = {
+    delegateCallLog.append((selector: "int0", args: []))
+    return 42
+}
+
+/// long (Int64 / NSInteger) callback: 1 arg — returns a value that does
+/// not fit in Int32. If the long trampoline accidentally went through the
+/// Int32 path, the high bits would be lost and the test would observe
+/// truncation.
+private let longCallback1: @convention(c) (UnsafeMutableRawPointer?) -> Int64 = { arg0 in
+    delegateCallLog.append((selector: "long1", args: [arg0]))
+    return 0x1_0000_0000 + 7  // 4294967303 — explicitly above Int32 range
+}
+
 // Serialized to avoid races on shared delegateCallLog and dispatchTable
 @Suite("DelegateBridge", .serialized)
 struct DelegateBridgeTests {
@@ -136,6 +152,58 @@ struct DelegateBridgeTests {
         #expect(afterFree < beforeFree, "freeDelegateDispatch should release GC prevention")
     }
 
+    @Test("Set and invoke an int (Int32) method handler")
+    func setAndInvokeIntMethod() {
+        delegateCallLog = []
+
+        let instance = withSelectorArray(["testIntCount"], returnTypes: ["int"]) { sels, rets in
+            registerDelegate(sels, rets, 1)
+        }!
+
+        let callbackPtr = unsafeBitCast(intCallback0, to: UnsafeMutableRawPointer.self)
+        setDelegateHandler(instance, "testIntCount", callbackPtr)
+
+        let result = sendMsgInt(instance, "testIntCount")
+
+        #expect(delegateCallLog.count == 1, "Int handler should be called")
+        #expect(result == 42, "Should return 42 from callback")
+    }
+
+    @Test("Set and invoke a long (Int64 / NSInteger) method handler")
+    func setAndInvokeLongMethod() {
+        delegateCallLog = []
+
+        let instance = withSelectorArray(["numberOfRowsInTestTable:"], returnTypes: ["long"]) { sels, rets in
+            registerDelegate(sels, rets, 1)
+        }!
+
+        let callbackPtr = unsafeBitCast(longCallback1, to: UnsafeMutableRawPointer.self)
+        setDelegateHandler(instance, "numberOfRowsInTestTable:", callbackPtr)
+
+        let argStr = ("table-sentinel" as NSString)
+        let argPtr = Unmanaged.passUnretained(argStr).toOpaque()
+        let result = sendMsgLong(instance, "numberOfRowsInTestTable:", argPtr)
+
+        #expect(delegateCallLog.count == 1, "Long handler should be called")
+        #expect(result == 0x1_0000_0000 + 7,
+                "Should return full Int64 value without truncation — got \(result)")
+    }
+
+    @Test("Default int and long returns are zero")
+    func defaultIntLongReturns() {
+        let intInstance = withSelectorArray(["unhandledIntMethod"], returnTypes: ["int"]) { sels, rets in
+            registerDelegate(sels, rets, 1)
+        }!
+        #expect(sendMsgInt(intInstance, "unhandledIntMethod") == 0,
+                "Default int return should be 0")
+
+        let longInstance = withSelectorArray(["unhandledLongMethod"], returnTypes: ["long"]) { sels, rets in
+            registerDelegate(sels, rets, 1)
+        }!
+        #expect(sendMsgLong(longInstance, "unhandledLongMethod", nil) == 0,
+                "Default long return should be 0")
+    }
+
     @Test("Free delegate removes from dispatch table")
     func freeDelegateRemovesFromTable() {
         delegateCallLog = []
@@ -203,5 +271,29 @@ private func sendMsgBool(_ target: UnsafeMutableRawPointer, _ selectorName: Stri
         let sel = unsafeBitCast(sel_registerName(selCStr), to: UnsafeMutableRawPointer.self)
         typealias F = @convention(c) (UnsafeMutableRawPointer, UnsafeMutableRawPointer) -> Bool
         return unsafeBitCast(msgSendPtr, to: F.self)(target, sel)
+    }
+}
+
+/// Send an ObjC message with 0 args, returning Int32.
+private func sendMsgInt(_ target: UnsafeMutableRawPointer, _ selectorName: String) -> Int32 {
+    let msgSendPtr = dlsym(UnsafeMutableRawPointer(bitPattern: -2)!, "objc_msgSend")!
+    return selectorName.withCString { selCStr in
+        let sel = unsafeBitCast(sel_registerName(selCStr), to: UnsafeMutableRawPointer.self)
+        typealias F = @convention(c) (UnsafeMutableRawPointer, UnsafeMutableRawPointer) -> Int32
+        return unsafeBitCast(msgSendPtr, to: F.self)(target, sel)
+    }
+}
+
+/// Send an ObjC message with 1 pointer arg, returning Int64.
+private func sendMsgLong(
+    _ target: UnsafeMutableRawPointer,
+    _ selectorName: String,
+    _ arg: UnsafeMutableRawPointer?
+) -> Int64 {
+    let msgSendPtr = dlsym(UnsafeMutableRawPointer(bitPattern: -2)!, "objc_msgSend")!
+    return selectorName.withCString { selCStr in
+        let sel = unsafeBitCast(sel_registerName(selCStr), to: UnsafeMutableRawPointer.self)
+        typealias F = @convention(c) (UnsafeMutableRawPointer, UnsafeMutableRawPointer, UnsafeMutableRawPointer?) -> Int64
+        return unsafeBitCast(msgSendPtr, to: F.self)(target, sel, arg)
     }
 }

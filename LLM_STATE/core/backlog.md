@@ -16,11 +16,124 @@ entry triaged during a prior cycle. Provenance is recorded per-task in the
 pending cluster is `high → medium → low`; within a priority band, the
 listing order is a suggested work order, not a hard constraint.
 
-_No pending tasks — the three follow-up cleanup / testing items were
-bundled and shipped together on 2026-04-15. Next tasks will come from
-reactive discovery by target app development._
+### Add HIServices/AX functions and constants to ApplicationServices extraction `[collection]` `[medium]`
+- **Surfaced by:** racket-oo Task #7 (migration of `ffi/*.rkt` to generated bindings)
+- **Symptom:** `applicationservices/main.rkt` is an 8-line stub; no `functions.rkt` is
+  emitted at all. Missing: `AXIsProcessTrusted`, `AXIsProcessTrustedWithOptions`,
+  `AXUIElementCreateApplication`, `AXUIElementCopyAttributeValue`,
+  `AXUIElementSetAttributeValue`, `AXUIElementCopyAttributeNames`,
+  `AXUIElementGetPid`, `AXValueCreate`, `AXValueGetValue`. Also absent: AX constants
+  (`kAXTrustedCheckOptionPrompt`, `kAXErrorSuccess`, `kAXValueCGPointType`, etc.) and
+  CFSTR-macro attributes (`kAXMainAttribute`, `kAXWindowsAttribute`,
+  `kAXTitleAttribute`, etc.).
+- **Suspected root cause:** The input header-set does not include HIServices headers.
+  HIServices is a private subframework of ApplicationServices —
+  check whether `ApplicationServices/ApplicationServices.h` transitively includes
+  `HIServices/Accessibility.h` and whether the collection config explicitly lists it.
+- **Scope:** Once headers are included, verify the CFSTR-macro attributes land correctly
+  (they are CFSTR macros, not enum constants). The AX functions should flow through
+  the existing C-function path once the headers are present.
+
+
+### Fix clang-2.0.0 UTF-8 panic on Quartz subframework paths `[collection]` `[medium]`
+- **Surfaced by:** racket-oo triage session 2026-04-15
+- **Symptom:** The external `clang-2.0.0` Rust crate panics with a UTF-8 error when
+  visiting certain Quartz subframework paths during a full collection run. The panic
+  fires before any ObjC entity is extracted, aborting collection of the affected framework.
+- **Impact:** Blocks adding Carbon, CoreServices, or any umbrella framework that shares
+  the Quartz subframework tree to `SUBFRAMEWORK_ALLOWLIST` in `sdk.rs`. Expanding the
+  framework set beyond ApplicationServices requires this fix first.
+- **Suspected root cause:** A path component in the Quartz subframework tree contains
+  non-UTF-8 bytes (or a filename the crate's path handling assumes is valid UTF-8). The
+  `clang-2.0.0` crate does not guard its path-to-string conversions.
+- **Fix direction:** Either (a) patch the `clang` crate to use lossy UTF-8 conversion for
+  path display, or (b) pre-filter subframework paths in `sdk.rs::discover_frameworks()` /
+  `is_from_framework()` to exclude the offending Quartz path before libclang visits it.
+  Option (b) is lower-risk and avoids a fork of the external crate.
+- **Verification canary:** After fix, a full collection run must complete without panic
+  when the Quartz subframeworks are reachable.
+
+### Investigate and filter bare `c:@<name>` macro USRs (leak class A) `[collection]` `[low]`
+- **Surfaced by:** racket-oo Task #7 (migration of `ffi/*.rkt` to generated bindings)
+- **Symptom:** libclang sometimes exposes a macro through a naked `c:@<name>` USR
+  without the `@macro@` prefix. Neither the extract-objc nor extract-swift extractor
+  catches this form. Canary: `kAudioServicesDetailIntendedSpatialExperience`
+  (AudioToolbox, `AudioServices.h:401`, ObjC source).
+- **Suspected root cause:** libclang re-exposes certain `#define` macros as `VarDecl`
+  cursors with a `c:@<name>`-form USR rather than `EntityKind::MacroDefinition` —
+  possibly for macros that expand to a typed cast. The result lands in extracted IR
+  as a constant but has no dylib symbol, causing `get-ffi-obj` failure at runtime.
+- **Scope:** Audit extent across all frameworks before adding a filter. Confirm the
+  symbol is absent from the dylib via `dyld_info -exports`. Then decide: add a
+  denylist by name, add a libclang `is_definition()` / `get_linkage()` secondary
+  guard, or detect via failed `get_platform_availability()` + macro expansion path.
+  See memory entry "USR prefix families encode declaration origin — bare c:@<name>
+  macro variant" for the USR-family context.
+
+### Investigate and filter anonymous-enum members leaking through extract-objc (leak class B) `[collection]` `[low]`
+- **Surfaced by:** racket-oo triage session 2026-04-15
+- **Symptom:** Anonymous-enum members with `c:@Ea@<dummy>@<member>` or
+  `c:@EA@<typedef>@<member>` USRs are correctly filtered by extract-swift's
+  `non_c_linkable_skip_reason` predicate, but may leak through the extract-objc
+  path if libclang surfaces them as `EnumConstantDecl` children of an anonymous
+  `EnumDecl`. Canary: `nw_browse_result_change_identical` (Network framework).
+- **Suspected root cause:** extract-objc's `EnumDecl` arm visits all children
+  regardless of whether the parent enum has a name. Anonymous enums produce
+  constants with no dylib symbol — their values are inlined at use sites — so
+  emitting them as `fw.constants` entries causes `get-ffi-obj` failure at runtime.
+- **Scope:** Confirm whether the canary appears in Network's `collected/*.json`
+  `constants` array (re-collect first). If so, add an anonymous-enum guard in
+  `extract_enum` (check `entity.get_name().is_none()` or USR prefix) and record
+  skipped members via `skipped_symbol_reason::anonymous_enum_member`. Audit blast
+  radius across all frameworks before merging. The extract-swift filter already
+  catches the same symbols from that path; the fix closes the extract-objc gap so
+  both paths are symmetric.
+
+### [low] IR annotation for OS_OBJECT_USE_OBJC-typed GCD handles
+- **Surfaced by:** racket-oo Task (libdispatch `_dispatch_main_q` and `dispatch_queue_t` usage), 2026-04-16
+- **Symptom:** When SDK headers are compiled with `OS_OBJECT_USE_OBJC=1` (the macOS default), `dispatch_queue_t` and similar GCD handle types are declared as ObjC objects. The IR maps them to an `_id`-equivalent `TypeRef`. Emitters that obtain a GCD queue value via `ffi-obj-ref`/`dlsym`/pointer arithmetic get a raw pointer, not an `_id`-tagged value — an explicit cast is required before passing to any IR-typed `_id` parameter. Currently each emitter target must discover and apply this cast manually.
+- **Scope:** Add an IR-level annotation (e.g. a flag on `TypeRef` or a new `TypeRefKind` variant) marking types that are "ObjC objects via OS_OBJECT macro" rather than "genuine ObjC class declarations". Emitters can then auto-generate the cast for values obtained outside the normal message-send path. Alternatively, document the cast requirement prominently in the emitter contract so future targets don't rediscover it from scratch.
+- **Priority:** Low — only bites when a framework exposes a struct global whose declared type is OS_OBJECT-based (currently only libdispatch). The manual workaround (explicit cast at the call site) is well understood. Promote if a second framework triggers the same pattern.
 
 ## Completed Tasks
+
+### Fix unsigned enum constant values (signed-component-only extraction) `[collection]`
+- **Completed:** 2026-04-15
+- **Surfaced by:** racket-oo triage session 2026-04-15 (discovered after EnumDecl forward-decl fix)
+- **Summary:** For enums with an unsigned underlying type (`CF_ENUM(uint32_t, ...)`,
+  `CG_ENUM(uint32_t, ...)`), `extract_declarations.rs` now canonicalises the underlying
+  enum type via `get_canonical_type()` before deciding signedness, and uses the `.1`
+  (u64) component of `get_enum_constant_value()` for unsigned-backed enums. Constants
+  whose value exceeds `i64::MAX` are skipped with a warning rather than silently
+  misrepresented. Verification canary: `kCGEventTapDisabledByTimeout` now emits as
+  `4294967294` (not `-2`) in `coregraphics/enums.rkt`. All language targets that consume
+  enum IR inherit the corrected values.
+
+### Add libdispatch headers via synthetic pseudo-framework pattern `[collection]`
+- **Completed:** 2026-04-15
+- **Surfaced by:** racket-oo Task #7 (migration of `ffi/*.rkt` to generated bindings)
+- **Summary:** Implemented the synthetic pseudo-framework pattern for libdispatch:
+  checked-in umbrella header at
+  `collection/crates/extract-objc/synthetic-frameworks/libdispatch/libdispatch.h`;
+  `sdk.rs` appends a synthetic `FrameworkInfo` via `synthetic_frameworks()`;
+  `is_from_framework` branches on the synthetic name to accept `usr/include/dispatch/`
+  paths; emitter's `framework_ffi_lib_arg` in `shared_signatures.rs` maps `"libdispatch"`
+  to `"libSystem"` (the actual dylib). `pthread_main_np` deferred — left as manual
+  caller-side define. This also established the general synthetic pseudo-framework
+  pattern for future system-header extractions outside the standard `.framework` tree.
+
+### Fix EnumDecl forward-decl shadow (seen_enums skipping actual definitions) `[collection]`
+- **Completed:** 2026-04-15
+- **Surfaced by:** racket-oo triage session 2026-04-15
+- **Summary:** The `seen_enums` HashSet dedup guard in `extract_declarations.rs` was
+  inserting enum names on the first visit — which for `CF_ENUM`/`NS_ENUM` macros is a
+  forward-declaration with no values — causing the actual definition to be skipped.
+  Fixed by adding an `entity.is_definition()` guard in the `EnumDecl` arm: only insert
+  into `seen_enums` when the cursor *is* a definition. Blast radius: CoreGraphics
+  `enums.rkt` 8 → 446 define lines; Foundation `enums.rkt` 212 → 1129 define lines.
+  Note: the same latent pattern exists in the `StructDecl`, `ObjCInterfaceDecl`, and
+  `ObjCProtocolDecl` arms — not confirmed to cause problems yet, but worth checking
+  if those cursor types gain seen-set guards in the future.
 
 ### Remove legacy POC serde aliases from `Framework` `[cleanup]`
 - **Completed:** 2026-04-15

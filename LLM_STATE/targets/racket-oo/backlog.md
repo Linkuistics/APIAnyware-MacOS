@@ -28,10 +28,21 @@ plumbed through via a synthetic pseudo-framework pattern; 218 functions, 17 cons
 `runtime/dynamic-class.rkt` landed (2026-04-15) — curated libobjc subclass surface
 (`make-dynamic-subclass`, `add-method!`, type aliases `_Class`/`_SEL`/`_Method`/`_IMP`),
 idempotent on duplicate names, hooked into the runtime load harness. File Lister app
-landed 2026-04-15 (structural verification only — compiles clean under `raco make`
-in both direct and hermetic harness trees; full GUI smoke in TestAnyware VM still
-pending). Next focus: bug fixes (radio-button contract violation, block nil guard),
-then sample apps (Menu Bar Tool → Text Editor → Mini Browser).
+landed 2026-04-15 (compiles clean under `raco make` in both direct and hermetic harness
+trees; full GUI smoke tracked separately). Radio-button contract violation fixed
+(2026-04-16) — `wrap-objc-object` is the correct pattern for delegate sender args
+flowing through `provide/contract` boundaries; bare `(cast sender _pointer _id)` is
+insufficient when an `objc-object?` contract guards the call site. Block nil guard
+verified complete (2026-04-16) — guard was already in place and test-covered; Modaliser
+report was against a pre-guard checkout. File Lister
+`numberOfRowsInTableView:` migrated to `'long` (2026-04-16) — pointer-smuggle
+workaround removed, clean return through Int64 trampoline. Struct-data-symbol
+emitter fix landed (2026-04-16) — `ffi-obj-ref` for struct-typed globals,
+`get-ffi-obj` for pointer-typed; 15 libdispatch globals corrected. libdispatch
+`_id`→`_pointer` override landed (2026-04-16) — OS-object dispatch types emitted
+as `_pointer` in `functions.rkt` since no wrapper classes exist; consumers pass
+raw cpointers without cast ceremony. Next focus: transparent object-wrapping
+research, then sample apps (Menu Bar Tool → Text Editor → Mini Browser).
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -45,74 +56,6 @@ Runtime location: generation/targets/racket-oo/runtime/
 ### Bug Fixes and Cleanup
 
 - **Status:** done
-- **Surfaced:** 2026-04-16 (Modaliser-Racket learning).
-- **Closed:** 2026-04-16.
-- **Dependencies:** none.
-- **Description:** The memory entry "Block nil handling convention" records that
-  `make-objc-block` returns `(values #f #f)` when `proc` is `#f`. However,
-  Modaliser-Racket experienced the live bug: passing `#f` to `make-objc-block`
-  produced a callable block that crashed with `(apply #f ...)` on invocation.
-  The discrepancy may indicate (a) the guard was added but not yet deployed to
-  Modaliser, (b) the guard only covers one code path, or (c) there is a second
-  call site that bypasses the guard. Verify by reading `runtime/block.rkt` and
-  checking every `make-objc-block` call site for the `#f`-proc branch. If the
-  guard is present and complete, close this task and annotate the memory entry.
-  If a gap exists, patch it and add a test in `DelegateBridgeTests` (or equivalent)
-  that passes `#f` as a completion handler and asserts no crash on invocation.
-  Interim workaround: callers should pass `(lambda args (void))` instead of `#f`
-  for optional completion handlers.
-- **Results:** Audit completed. Guard is present, complete, and test-covered.
-  `runtime/block.rkt:66-67` has the `(if (not proc) (values #f #f) ...)` early
-  exit at the top of `make-objc-block`. `free-objc-block` no-ops on `#f` id via
-  `(hash-ref active-blocks block-id #f)` + `when entry`. `call-with-objc-block`
-  propagates `#f` to the body. Three distinct tests in
-  `tests/test-block-creation.rkt` cover all three paths ("make-objc-block with
-  #f returns NULL pointer", "free-objc-block with #f block-id is a no-op",
-  "call-with-objc-block with #f proc passes NULL"). All 8 block tests pass
-  live. Call-site audit: every `make-objc-block` call site in generated class
-  files passes the caller's parameter directly — the guard covers all paths.
-  The guard commit is `f7a906c` (2026-04-15 10:15 +1000); the Modaliser-Racket
-  report is 2026-04-16, so Modaliser was running against a pre-guard checkout.
-  Task closed; no code change required. Suggests next: if this pattern recurs,
-  consider a git-hook-style annotation for memory entries citing the landing
-  commit sha so "was this live when X was reported?" is a one-line check.
-
-- **Status:** done (structural verification only — live GUI smoke pending)
-- **Closed:** 2026-04-16.
-- **Dependencies:** none — `objc-object?` self-contract tightening landed
-  2026-04-15.
-- **Description:** The radio button target-action callback in
-  `ui-controls-gallery.rkt` passes `sender` (a raw `cpointer` from the
-  Swift trampoline) directly to `nsbutton-set-int-value!`, which now
-  enforces an `objc-object?` self-contract. At runtime, clicking any
-  radio button immediately raises a contract violation with caller blame.
-  Fix: `(nsbutton-set-int-value! (cast sender _pointer _id) val)`.
-  Alternatively route through `tell` directly to bypass the wrapper layer.
-  Pattern is identical to File Lister's column-identity cast:
-  `(cast col _pointer _id)` in `tableView:objectValueForTableColumn:row:`.
-  Previously invisible: the gallery's GUI test pass predates the contract
-  tightening; the radio-click code path is not exercised by `raco make`
-  or `dynamic-require` — only fires on a live click.
-- **Results:** Applied the cast fix at
-  `apps/ui-controls-gallery/ui-controls-gallery.rkt:200` (wrapped `sender` in
-  `(cast sender _pointer _id)` before passing to `nsbutton-set-int-value!`).
-  `ffi/unsafe` and `ffi/unsafe/objc` are already required (lines 11-12), so
-  `cast`/`_pointer`/`_id` are in scope without extra imports. Verification:
-  (1) `raco make` on the app source — clean; (2) full
-  `runtime_load_apps_via_raco_make` harness — all 4 sample apps pass (53s).
-  Live GUI verification in the VM still pending — `raco make` cannot exercise
-  the click-path delegate invocation, so the final proof-of-fix is a VM smoke
-  run (click each radio, confirm no contract violation, screenshot).
-  Follow-up candidates:
-  (a) Menu Bar Tool / Text Editor / Mini Browser app work will hit the same
-      pattern in their own delegate callbacks — worth watching for a third
-      instance so we can factor `as-id-arg` or similar helper into the runtime.
-  (b) Consider whether the codegen-side delegate trampoline could pre-wrap
-      `id`-typed arguments before dispatch to Racket, so callers never see
-      raw cpointers. That would eliminate the class of bug entirely, not just
-      this instance.
-
-- **Status:** not_started
 - **Surfaced:** 2026-04-15 as explicit follow-up from delegate `'int`/`'long` task.
 - **Dependencies:** none — delegate `'long` return kind is in place.
 - **Description:** File Lister's `numberOfRowsInTableView:` currently uses the
@@ -122,9 +65,10 @@ Runtime location: generation/targets/racket-oo/runtime/
   `:return-types #hash(("numberOfRowsInTableView:" . long))` in the delegate
   registration and return `count` directly. Verifies the new return kind works
   in a real app and removes a non-obvious workaround from the canonical sample.
-- **Results:** _pending_
+- **Results:** Done 2026-04-16. Changed return kind to `'long`, return value to
+  `(length file-entries)`, updated comments. Verified via `raco make` in harness.
 
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (Modaliser-Racket Task #7b, `_dispatch_main_q` migration).
 - **Dependencies:** none.
 - **Description:** The generator emits struct-typed C data globals the same
@@ -165,9 +109,15 @@ Runtime location: generation/targets/racket-oo/runtime/
   assert `(equal? _dispatch_main_q (ffi-obj-ref #"_dispatch_main_q" libSystem))`
   to lock the invariant. Reverting Modaliser's workaround to use the
   generated constant directly is the acceptance test.
-- **Results:** _pending_
+- **Results:** Done 2026-04-16. Added `is_struct_data_symbol()` check in
+  `emit_constants.rs`: struct-typed constants emit `(ffi-obj-ref 'sym lib)`,
+  non-struct keep `(get-ffi-obj 'sym lib type)`. Contract for struct globals
+  is `cpointer?`. 15 libdispatch struct globals corrected. `needs_structs`
+  computation excludes struct data symbols (they don't use FFI types, so
+  `type-mapping.rkt` is not needed). 5 new unit tests. All 18 emit_constants
+  tests pass. Runtime load harness (15 libraries + 4 apps) passes.
 
-- **Status:** not_started
+- **Status:** done
 - **Surfaced:** 2026-04-16 (Modaliser-Racket Task #7b, `_dispatch_main_q` migration).
 - **Dependencies:** none.
 - **Description:** Low-priority ergonomics follow-up to the struct-data-symbol
@@ -192,13 +142,92 @@ Runtime location: generation/targets/racket-oo/runtime/
       in the knowledge file alongside the framework.
   Whichever path is chosen, record the decision in a memory entry — this
   will come up again as more libdispatch / OS-object APIs get consumed.
+- **Results:** Done 2026-04-16. Option (a) chosen. In `generate_functions_file`,
+  when `framework == "libdispatch"`, `_id` FFI types are mapped to `_pointer`
+  for both params and returns. 99 params and 20 returns affected. 3 new unit
+  tests (libdispatch param, libdispatch return, non-libdispatch negative).
+  All 25 emit_functions tests pass. Decision recorded in memory.
+
+### Research: Transparent Object Wrapping for Delegate Callback Args
+
+- **Status:** not_started
+- **Surfaced:** 2026-04-16 (radio-button fix required 3 iterations;
+  `wrap-objc-object` is correct but too intrusive for app authors).
+- **Dependencies:** none.
+- **Description:** App programmers writing delegate callbacks currently
+  receive raw `cpointer` args from the Swift trampoline but class wrapper
+  contracts demand `objc-object?` structs. The workaround —
+  `(wrap-objc-object (cast sender _pointer _id))` — is correct but
+  requires understanding the difference between cpointer tags and
+  `objc-object` struct wrappers, which is an implementation detail that
+  should be invisible at the API surface. Research how to close this gap
+  so that delegate callback args "just work" with class wrapper functions.
+  
+  **Approaches to investigate:**
+  
+  (a) **Trampoline-side wrapping.** Modify `delegate.rkt`'s
+      `make-delegate` so that `id`-typed trampoline args are pre-wrapped
+      as `objc-object` structs before being passed to the user's lambda.
+      Pros: invisible to app code, one-time fix. Cons: every delegate
+      invocation pays a `wrap-objc-object` + retain/release cost even if
+      the arg is never passed to a wrapper; need to decide ownership
+      semantics (borrowed → `#:retained #f` adds a balanced pair).
+  
+  (b) **Contract relaxation.** Widen the self-contract from `objc-object?`
+      to `(or/c objc-object? cpointer?)` and have the wrapper body handle
+      both. Pros: zero overhead for delegate args. Cons: weakens type
+      safety — a random integer or struct pointer would pass `cpointer?`
+      and silently crash in `objc_msgSend`.
+  
+  (c) **Transparent coercion at the contract boundary.** Use a Racket
+      `flat-contract` / `chaperone-contract` that auto-wraps cpointers
+      into `objc-object` structs on the way in. Pros: invisible to both
+      callers and wrapper internals; contract still rejects non-pointer
+      garbage. Cons: need to verify Racket's contract system supports
+      value-transforming input contracts without `chaperone-contract`'s
+      restrictions.
+  
+  (d) **Unify the types.** Eliminate the `objc-object` struct entirely
+      and use `_id`-tagged cpointers everywhere, with GC prevention
+      handled via a separate mechanism (weak hash, pointers registered
+      with the runtime). Pros: removes the struct/cpointer split at the
+      root. Cons: major refactor touching every constructor, wrapper, and
+      test; finalizer attachment becomes less straightforward.
+  
+  (e) **`borrow-objc-object` helper.** Export a lightweight function from
+      the runtime that creates a no-finalizer `objc-object` struct for
+      borrowed refs — cheaper than `wrap-objc-object` (no retain/release
+      pair, no finalizer registration). Doesn't eliminate the need for the
+      helper, but reduces the footprint and cost. A stepping stone toward
+      (a) or (c).
+  
+  **Evaluation criteria:** Does it make app code work without any
+  knowledge of `objc-object` vs `cpointer`? Does it preserve contract
+  safety (reject garbage, produce good blame)? What's the per-call
+  overhead? How much emitter/runtime code changes?
+  
+  Related: File Lister's `(cast col _pointer _id)` works only because
+  it feeds into `tell`, not a contract boundary. If the column value
+  ever flows through a wrapper, it hits the same problem. Any solution
+  here should cover both delegate-sender and delegate-data-args.
 - **Results:** _pending_
 
 ### Sample Apps
 
 - **Status:** not_started
-- **Dependencies:** none; independent of File Lister (which shipped
-  2026-04-15, structural verification only)
+- **Surfaced:** 2026-04-15; structural verification only on initial landing.
+- **Dependencies:** `numberOfRowsInTableView:` `'long` migration complete —
+  **satisfied 2026-04-16**. Smoke test should exercise the final `'long`
+  implementation.
+- **Description:** Run File Lister in GUIVisionVMDriver VM. Verify: app
+  launches, window appears, file list is populated, scrolling works, column
+  headers render correctly. Exercise the `numberOfRowsInTableView:` `'long`
+  return path by verifying the row count matches the directory contents.
+  No crashes in stderr; process stays alive after exercising the UI.
+- **Results:** _pending_
+
+- **Status:** not_started
+- **Dependencies:** none; independent of File Lister (GUI smoke tracked separately)
 - **Description:** NSStatusBar, NSMenu, no-window app, timers, clipboard. Tests
   an unusual app lifecycle (no main window, status item driven) and menu
   construction. GCD main-thread dispatch helpers in `main-thread.rkt` are already
@@ -229,9 +258,31 @@ Runtime location: generation/targets/racket-oo/runtime/
 ### Contract Tightening (Stretch)
 
 - **Status:** not_started
+- **Surfaced:** 2026-04-16 (promoted from embedded blocker inside class predicates task).
+- **Dependencies:** none.
+- **Description:** Before implementing class-specific return predicates (`nsview?`,
+  `nsstring?`, etc.), decide the predicate hosting model. Three options are
+  analysed in the class predicates task below:
+  (A) Runtime factory, inline per class file — simplest, duplicates predicate
+      definitions across every class file that references a given class. Compile
+      cost O(references).
+  (B) Central generated barrel (`runtime/class-predicates.rkt` or emitter-generated
+      under `generated/`) — cleanest consumer side, but adds a compilation
+      bottleneck (every class file requires it).
+  (C) Per-class-file predicate with cross-class requires — mirrors IR semantics,
+      but introduces new dependency edges between class wrappers (currently none),
+      with load-order implications.
+  Evaluate each option against: compilation time impact, dependency graph
+  complexity, golden file churn, and maintainability. Record the decision in a
+  memory entry. The class predicates implementation task cannot start until this
+  decision is made.
+- **Results:** _pending_
+
+- **Status:** not_started
 - **Dependencies:** none (`_id` nullable tightening is complete; scope
   notes confirm different golden cells, so no amortisation benefit from
-  sequencing).
+  sequencing). Predicate hosting model decision (task above) must be
+  recorded before coding starts.
 - **Promoted from:** residual sub-item 3 of the retired
   "Tighten per-class method wrapper contracts" task.
 - **Description:** Generate `nsview?`, `nsstring?`, etc. predicates
@@ -256,31 +307,6 @@ Runtime location: generation/targets/racket-oo/runtime/
     `class_isKindOfClass:` via `objc_msgSend`, so subclass instances
     satisfy the parent predicate). This is new code with its own
     test surface, not a pure emitter change.
-  - **Predicate hosting decision (required before coding):**
-    - **Option A — Runtime factory, inline per class file.**
-      Each class file gets
-      `(define nsview? (class-predicate "NSView"))` at the top and
-      `provide`s it. No cross-class imports. Simplest. Predicates
-      for class Y that appear in class X's return contracts must be
-      defined *in class X's file too*, so the same predicate gets
-      duplicated across every class that references it. Compile
-      cost O(references).
-    - **Option B — Central generated barrel
-      (`runtime/class-predicates.rkt` or emitter-generated under
-      `generated/`).** One file defining every predicate; each class
-      wrapper requires it. Cleanest consumer side. Adds a generated
-      file that has to track the class set, and the barrel becomes
-      a compilation bottleneck (every class file requires it).
-    - **Option C — Per-class-file predicate + cross-class requires.**
-      `nsview.rkt` defines and provides `nsview?`; any wrapper that
-      mentions NSView in a return contract requires `nsview.rkt`.
-      Matches the "expose them as runtime type-test primitives from
-      the class files themselves" phrasing in the original
-      description. But introduces a *new* dependency edge between
-      class wrappers — currently class files don't require each
-      other, only the runtime. The edge is a real DAG (roughly
-      mirrors the inheritance / uses graph) but it's a structural
-      change with load-order implications worth thinking through.
   - **`map_return_contract` update:** class-aware branch for
     `TypeRefKind::Class { name }` (emit the class-specific
     predicate), `objc-object?` fallback for `Id`/`Instancetype`
@@ -292,9 +318,6 @@ Runtime location: generation/targets/racket-oo/runtime/
   - **Golden churn scale:** every class wrapper with an object
     return (most of them). Different cells from the `_id` nullable
     tightening, no savings from running them back-to-back.
-- **Blocking decision:** pick a hosting model (A / B / C) before
-  implementation starts. Record the decision in a memory entry even
-  if A wins by default.
 - **Results:** _pending_
 
 - **Status:** not_started

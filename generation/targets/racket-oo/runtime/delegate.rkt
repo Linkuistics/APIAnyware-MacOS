@@ -55,11 +55,21 @@
     (if (char=? c #\:) 1 0)))
 
 ;; Convert symbol return kind to the string the Swift API expects.
+;; Supported kinds:
+;;   void → no return
+;;   bool → C BOOL (Racket _bool)
+;;   id   → ObjC object pointer (Racket _pointer)
+;;   int  → C int32 (Racket _int32) — for headers declaring plain `int`
+;;   long → C int64 / NSInteger (Racket _int64) — preferred over the
+;;          historical pointer-smuggle for delegate methods returning
+;;          NSInteger such as -numberOfRowsInTableView:
 (define (return-kind->string kind)
   (case kind
     [(void) "void"]
     [(bool) "bool"]
     [(id)   "id"]
+    [(int)  "int"]
+    [(long) "long"]
     [else   "void"]))
 
 ;; --- Swift-backed implementation ---
@@ -113,6 +123,8 @@
         [(void) _void]
         [(bool) _bool]
         [(id)   _pointer]
+        [(int)  _int32]
+        [(long) _int64]
         [else   _void]))
 
     (define default-ret
@@ -120,6 +132,8 @@
         [(void) (void)]
         [(bool) #f]
         [(id)   #f]
+        [(int)  0]
+        [(long) 0]
         [else   (void)]))
 
     ;; Wrap: apply handler with correct arity, return default if handler fails
@@ -187,6 +201,15 @@
 (define (type-encoding-id n-params)
   (string-append "@@:" (make-string n-params #\@)))
 
+;; "i" = C int32. "q" = C int64; NSInteger on 64-bit Apple platforms is
+;; typedef'd to `long` and clang encodes it as "q", so the long branch
+;; covers the NSInteger case used by NSTableViewDataSource etc.
+(define (type-encoding-int n-params)
+  (string-append "i@:" (make-string n-params #\@)))
+
+(define (type-encoding-long n-params)
+  (string-append "q@:" (make-string n-params #\@)))
+
 (define (get-or-create-delegate-class method-sigs)
   (define cache-key
     (sort method-sigs string<? #:key car))
@@ -217,6 +240,8 @@
               [(void) _void]
               [(bool) _bool]
               [(id)   _pointer]
+              [(int)  _int32]
+              [(long) _int64]
               [else   _void]))
 
           (define default-ret
@@ -224,6 +249,8 @@
               [(void) (void)]
               [(bool) #f]
               [(id)   #f]
+              [(int)  0]
+              [(long) 0]
               [else   (void)]))
 
           (define imp-proc
@@ -246,6 +273,8 @@
               [(void) (type-encoding-void n-params)]
               [(bool) (type-encoding-bool n-params)]
               [(id)   (type-encoding-id n-params)]
+              [(int)  (type-encoding-int n-params)]
+              [(long) (type-encoding-long n-params)]
               [else   (type-encoding-void n-params)]))
 
           (class_addMethod cls sel imp-fptr encoding))
@@ -325,6 +354,8 @@
             [(void) _void]
             [(bool) _bool]
             [(id)   _pointer]
+            [(int)  _int32]
+            [(long) _int64]
             [else   _void]))
         (define callback-proc
           (lambda args (apply handler (take args (min (length args) n-params)))))

@@ -142,8 +142,37 @@ pub fn discover_frameworks(sdk_path: &Path) -> Result<Vec<FrameworkInfo>> {
         });
     }
 
+    // Append synthetic pseudo-frameworks for symbols that live outside
+    // the framework directory tree (libdispatch, pthread) but are still
+    // part of the macOS ABI. The umbrella header is checked into this
+    // crate and referenced by absolute path.
+    frameworks.extend(synthetic_frameworks());
+
     frameworks.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(frameworks)
+}
+
+/// Synthetic frameworks: pseudo-frameworks whose umbrella header lives
+/// inside this crate and whose declarations originate from system
+/// headers under `{SDK}/usr/include/` rather than a real `.framework/`
+/// directory.
+fn synthetic_frameworks() -> Vec<FrameworkInfo> {
+    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let libdispatch_header = crate_dir
+        .join("synthetic-frameworks")
+        .join("libdispatch")
+        .join("libdispatch.h");
+    if !libdispatch_header.exists() {
+        return Vec::new();
+    }
+    vec![FrameworkInfo {
+        name: "libdispatch".to_string(),
+        umbrella_header: libdispatch_header.clone(),
+        framework_dir: libdispatch_header
+            .parent()
+            .expect("synthetic umbrella has a parent dir")
+            .to_path_buf(),
+    }]
 }
 
 /// Information about a discovered framework.

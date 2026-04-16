@@ -193,11 +193,16 @@
   (make-delegate
    #:return-types (hash "selectRadio:" 'void)
    "selectRadio:" (lambda (sender)
-                    ;; Deselect all, then select the sender
+                    ;; Deselect all via the wrapper (radio-a/b/c are objc-object structs).
                     (nsbutton-set-int-value! radio-a 0)
                     (nsbutton-set-int-value! radio-b 0)
                     (nsbutton-set-int-value! radio-c 0)
-                    (nsbutton-set-int-value! sender 1))))
+                    ;; sender is a raw cpointer from the Swift trampoline.
+                    ;; Wrap it as an objc-object struct to satisfy the wrapper's
+                    ;; objc-object? contract. Default #:retained #f adds a
+                    ;; balanced retain/release pair (safe for borrowed refs).
+                    (nsbutton-set-int-value!
+                     (wrap-objc-object (cast sender _pointer _id)) 1))))
 
 (for ([btn (list radio-a radio-b radio-c)])
   (nsbutton-set-target! btn radio-target)

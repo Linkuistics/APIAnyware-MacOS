@@ -1,5 +1,38 @@
 # Memory
 
+### Synthetic pseudo-framework pattern for non-.framework system headers
+Headers that live outside the standard `.framework` tree (e.g. libdispatch in
+`/usr/include/dispatch/`, pthread in `/usr/lib/system/`) use a four-part pattern:
+(1) checked-in umbrella header at
+`collection/crates/extract-objc/synthetic-frameworks/<name>/<name>.h`;
+(2) `sdk.rs::synthetic_frameworks()` appends a synthetic `FrameworkInfo` to the
+framework list; (3) `is_from_framework()` branches on the synthetic name to accept
+the relevant `usr/include/<subdir>/` paths; (4) the emitter's `framework_ffi_lib_arg`
+in `shared_signatures.rs` maps the synthetic framework name to the real dylib short
+name (e.g. `"libdispatch"` → `"libSystem"`). Established 2026-04-15 for libdispatch.
+Use this pattern for any future system-header extraction that lacks a `.framework`
+directory.
+
+### EnumDecl forward-decl shadow: is_definition guard is required
+`CF_ENUM`/`NS_ENUM` macros expand to a forward-declaration cursor followed by the
+actual definition cursor, both with the same name. Any `HashSet`-based dedup guard
+on enum names in `extract_declarations.rs` must check `entity.is_definition()` before
+inserting — inserting on the first (forward-decl) visit causes the definition to be
+skipped silently, yielding zero-value enum sections. Fixed 2026-04-15: `EnumDecl` arm
+now gates `seen_enums.insert()` on `entity.is_definition()`. The same latent pattern
+exists in `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl` arms — apply the
+same guard if those arms ever gain a seen-set.
+
+### Unsigned enum constants require the u64 component
+`child.get_enum_constant_value()` returns `Option<(i64, u64)>`. For enums with a
+signed underlying type, use `.0` (i64). For unsigned underlying types
+(`CF_ENUM(uint32_t, ...)`, `CG_ENUM(uint32_t, ...)`), clang sign-extends top-bit-set
+values into the i64 component, so `.0` is wrong (e.g. 0xFFFFFFFE → `-2`). Fixed
+2026-04-15: `extract_declarations.rs` now calls `get_canonical_type()` on the enum's
+underlying type to determine signedness, takes `.1` (u64) for unsigned types, and skips
+constants exceeding `i64::MAX` with a warning. Canonical verification canary:
+`kCGEventTapDisabledByTimeout` emits as `4294967294` (not `-2`).
+
 ### Typedefs resolve at extraction time
 ObjC typedef aliases (e.g., NSImageName) resolve to canonical types during collection. Object pointer typedefs → Id/Class, primitive typedefs → Primitive, enum/struct typedefs → Alias. Unresolved typedefs produce incorrect FFI signatures in all language targets.
 
@@ -76,7 +109,7 @@ USRs in `swift-api-digester` output encode the declaration's origin. The prefix 
 
 - `s:` — Swift-native; not `dlsym`-able
 - `c:@F@<name>` — C function; exported as `_<name>`
-- `c:@<name>` — C var / enum constant
+- `c:@<name>` — C var / enum constant (but see bare `c:@<name>` macro variant below)
 - `c:@E@<Enum>@<Member>` — named C enum member; routed through `Enum` → `EnumElement`
 - `c:@Ea@<dummy>@<member>` — anonymous C enum member, no typedef wrapper; no dylib symbol
 - `c:@EA@<typedef>@<member>` — anonymous C enum member with typedef; no dylib symbol. Single-character case difference from `Ea` — both must be filtered together or 95% of the leak survives
@@ -84,6 +117,8 @@ USRs in `swift-api-digester` output encode the declaration's origin. The prefix 
 - `So<mangled>` — Obj-C declaration
 
 Analogous to libclang's `Linkage` enum for the ObjC path.
+
+**Bare `c:@<name>` macro variant (leak class A):** libclang sometimes exposes a macro as a `VarDecl` cursor with a plain `c:@<name>` USR — without the `@macro@` prefix — instead of routing it through `EntityKind::MacroDefinition`. This happens for macros that expand to typed casts or typed literals. Neither extractor catches this form: extract-objc sees a `VarDecl` with `Linkage::External` (passes the linkage filter and the availability filter), extract-swift sees a `Var` node without the `c:@macro@` prefix (passes `non_c_linkable_skip_reason`). The result enters IR as a normal constant but has no dylib symbol, causing `get-ffi-obj` failure at runtime. Canary: `kAudioServicesDetailIntendedSpatialExperience` (AudioToolbox, `AudioServices.h:401`). Extent across frameworks unknown — audit before filtering. Backlog task: "Investigate and filter bare `c:@<name>` macro USRs (leak class A)".
 
 ### skipped_symbols is per-pipeline, not global
 Each extractor records its own filter decisions. `merge.rs::merge_swift_into_objc` appends swift's list onto the objc framework. A symbol can appear in both `functions`/`constants` (from one extractor) and `skipped_symbols` (from the other). Canonical: NSLog — extract-objc keeps the C function (`c:@F@NSLog`), extract-swift skips the Swift-ABI overlay (`s:10Foundation5NSLog…`), merge dedup drops the Swift version, final IR carries NSLog once with ObjC metadata. Same pattern: NSApplicationMain in AppKit. `skipped_symbols` membership does not mean "absent from final IR."
@@ -137,6 +172,15 @@ Freshness guardrails skip targets with no existing output directory. Stub emitte
 
 ### Wire-format JSON in docs and tests is a coupling surface
 Design-doc examples (e.g., `docs/specs/2026-03-26-macos-workspace-design.md`) and tests asserting on `serde_json::to_string` output (e.g., `foundation_serializes_to_json`) are tightly coupled to serde annotations. Both must update in lockstep with serde `rename`/`alias`/`skip` changes.
+
+### Struct globals need address-of; pointer globals need dereference
+The IR distinguishes struct-typed globals from pointer-typed globals at the clang-AST level. Emitters must use these differently:
+- **Pointer global** (e.g. `kCFRunLoopCommonModes`): the symbol *is* the pointer — use `get-ffi-obj` (or equivalent dereference) to read the pointer value.
+- **Struct global** (e.g. `_dispatch_main_q`): the symbol *is* the struct — consumers need the symbol's **address**, not its first field. Use `ffi-obj-ref` (or equivalent address-of) to obtain the pointer to the struct.
+Using `get-ffi-obj` on a struct global dereferences the first field as if it were a pointer — wrong on all platforms. This distinction applies to every language binding emitter (Python, JavaScript, etc.) whenever a framework has struct-typed global constants. Surfaced 2026-04-16 from racket-oo libdispatch `_dispatch_main_q` binding.
+
+### OS_OBJECT_USE_OBJC makes GCD types appear as ObjC objects in IR
+When SDK headers are compiled with `OS_OBJECT_USE_OBJC=1` (the macOS default), `dispatch_queue_t` and similar GCD types are declared as ObjC objects. The IR therefore maps them to an `_id`-equivalent type. This creates friction for emitters that obtain queue values via `dlsym`/`ffi-obj-ref`/pointer arithmetic: the raw pointer is not automatically an `_id`-tagged value, so an explicit cast is required before passing it to any function whose IR signature declares a GCD type as `_id`-equivalent. Every future language binding emitter will face this same cast requirement. A potential long-term fix is an IR annotation marking these types as "ObjC-object-via-OS_OBJECT macro" so emitters can generate the cast automatically. Surfaced 2026-04-16 from racket-oo libdispatch `_dispatch_main_q` usage.
 
 ### LLM annotations use a dedicated input directory
 Two annotation sources: (1) heuristic annotations via checkpoint output dir (`load_existing_annotations()`), (2) LLM-generated `.llm.json` files from `--llm-dir` (`load_llm_annotations()` in `llm.rs`). LLM annotations take precedence via merge logic. Workflow: `llm-extract` CLI → `.methods.json` summaries of interesting methods (block params, error out-params, delegate/observer patterns) → Claude Code subagent → `.llm.json` → `annotate --llm-dir` merges. Runs within Claude Code for cost reasons.

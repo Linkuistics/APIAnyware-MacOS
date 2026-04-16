@@ -178,6 +178,76 @@ private let impId3: @convention(c) (
     return unsafeBitCast(cb, to: (@convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> UnsafeMutableRawPointer?).self)(arg0, arg1, arg2)
 }
 
+// -- Int32 (C int) return trampolines --
+// Matches ObjC type encoding "i" (32-bit signed int). Use for delegate
+// methods declared as `int` in headers — distinct from NSInteger (64-bit).
+
+private let impInt0: @convention(c) (
+    UnsafeMutableRawPointer, UnsafeMutableRawPointer
+) -> Int32 = { selfPtr, cmdPtr in
+    guard let cb = lookupCallback(selfPtr, cmdPtr) else { return 0 }
+    return unsafeBitCast(cb, to: (@convention(c) () -> Int32).self)()
+}
+
+private let impInt1: @convention(c) (
+    UnsafeMutableRawPointer, UnsafeMutableRawPointer, UnsafeMutableRawPointer?
+) -> Int32 = { selfPtr, cmdPtr, arg0 in
+    guard let cb = lookupCallback(selfPtr, cmdPtr) else { return 0 }
+    return unsafeBitCast(cb, to: (@convention(c) (UnsafeMutableRawPointer?) -> Int32).self)(arg0)
+}
+
+private let impInt2: @convention(c) (
+    UnsafeMutableRawPointer, UnsafeMutableRawPointer,
+    UnsafeMutableRawPointer?, UnsafeMutableRawPointer?
+) -> Int32 = { selfPtr, cmdPtr, arg0, arg1 in
+    guard let cb = lookupCallback(selfPtr, cmdPtr) else { return 0 }
+    return unsafeBitCast(cb, to: (@convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Int32).self)(arg0, arg1)
+}
+
+private let impInt3: @convention(c) (
+    UnsafeMutableRawPointer, UnsafeMutableRawPointer,
+    UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?
+) -> Int32 = { selfPtr, cmdPtr, arg0, arg1, arg2 in
+    guard let cb = lookupCallback(selfPtr, cmdPtr) else { return 0 }
+    return unsafeBitCast(cb, to: (@convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Int32).self)(arg0, arg1, arg2)
+}
+
+// -- Int64 (C long / NSInteger) return trampolines --
+// Matches ObjC type encoding "q" (64-bit signed). NSInteger on 64-bit Apple
+// platforms is typedef'd to `long`, which clang encodes as "q" — so this is
+// the right return shape for any NSInteger-returning delegate method
+// (e.g. -numberOfRowsInTableView:, -outlineView:numberOfChildrenOfItem:).
+
+private let impLong0: @convention(c) (
+    UnsafeMutableRawPointer, UnsafeMutableRawPointer
+) -> Int64 = { selfPtr, cmdPtr in
+    guard let cb = lookupCallback(selfPtr, cmdPtr) else { return 0 }
+    return unsafeBitCast(cb, to: (@convention(c) () -> Int64).self)()
+}
+
+private let impLong1: @convention(c) (
+    UnsafeMutableRawPointer, UnsafeMutableRawPointer, UnsafeMutableRawPointer?
+) -> Int64 = { selfPtr, cmdPtr, arg0 in
+    guard let cb = lookupCallback(selfPtr, cmdPtr) else { return 0 }
+    return unsafeBitCast(cb, to: (@convention(c) (UnsafeMutableRawPointer?) -> Int64).self)(arg0)
+}
+
+private let impLong2: @convention(c) (
+    UnsafeMutableRawPointer, UnsafeMutableRawPointer,
+    UnsafeMutableRawPointer?, UnsafeMutableRawPointer?
+) -> Int64 = { selfPtr, cmdPtr, arg0, arg1 in
+    guard let cb = lookupCallback(selfPtr, cmdPtr) else { return 0 }
+    return unsafeBitCast(cb, to: (@convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Int64).self)(arg0, arg1)
+}
+
+private let impLong3: @convention(c) (
+    UnsafeMutableRawPointer, UnsafeMutableRawPointer,
+    UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?
+) -> Int64 = { selfPtr, cmdPtr, arg0, arg1, arg2 in
+    guard let cb = lookupCallback(selfPtr, cmdPtr) else { return 0 }
+    return unsafeBitCast(cb, to: (@convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Int64).self)(arg0, arg1, arg2)
+}
+
 // -- Dealloc trampoline --
 // Called when the delegate's retain count hits 0. Defense-in-depth cleanup:
 // releases all GC prevention handles and removes from dispatch table,
@@ -255,6 +325,14 @@ private func selectIMP(returnType: String, paramCount: Int) -> UnsafeMutableRawP
     case ("id", 1): return unsafeBitCast(impId1, to: UnsafeMutableRawPointer.self)
     case ("id", 2): return unsafeBitCast(impId2, to: UnsafeMutableRawPointer.self)
     case ("id", _): return unsafeBitCast(impId3, to: UnsafeMutableRawPointer.self)
+    case ("int", 0): return unsafeBitCast(impInt0, to: UnsafeMutableRawPointer.self)
+    case ("int", 1): return unsafeBitCast(impInt1, to: UnsafeMutableRawPointer.self)
+    case ("int", 2): return unsafeBitCast(impInt2, to: UnsafeMutableRawPointer.self)
+    case ("int", _): return unsafeBitCast(impInt3, to: UnsafeMutableRawPointer.self)
+    case ("long", 0): return unsafeBitCast(impLong0, to: UnsafeMutableRawPointer.self)
+    case ("long", 1): return unsafeBitCast(impLong1, to: UnsafeMutableRawPointer.self)
+    case ("long", 2): return unsafeBitCast(impLong2, to: UnsafeMutableRawPointer.self)
+    case ("long", _): return unsafeBitCast(impLong3, to: UnsafeMutableRawPointer.self)
     default:         return unsafeBitCast(impVoid0, to: UnsafeMutableRawPointer.self)
     }
 }
@@ -266,11 +344,18 @@ private func selectorParamCount(_ selector: String) -> Int {
 
 /// Build ObjC type encoding for a method.
 /// Format: return_type self(@) _cmd(:) param_types(@...)
+///
+/// Encoding key (from clang ObjC ABI):
+///   v = void, B = bool, @ = id (object), i = int32, q = int64.
+/// "long" is mapped to "q" because NSInteger on 64-bit Apple platforms
+/// is typedef'd to `long`, which clang encodes as "q".
 private func typeEncoding(returnType: String, paramCount: Int) -> String {
     let ret: String
     switch returnType {
     case "bool": ret = "B"
     case "id":   ret = "@"
+    case "int":  ret = "i"
+    case "long": ret = "q"
     default:     ret = "v"
     }
     return ret + "@:" + String(repeating: "@", count: paramCount)

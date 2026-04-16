@@ -11,8 +11,8 @@
 ;;
 ;; Exercises: data source delegate protocol, table columns, scroll view,
 ;; NSArray/NSString extraction, NSOpenPanel modal dialog, cross-class
-;; wiring, delegate return types for NSInteger (via 'id pointer-bit
-;; smuggle) and id (autoreleased NSString).
+;; wiring, delegate return types for NSInteger (via 'long return kind)
+;; and id (autoreleased NSString).
 ;;
 ;; Run with: racket file-lister.rkt
 
@@ -284,15 +284,11 @@
 
 ;; --- Data source delegate ---
 ;;
-;; NSTableViewDataSource's two required methods cross a type boundary
-;; the delegate runtime doesn't yet speak natively:
+;; NSTableViewDataSource's two required methods:
 ;;
-;; - numberOfRowsInTableView: returns NSInteger. The delegate trampoline
-;;   supports 'void/'bool/'id, not 'int. We register 'id and return a
-;;   cpointer whose address bits == row count via `(ptr-add #f count)`.
-;;   On arm64 both NSInteger and id share x0, and the ObjC caller reads
-;;   x0 as NSInteger regardless of the method's declared encoding, so
-;;   the bits pass through cleanly.
+;; - numberOfRowsInTableView: returns NSInteger (Int64 on 64-bit Apple).
+;;   Registered with return kind 'long, which maps to the "q" type
+;;   encoding and the Int64 trampoline in DelegateBridge.swift.
 ;;
 ;; - tableView:objectValueForTableColumn:row: returns id. Declared 'id.
 ;;   We build an autoreleased NSString with string->nsstring + tell
@@ -319,11 +315,11 @@
 
 (define data-source
   (make-delegate
-   #:return-types (hash "numberOfRowsInTableView:" 'id
+   #:return-types (hash "numberOfRowsInTableView:" 'long
                         "tableView:objectValueForTableColumn:row:" 'id)
    "numberOfRowsInTableView:"
    (lambda (_tv)
-     (ptr-add #f (length file-entries)))
+     (length file-entries))
    "tableView:objectValueForTableColumn:row:"
    (lambda (_tv col-ptr row-ptr)
      (define row (cast row-ptr _pointer _int64))

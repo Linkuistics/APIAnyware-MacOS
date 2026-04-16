@@ -3,6 +3,42 @@
 //! Collects all unique typed `objc_msgSend` signatures needed by a class's methods
 //! and properties, assigns sequential IDs, and provides lookup for reuse.
 
+/// Racket `ffi-lib` argument for a framework.
+///
+/// Real frameworks live at
+/// `/System/Library/Frameworks/{Name}.framework/{Name}`. Synthetic
+/// pseudo-frameworks like `libdispatch` have no `.framework` bundle —
+/// their symbols are re-exported by `libSystem`, which dyld resolves
+/// via the shared cache on modern macOS (no standalone file on disk).
+pub fn framework_ffi_lib_arg(framework_name: &str) -> String {
+    if framework_name == "libdispatch" {
+        return "libSystem".to_string();
+    }
+    format!("/System/Library/Frameworks/{0}.framework/{0}", framework_name)
+}
+
+/// Returns `true` if the symbol is declared in libdispatch/pthread
+/// headers but is not exported by the live `libSystem` dylib on modern
+/// macOS (Ventura 13+). These are typically deprecated or never-
+/// -implemented APIs that survive in the headers for source
+/// compatibility.
+///
+/// Emitting a `get-ffi-obj` for any of these causes
+/// `ffi-obj: could not find export from foreign library` at module
+/// load time. The list is verified by dlsym in the runtime load
+/// harness — if macOS ever starts exporting one, the harness will
+/// flag it (and we can remove it) via a new canary.
+pub fn is_libdispatch_unexported(symbol: &str) -> bool {
+    matches!(
+        symbol,
+        "dispatch_cancel"
+            | "dispatch_notify"
+            | "dispatch_testcancel"
+            | "dispatch_wait"
+            | "pthread_jit_write_with_callback_np"
+    )
+}
+
 use std::collections::BTreeMap;
 
 use apianyware_macos_emit::ffi_type_mapping::FfiTypeMapper;

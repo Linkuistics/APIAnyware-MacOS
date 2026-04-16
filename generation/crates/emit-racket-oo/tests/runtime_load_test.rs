@@ -41,6 +41,7 @@ const RUNTIME_FILES: &[&str] = &[
     "block.rkt",
     "coerce.rkt",
     "delegate.rkt",
+    "dynamic-class.rkt",
     "main-thread.rkt",
     "objc-base.rkt",
     "swift-helpers.rkt",
@@ -48,7 +49,18 @@ const RUNTIME_FILES: &[&str] = &[
     "variadic-helpers.rkt",
 ];
 
-const REQUIRED_FRAMEWORKS: &[&str] = &["Foundation", "AppKit", "CoreGraphics", "CoreText"];
+const REQUIRED_FRAMEWORKS: &[&str] = &[
+    "Foundation",
+    "AppKit",
+    "AudioToolbox",
+    "CoreGraphics",
+    "CoreSpotlight",
+    "CoreText",
+    "ApplicationServices",
+    "libdispatch",
+    "Network",
+    "NetworkExtension",
+];
 
 const APPS: &[&str] = &["hello-window", "counter", "ui-controls-gallery", "file-lister"];
 
@@ -72,6 +84,24 @@ const APPS: &[&str] = &["hello-window", "counter", "ui-controls-gallery", "file-
 ///    regression between the impl and its `provide/contract` entry was
 ///    invisible to snapshot tests because TestKit has no class-method
 ///    properties; this check makes the harness fail on any recurrence.
+/// 11. `runtime/dynamic-class.rkt` — curated libobjc bridge for runtime
+///     subclass construction. Hand-written runtime file, not generated;
+///     listed here so its `get-ffi-obj` chain against libobjc is exercised
+///     at harness time rather than only when a sample app subclasses an
+///     ObjC class. Catches drift in libobjc symbol availability.
+/// 12. `audiotoolbox/constants.rkt` — covers the platform-unavailable
+///     extern leak surfaced by Modaliser-Racket and closed 2026-04-13. The
+///     framework's constants surface was previously broken at load time
+///     because dylib-unexported externs reached the IR; this check is the
+///     long-term canary that the leak does not return.
+/// 13. `networkextension/constants.rkt` and `network/constants.rkt` —
+///     the canary frameworks for the anonymous-enum-as-constant filter
+///     (`c:@Ea@…`); both broke load with `nw_browse_result_change_identical`
+///     leakage before the filter landed earlier in 2026-04.
+/// 14. `corespotlight/constants.rkt` — the canary for the skipped_symbols
+///     "leak" that turned out to be stale downstream checkpoints
+///     (CoreSpotlightAPIVersion canary), confirmed clean against fresh IR
+///     2026-04-13.
 const LIBRARY_LOAD_CHECKS: &[&str] = &[
     "generated/oo/foundation/nsstring.rkt",
     "generated/oo/foundation/protocols/nscopying.rkt",
@@ -80,6 +110,14 @@ const LIBRARY_LOAD_CHECKS: &[&str] = &[
     "generated/oo/coregraphics/functions.rkt",
     "generated/oo/coretext/constants.rkt",
     "generated/oo/appkit/nsmenuitem.rkt",
+    "generated/oo/applicationservices/functions.rkt",
+    "generated/oo/libdispatch/functions.rkt",
+    "generated/oo/libdispatch/constants.rkt",
+    "generated/oo/audiotoolbox/constants.rkt",
+    "generated/oo/networkextension/constants.rkt",
+    "generated/oo/network/constants.rkt",
+    "generated/oo/corespotlight/constants.rkt",
+    "runtime/dynamic-class.rkt",
 ];
 
 fn crate_root() -> PathBuf {
