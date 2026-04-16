@@ -304,3 +304,9 @@ Single uppercase letter followed by lowercase chars (e.g., `ObjectType`, `KeyTyp
 
 ### `cf-bridge.rkt` and `nsview-helpers.rkt` runtime helpers
 `cf-bridge.rkt` (214 lines) exports: `racket-string->cfstring`/`cfstring->racket-string`, `cfnumber->integer`/`cfnumber->real`, `cfboolean->boolean`, `cfarray->list`, `make-cfdictionary`, `with-cf-value` (auto-release). `nsview-helpers.rkt` (30 lines) provides NSView geometry helpers. Both listed in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
+
+### AX, CGEvent, and SPI runtime helper files
+Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
+- `ax-helpers.rkt`: typed AX attribute access; `malloc`/`free`/`CFRelease` scoped internally.
+- `cgevent-helpers.rkt`: `CGEventTapCreate` + `CFRunLoop`; module-level `function-ptr` for GC stability (see "GCD main-thread dispatch"); tap fires on `CFRunLoopGetMain` so `_cprocedure` is safe without `#:async-apply` (see "`_cprocedure` callbacks unsafe from foreign OS threads").
+- `spi-helpers.rkt`: `_AXUIElementGetWindow` with graceful `#f` fallback.
