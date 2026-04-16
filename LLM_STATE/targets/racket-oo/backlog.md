@@ -28,23 +28,16 @@ plumbed through via a synthetic pseudo-framework pattern; 218 functions, 17 cons
 `runtime/dynamic-class.rkt` landed (2026-04-15) — curated libobjc subclass surface
 (`make-dynamic-subclass`, `add-method!`, type aliases `_Class`/`_SEL`/`_Method`/`_IMP`),
 idempotent on duplicate names, hooked into the runtime load harness. File Lister app
-landed 2026-04-15 (compiles clean under `raco make` in both direct and hermetic harness
-trees; full GUI smoke tracked separately). Radio-button contract violation fixed
-(2026-04-16) — `wrap-objc-object` is the correct pattern for delegate sender args
-flowing through `provide/contract` boundaries; bare `(cast sender _pointer _id)` is
-insufficient when an `objc-object?` contract guards the call site. Block nil guard
-verified complete (2026-04-16) — guard was already in place and test-covered; Modaliser
-report was against a pre-guard checkout. File Lister
-`numberOfRowsInTableView:` migrated to `'long` (2026-04-16) — pointer-smuggle
-workaround removed, clean return through Int64 trampoline. Struct-data-symbol
-emitter fix landed (2026-04-16) — `ffi-obj-ref` for struct-typed globals,
-`get-ffi-obj` for pointer-typed; 15 libdispatch globals corrected. libdispatch
-`_id`→`_pointer` override landed (2026-04-16) — OS-object dispatch types emitted
-as `_pointer` in `functions.rkt` since no wrapper classes exist; consumers pass
-raw cpointers without cast ceremony. Next focus: FFI surface elimination —
-make the generated API fully opaque to app authors (no `cast`, no `cpointer?`,
-no `sel_registerName`, no `ffi/unsafe` requires in app code), then sample apps
-(Menu Bar Tool → Text Editor → Mini Browser).
+landed 2026-04-15. Radio-button contract violation fixed (2026-04-16) —
+`wrap-objc-object` is the correct pattern for delegate sender args flowing through
+`provide/contract` boundaries. FFI Surface Elimination complete (2026-04-16) across
+three phases: type-aware delegates (`#:param-types`), contract cleanup (SEL-as-string,
+`cpointer?` dropped), and app rewrites. All 4 sample apps (`hello-window`, `counter`,
+`ui-controls-gallery`, `file-lister`) carry zero `ffi/unsafe` imports and are
+VM-validated via GUIVisionVMDriver. Runtime additions: `borrow-objc-object`,
+`objc-autorelease`, `->string`. Object param contracts always include `#f` (nil
+messaging is always a no-op). `make-delegate` returns `borrow-objc-object`.
+SEL-typed property setters wrap value with `sel_registerName`.
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -55,104 +48,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 ```
 ## Task Backlog
 
-### FFI Surface Elimination
-
-- **Status:** done
-- **Surfaced:** 2026-04-16 (derived from research above).
-- **Dependencies:** none (self-contained across runtime + emitter).
-- **Description:** Implement the 3-phase solution architecture from the
-  research above. Phase 1 (type-aware delegates) has the highest impact
-  and should land first; phase 2 (contract cleanup) and phase 3 (app
-  cleanup) follow. Each phase is independently valuable — partial
-  completion still improves the API surface.
-
-  **Phase 1 sub-tasks (runtime + emitter) — COMPLETE (2026-04-16):**
-  - 1a: ✓ `borrow-objc-object` in `objc-base.rkt` (no retain, no finalizer)
-  - 1b: ✓ `#:param-types` in `delegate.rkt` (auto-wrap/cast callback args)
-  - 1c: ✓ Fix `method_return_kind` in `emit_protocol.rs` (int/long returns)
-  - 1d: ✓ Emit `#:param-types` + return coercion in protocol factories
-  - 1e: ✓ Fix slider/stepper latent bugs in `ui-controls-gallery.rkt`
-
-  **Phase 2 sub-tasks (emitter) — COMPLETE (2026-04-16):**
-  - 2a: ✓ Selector params accept strings (emit `sel_registerName` in wrapper body)
-  - 2b: ✓ Drop `cpointer?` from `map_param_contract`
-  - 2c: ✓ `->string` helper in runtime
-
-  **Phase 3 sub-tasks (apps) — COMPLETE (2026-04-16):**
-  - 3a: ✓ Rewrite sample apps (remove `ffi/unsafe`, use new APIs)
-  - 3b: ✓ Harness + VM verification
-- **Results:**
-  Phase 1 landed 2026-04-16. Five changes:
-  (1) `borrow-objc-object` in `objc-base.rkt` — lightweight struct wrapping
-  without retain/release, satisfies `objc-object?` contracts for borrowed
-  delegate callback args.
-  (2) `#:param-types` keyword on `make-delegate` in `delegate.rkt` — hash
-  mapping selectors to lists of type symbols (`'object`, `'long`, `'int`,
-  `'bool`, `'pointer`). The trampoline wrapper auto-coerces each callback
-  arg: objects → `borrow-objc-object`, integers → `cast _pointer → _int64/_int32`,
-  bools → null-pointer test. Stored per-delegate so `delegate-set!` also wraps.
-  (3) `method_return_kind` in `emit_protocol.rs` — added int32→`'int` and
-  int64→`'long` branches. `numberOfRowsInTableView:` (NSTableViewDataSource)
-  and `tableView:nextTypeSelectMatchFromRow:toRow:forString:` (NSTableViewDelegate)
-  correctly classified as `'long` instead of `'void`. 6 new unit tests.
-  (4) `generate_protocol_file` emits `#:param-types` hash from IR param types
-  via new `param_type_symbol` function. All generated protocol factories now
-  pass type metadata to `make-delegate`. 5 new unit tests.
-  (5) `ui-controls-gallery.rkt` — slider, stepper, and radio button callbacks
-  use `#:param-types '(object)` instead of manual `wrap-objc-object` + `cast`.
-  Radio button callback simplified from 4-line ceremony to direct `sender` use.
-  `ffi/unsafe` require dropped (only `ffi/unsafe/objc` remains for `sel_registerName`).
-  All 105 emitter tests pass, 3 snapshot suites pass, runtime load harness (2 tests) pass.
-  Golden files updated for AppKit protocols (param-types + int/long grouping).
-  Phase 2 landed 2026-04-16. Three changes:
-  (1) SEL params accept strings — `coerce_sel_params` in `emit_class.rs` wraps
-  SEL-typed params with `(sel_registerName ...)` in the generated wrapper body.
-  `map_param_contract` maps `Selector` → `string?`. App code passes plain strings
-  like `"sliderChanged:"` instead of `(sel_registerName "sliderChanged:")`.
-  (2) `cpointer?` dropped from `map_param_contract` — object param contracts
-  narrowed from `(or/c string? objc-object? cpointer?)` to `(or/c string? objc-object?)`.
-  Raw FFI pointers no longer accepted at the contract boundary.
-  (3) `->string` helper in `type-mapping.rkt` — accepts `objc-object`, raw `cpointer`,
-  `string?`, or `#f`; extracts a Racket string via `nsstring->string`. Idempotent on
-  strings. Provided through `coerce.rkt` re-export chain.
-  `ui-controls-gallery.rkt` updated: all `sel_registerName` calls replaced with plain
-  strings, both `ffi/unsafe` and `ffi/unsafe/objc` requires dropped — **zero FFI imports**.
-  All 107 emitter tests pass, 3 snapshot suites pass, runtime load harness (2 tests) pass.
-  Golden files updated across 16+ AppKit class wrappers and TestKit.
-  Phase 3 landed 2026-04-16. VM-validated all 4 apps:
-  (1) All 4 sample apps rewritten to zero FFI imports (`hello-window`, `counter`,
-  `ui-controls-gallery`, `file-lister`). No `ffi/unsafe` or `ffi/unsafe/objc` requires
-  in any app.
-  (2) VM validation: all 4 apps bundled, uploaded to GUIVisionVMDriver VM, launched,
-  and visually verified. Hello Window: window + label. Counter: buttons + display.
-  UI Controls Gallery: all 8 control sections render. File Lister: 3-column table
-  with directory listing, correct sizes/dates.
-  (3) Two runtime bugs discovered and fixed during VM testing:
-  - Object param contracts always include `#f` (nil) — ObjC nil messaging is no-op,
-    many APIs accept nil without explicit _Nullable annotation. Previous contract
-    rejected `#f` for non-nullable params (`makeKeyAndOrderFront:` crash).
-  - `make-delegate` returns `borrow-objc-object` — delegates satisfy `objc-object?`
-    contract when passed to wrappers like `nsbutton-set-target!`.
-  - SEL-typed property setters wrap value with `(sel_registerName value)` — previously
-    only methods had this, properties were missed (`setAction:` crash).
-  (4) New runtime helpers: `objc-autorelease` (autorelease a +1 pointer, returns it),
-  `->string` (NSString → Racket string from any input type).
-  All 107 emitter tests pass, runtime load harness pass.
-  **FFI Surface Elimination is complete across all three phases.**
-
 ### Sample Apps
-
-- **Status:** not_started
-- **Surfaced:** 2026-04-15; structural verification only on initial landing.
-- **Dependencies:** `numberOfRowsInTableView:` `'long` migration complete —
-  **satisfied 2026-04-16**. Smoke test should exercise the final `'long`
-  implementation.
-- **Description:** Run File Lister in GUIVisionVMDriver VM. Verify: app
-  launches, window appears, file list is populated, scrolling works, column
-  headers render correctly. Exercise the `numberOfRowsInTableView:` `'long`
-  return path by verifying the row count matches the directory contents.
-  No crashes in stderr; process stays alive after exercising the UI.
-- **Results:** _pending_
 
 - **Status:** not_started
 - **Dependencies:** none; independent of File Lister (GUI smoke tracked separately)
@@ -189,8 +85,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Surfaced:** 2026-04-16 (promoted from embedded blocker inside class predicates task).
 - **Dependencies:** none.
 - **Description:** Before implementing class-specific return predicates (`nsview?`,
-  `nsstring?`, etc.), decide the predicate hosting model. Three options are
-  analysed in the class predicates task below:
+  `nsstring?`, etc.), decide the predicate hosting model. Three options:
   (A) Runtime factory, inline per class file — simplest, duplicates predicate
       definitions across every class file that references a given class. Compile
       cost O(references).
@@ -220,32 +115,22 @@ Runtime location: generation/targets/racket-oo/runtime/
   returns and non-coerced params). Consumers gain a runtime predicate
   they currently lack. Marked stretch because the ergonomics win is
   real but narrow.
-- **Scope notes (2026-04-15, from failed attempt to batch with `_id`
-  nullable tightening):**
-  - **"Non-coerced params" is empty.** Every object param currently
-    flows through `coerce-arg`, so in practice this task only shifts
-    tightening" framing no longer applies — the `_id` task touched
-    `map_param_contract` + param positions; this one touches
-    `map_return_contract` + return positions. Different golden cells,
-    no overlap.
-  - **Runtime has zero class introspection.** `runtime/objc-base.rkt`
-    et al. contain no `object_getClass`, `class_getName`,
-    `isKindOfClass:`, or equivalent. A real `nsview?` predicate needs
+- **Scope notes (2026-04-15):**
+  - **"Non-coerced params" is empty.** Every object param flows through
+    `coerce-arg`, so this task only affects `map_return_contract` +
+    return positions. Different golden cells from the `_id` task, no overlap.
+  - **Runtime has zero class introspection.** A real `nsview?` predicate needs
     a new runtime primitive (probably `objc-instance-of?` backed by
     `class_isKindOfClass:` via `objc_msgSend`, so subclass instances
-    satisfy the parent predicate). This is new code with its own
-    test surface, not a pure emitter change.
+    satisfy the parent predicate). This is new code with its own test surface.
   - **`map_return_contract` update:** class-aware branch for
-    `TypeRefKind::Class { name }` (emit the class-specific
-    predicate), `objc-object?` fallback for `Id`/`Instancetype`
-    (the IR doesn't know the concrete class).
-  - **Harness coverage:** needs a new runtime-load check that
-    verifies the predicate passes — the existing load-only
-    checks cannot observe a contract mismatch that only fires at
-    return time.
-  - **Golden churn scale:** every class wrapper with an object
-    return (most of them). Different cells from the `_id` nullable
-    tightening, no savings from running them back-to-back.
+    `TypeRefKind::Class { name }` (emit the class-specific predicate),
+    `objc-object?` fallback for `Id`/`Instancetype`.
+  - **Harness coverage:** needs a new runtime-load check that verifies the
+    predicate passes — existing load-only checks cannot observe a contract
+    mismatch that only fires at return time.
+  - **Golden churn scale:** every class wrapper with an object return (most
+    of them).
 - **Results:** _pending_
 
 ### Bug Fixes and Cleanup
@@ -279,11 +164,64 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Description:** The generated `wkwebview.rkt` does not expose
   `setAutoresizingMask:`, which is inherited from NSView. The generated bindings
   only emit methods declared directly on the class, not inherited ones. Workaround:
-  call `objc_msgSend` directly. Fix options: (a) emit inherited NSView methods into
-  WKWebView's wrapper at generation time via the IR inheritance chain, or (b) expose
-  a generic `set-autoresizing-mask!` helper in the runtime that works on any NSView
-  subclass via `tell`. Option (b) is lower risk and avoids golden file churn across
-  all NSView subclass wrappers. Decide and record the approach before implementing.
+  call `objc_msgSend` directly. **Chosen approach: option (b)** — expose a generic
+  `set-autoresizing-mask!` helper in the runtime (probably `runtime/nsview-helpers.rkt`)
+  that works on any NSView subclass via `tell`. Lower risk than option (a)
+  (emitting inherited NSView methods into every subclass wrapper at generation
+  time) and avoids golden file churn across all NSView subclass wrappers.
+  Update harness coverage to verify the new helper loads and calls correctly.
+- **Results:** _pending_
+
+### `is_definition()` Guard Audit in Extractors
+
+- **Status:** not_started
+- **Surfaced:** 2026-04-16 (latent bug exposed when the unsigned-enum fix added
+  an `is_definition()` guard for `EnumDecl`).
+- **Dependencies:** none.
+- **Description:** The `seen_enums` HashSet dedup guard in `extract_declarations.rs`
+  checks by name only. For `CF_ENUM`/`NS_ENUM`-generated cursors, libclang emits
+  both a forward `EnumDecl` (no values) and a defining `EnumDecl` (with values);
+  if the forward decl is visited first it wins and the definition is skipped.
+  The `is_definition()` guard added for `EnumDecl` closes this for enums. The
+  same latent bug exists in the `StructDecl`, `ObjCInterfaceDecl`, and
+  `ObjCProtocolDecl` arms — any of these can shadow a full definition with a
+  forward declaration. Audit all three arms and add `entity.is_definition()`
+  guards where missing. Verify with the runtime load harness — a shadowed class
+  or struct definition would surface as a load error or missing binding.
+- **Results:** _pending_
+
+### Non-Linkable Symbol Leak Class A: Bare `c:@<name>` Macros
+
+- **Status:** not_started
+- **Surfaced:** 2026-04-16 (documented as open leak class; canary identified via
+  extractor filter audit).
+- **Dependencies:** none.
+- **Description:** libclang sometimes exposes preprocessor macros through naked
+  `c:@<name>` USRs (without `@macro@`). Neither extractor catches these; they
+  pass `non_c_linkable_skip_reason` and emit `get-ffi-obj` calls that fail at
+  `dlsym` time. Canary: `kAudioServicesDetailIntendedSpatialExperience`
+  (AudioToolbox, `AudioServices.h:401`, ObjC source). Fix: (a) add a skip-reason
+  branch in `non_c_linkable_skip_reason` for bare `c:@<name>` patterns confirmed
+  as macros (absent from dylib, present in preprocessor macro table); (b) add
+  AudioToolbox to `LIBRARY_LOAD_CHECKS` in the runtime harness as the validation
+  canary. Coverage extension is reflexive — see "Standing rule" in the runtime
+  load harness memory entry.
+- **Results:** _pending_
+
+### Non-Linkable Symbol Leak Class B: Anonymous Enum Members (`c:@Ea@...`)
+
+- **Status:** not_started
+- **Surfaced:** 2026-04-16 (documented as open leak class; canary identified via
+  extractor filter audit).
+- **Dependencies:** none.
+- **Description:** Clang's `Ea` USR prefix marks anonymous-enum members (e.g.
+  `c:@Ea@nw_browse_result_change_identical`). These are extracted as constants
+  and emit `get-ffi-obj` calls that fail at `dlsym` time since anonymous-enum
+  members have no linkable symbol. Canary: `nw_browse_result_change_identical`
+  (Network framework, Swift source). Fix: (a) add a skip-reason branch in
+  `non_c_linkable_skip_reason` matching USRs beginning with `c:@Ea@`, tagged as
+  `anonymous_enum_member`; (b) add Network to `LIBRARY_LOAD_CHECKS` in the
+  runtime harness as the validation canary.
 - **Results:** _pending_
 
 ### C-Function Type Mapping Fixes (Modaliser-Racket FFI Elimination)
