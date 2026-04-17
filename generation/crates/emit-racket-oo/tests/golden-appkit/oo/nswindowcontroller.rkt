@@ -12,6 +12,17 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/AppKit.framework/AppKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsmenu? v) (objc-instance-of? v "NSMenu"))
+(define (nsresponder? v) (objc-instance-of? v "NSResponder"))
+(define (nsstoryboard? v) (objc-instance-of? v "NSStoryboard"))
+(define (nsstring? v) (objc-instance-of? v "NSString"))
+(define (nstouchbar? v) (objc-instance-of? v "NSTouchBar"))
+(define (nsundomanager? v) (objc-instance-of? v "NSUndoManager"))
+(define (nsuseractivity? v) (objc-instance-of? v "NSUserActivity"))
+(define (nsviewcontroller? v) (objc-instance-of? v "NSViewController"))
+(define (nswindow? v) (objc-instance-of? v "NSWindow"))
 (provide NSWindowController)
 (provide/contract
   [make-nswindowcontroller-init-with-coder (c-> (or/c string? objc-object? #f) any/c)]
@@ -20,13 +31,13 @@
   [make-nswindowcontroller-init-with-window-nib-name-owner (c-> (or/c string? objc-object? #f) (or/c string? objc-object? #f) any/c)]
   [make-nswindowcontroller-init-with-window-nib-path-owner (c-> (or/c string? objc-object? #f) (or/c string? objc-object? #f) any/c)]
   [nswindowcontroller-accepts-first-responder (c-> objc-object? boolean?)]
-  [nswindowcontroller-content-view-controller (c-> objc-object? any/c)]
+  [nswindowcontroller-content-view-controller (c-> objc-object? (or/c nsviewcontroller? objc-nil?))]
   [nswindowcontroller-set-content-view-controller! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nswindowcontroller-document (c-> objc-object? any/c)]
   [nswindowcontroller-set-document! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nswindowcontroller-menu (c-> objc-object? any/c)]
+  [nswindowcontroller-menu (c-> objc-object? (or/c nsmenu? objc-nil?))]
   [nswindowcontroller-set-menu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nswindowcontroller-next-responder (c-> objc-object? any/c)]
+  [nswindowcontroller-next-responder (c-> objc-object? (or/c nsresponder? objc-nil?))]
   [nswindowcontroller-set-next-responder! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nswindowcontroller-owner (c-> objc-object? any/c)]
   [nswindowcontroller-preview-representable-activity-items (c-> objc-object? any/c)]
@@ -36,19 +47,19 @@
   [nswindowcontroller-set-should-cascade-windows! (c-> objc-object? boolean? void?)]
   [nswindowcontroller-should-close-document (c-> objc-object? boolean?)]
   [nswindowcontroller-set-should-close-document! (c-> objc-object? boolean? void?)]
-  [nswindowcontroller-storyboard (c-> objc-object? any/c)]
-  [nswindowcontroller-touch-bar (c-> objc-object? any/c)]
+  [nswindowcontroller-storyboard (c-> objc-object? (or/c nsstoryboard? objc-nil?))]
+  [nswindowcontroller-touch-bar (c-> objc-object? (or/c nstouchbar? objc-nil?))]
   [nswindowcontroller-set-touch-bar! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nswindowcontroller-undo-manager (c-> objc-object? any/c)]
-  [nswindowcontroller-user-activity (c-> objc-object? any/c)]
+  [nswindowcontroller-undo-manager (c-> objc-object? (or/c nsundomanager? objc-nil?))]
+  [nswindowcontroller-user-activity (c-> objc-object? (or/c nsuseractivity? objc-nil?))]
   [nswindowcontroller-set-user-activity! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nswindowcontroller-window (c-> objc-object? any/c)]
+  [nswindowcontroller-window (c-> objc-object? (or/c nswindow? objc-nil?))]
   [nswindowcontroller-set-window! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nswindowcontroller-window-frame-autosave-name (c-> objc-object? any/c)]
+  [nswindowcontroller-window-frame-autosave-name (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nswindowcontroller-set-window-frame-autosave-name! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nswindowcontroller-window-loaded (c-> objc-object? boolean?)]
-  [nswindowcontroller-window-nib-name (c-> objc-object? any/c)]
-  [nswindowcontroller-window-nib-path (c-> objc-object? any/c)]
+  [nswindowcontroller-window-nib-name (c-> objc-object? (or/c nsstring? objc-nil?))]
+  [nswindowcontroller-window-nib-path (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nswindowcontroller-become-first-responder (c-> objc-object? boolean?)]
   [nswindowcontroller-begin-gesture-with-event! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nswindowcontroller-change-mode-with-event (c-> objc-object? (or/c string? objc-object? #f) void?)]
@@ -104,7 +115,7 @@
   [nswindowcontroller-wants-forwarded-scroll-events-for-axis (c-> objc-object? exact-nonnegative-integer? boolean?)]
   [nswindowcontroller-wants-scroll-events-for-swipe-tracking-on-axis (c-> objc-object? exact-nonnegative-integer? boolean?)]
   [nswindowcontroller-window-did-load (c-> objc-object? void?)]
-  [nswindowcontroller-window-title-for-document-display-name (c-> objc-object? (or/c string? objc-object? #f) any/c)]
+  [nswindowcontroller-window-title-for-document-display-name (c-> objc-object? (or/c string? objc-object? #f) (or/c nsstring? objc-nil?))]
   [nswindowcontroller-window-will-load (c-> objc-object? void?)]
   )
 

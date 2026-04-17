@@ -12,10 +12,13 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/TestKit.framework/TestKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide TKManager)
 (provide/contract
   [tkmanager-dealloc (c-> objc-object? void?)]
-  [tkmanager-description (c-> objc-object? any/c)]
+  [tkmanager-description (c-> objc-object? (or/c nsstring? objc-nil?))]
   )
 
 ;; --- Class reference ---

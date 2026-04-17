@@ -9,9 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use apianyware_macos_bundle_racket_oo::{
-    bundle_app, read_display_name_from_spec, AppSpec,
-};
+use apianyware_macos_bundle_racket_oo::{bundle_app, read_display_name_from_spec, AppSpec};
 
 const SCRIPT_NAME: &str = "file-lister";
 
@@ -101,7 +99,10 @@ fn bundles_file_lister_into_app_directory() {
     // Runtime modules
     assert!(racket_app.join("runtime").join("objc-base.rkt").is_file());
     assert!(racket_app.join("runtime").join("delegate.rkt").is_file());
-    assert!(racket_app.join("runtime").join("type-mapping.rkt").is_file());
+    assert!(racket_app
+        .join("runtime")
+        .join("type-mapping.rkt")
+        .is_file());
 
     // Generated bindings actually statically required by file-lister.
     // The shared `runtime/app-menu.rkt` helper uses raw objc_msgSend, so
@@ -123,10 +124,7 @@ fn bundles_file_lister_into_app_directory() {
         !oo.join("coretext").exists(),
         "coretext leaked into the bundle"
     );
-    assert!(
-        !oo.join("webkit").exists(),
-        "webkit leaked into the bundle"
-    );
+    assert!(!oo.join("webkit").exists(), "webkit leaked into the bundle");
 
     // Files NOT statically required (sanity check on tree pruning).
     assert!(
@@ -141,7 +139,7 @@ fn bundles_file_lister_into_app_directory() {
     // Info.plist carries the derived bundle metadata
     let plist = std::fs::read_to_string(contents.join("Info.plist")).unwrap();
     assert!(plist.contains("<string>File Lister</string>"));
-    assert!(plist.contains("<string>com.apianyware.FileLister</string>"));
+    assert!(plist.contains("<string>com.linkuistics.FileLister</string>"));
 }
 
 #[test]
@@ -201,7 +199,7 @@ fn bundles_every_sample_app() {
         let mut spec = AppSpec::from_script_name(script);
         let spec_md = knowledge_apps_dir().join(script).join("spec.md");
         if let Some(display) = read_display_name_from_spec(&spec_md) {
-            spec.bundle_id = format!("com.apianyware.{}", display.replace(' ', ""));
+            spec.bundle_id = format!("com.linkuistics.{}", display.replace(' ', ""));
             spec.app_name = display;
         }
 
@@ -236,7 +234,12 @@ fn bundles_every_sample_app() {
         assert!(entry.is_file(), "{script}: entry script missing");
 
         let runtime = racket_app.join("runtime");
-        for required in ["objc-base.rkt", "coerce.rkt", "type-mapping.rkt", "app-menu.rkt"] {
+        for required in [
+            "objc-base.rkt",
+            "coerce.rkt",
+            "type-mapping.rkt",
+            "app-menu.rkt",
+        ] {
             assert!(
                 runtime.join(required).is_file(),
                 "{script}: runtime/{required} missing",
@@ -244,4 +247,3 @@ fn bundles_every_sample_app() {
         }
     }
 }
-

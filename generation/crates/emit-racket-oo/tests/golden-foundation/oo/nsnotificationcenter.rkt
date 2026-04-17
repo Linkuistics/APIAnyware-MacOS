@@ -13,9 +13,12 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsnotificationcenter? v) (objc-instance-of? v "NSNotificationCenter"))
 (provide NSNotificationCenter)
 (provide/contract
-  [nsnotificationcenter-default-center (c-> any/c)]
+  [nsnotificationcenter-default-center (c-> (or/c nsnotificationcenter? objc-nil?))]
   [nsnotificationcenter-add-observer-selector-name-object! (c-> objc-object? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
   [nsnotificationcenter-add-observer-for-name-object-queue-using-block! (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c procedure? #f) any/c)]
   [nsnotificationcenter-post-notification (c-> objc-object? (or/c string? objc-object? #f) void?)]

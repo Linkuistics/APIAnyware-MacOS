@@ -35,7 +35,6 @@
 (define NSAlignMaxYNearest 524288)
 (define NSAlignWidthNearest 1048576)
 (define NSAlignHeightNearest 2097152)
-(define NSAlignRectFlipped -9223372036854775808)
 (define NSAlignAllEdgesInward 15)
 (define NSAlignAllEdgesOutward 3840)
 (define NSAlignAllEdgesNearest 983040)
@@ -1383,8 +1382,6 @@
 
 ;; enum (unnamed at /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSTextCheckingResult.h:32:1)
 (define NSTextCheckingAllSystemTypes 4294967295)
-(define NSTextCheckingAllCustomTypes -4294967296)
-(define NSTextCheckingAllTypes -1)
 
 ;; enum (unnamed at /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Foundation.framework/Headers/NSURLError.h:101:1)
 (define NSURLErrorUnknown -1)

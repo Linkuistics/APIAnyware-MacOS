@@ -3,8 +3,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
-         (rename-in racket/contract [-> c->])
-         "../../../runtime/type-mapping.rkt")
+         (rename-in racket/contract [-> c->]))
 
 (provide/contract
   [NSAMPMDesignation cpointer?]
@@ -76,7 +75,7 @@
   [NSDistinctUnionOfObjectsKeyValueOperator cpointer?]
   [NSDistinctUnionOfSetsKeyValueOperator cpointer?]
   [NSEarlierTimeDesignations cpointer?]
-  [NSEdgeInsetsZero any/c]
+  [NSEdgeInsetsZero cpointer?]
   [NSErrorFailingURLStringKey cpointer?]
   [NSExtensionItemAttachmentsKey cpointer?]
   [NSExtensionItemAttributedContentTextKey cpointer?]
@@ -180,12 +179,12 @@
   [NSInflectionReferentConceptAttributeName cpointer?]
   [NSInflectionRuleAttributeName cpointer?]
   [NSInlinePresentationIntentAttributeName cpointer?]
-  [NSIntHashCallBacks exact-nonnegative-integer?]
-  [NSIntMapKeyCallBacks exact-nonnegative-integer?]
-  [NSIntMapValueCallBacks exact-nonnegative-integer?]
-  [NSIntegerHashCallBacks exact-nonnegative-integer?]
-  [NSIntegerMapKeyCallBacks exact-nonnegative-integer?]
-  [NSIntegerMapValueCallBacks exact-nonnegative-integer?]
+  [NSIntHashCallBacks cpointer?]
+  [NSIntMapKeyCallBacks cpointer?]
+  [NSIntMapValueCallBacks cpointer?]
+  [NSIntegerHashCallBacks cpointer?]
+  [NSIntegerMapKeyCallBacks cpointer?]
+  [NSIntegerMapValueCallBacks cpointer?]
   [NSInternalInconsistencyException cpointer?]
   [NSInternationalCurrencyString cpointer?]
   [NSInvalidArchiveOperationException cpointer?]
@@ -488,25 +487,25 @@
   [NSNetServicesErrorDomain cpointer?]
   [NSNextDayDesignations cpointer?]
   [NSNextNextDayDesignations cpointer?]
-  [NSNonOwnedPointerHashCallBacks exact-nonnegative-integer?]
-  [NSNonOwnedPointerMapKeyCallBacks exact-nonnegative-integer?]
-  [NSNonOwnedPointerMapValueCallBacks exact-nonnegative-integer?]
-  [NSNonOwnedPointerOrNullMapKeyCallBacks exact-nonnegative-integer?]
-  [NSNonRetainedObjectHashCallBacks exact-nonnegative-integer?]
-  [NSNonRetainedObjectMapKeyCallBacks exact-nonnegative-integer?]
-  [NSNonRetainedObjectMapValueCallBacks exact-nonnegative-integer?]
+  [NSNonOwnedPointerHashCallBacks cpointer?]
+  [NSNonOwnedPointerMapKeyCallBacks cpointer?]
+  [NSNonOwnedPointerMapValueCallBacks cpointer?]
+  [NSNonOwnedPointerOrNullMapKeyCallBacks cpointer?]
+  [NSNonRetainedObjectHashCallBacks cpointer?]
+  [NSNonRetainedObjectMapKeyCallBacks cpointer?]
+  [NSNonRetainedObjectMapValueCallBacks cpointer?]
   [NSOSStatusErrorDomain cpointer?]
-  [NSObjectHashCallBacks exact-nonnegative-integer?]
+  [NSObjectHashCallBacks cpointer?]
   [NSObjectInaccessibleException cpointer?]
-  [NSObjectMapKeyCallBacks exact-nonnegative-integer?]
-  [NSObjectMapValueCallBacks exact-nonnegative-integer?]
+  [NSObjectMapKeyCallBacks cpointer?]
+  [NSObjectMapValueCallBacks cpointer?]
   [NSObjectNotAvailableException cpointer?]
   [NSOldStyleException cpointer?]
   [NSOperationNotSupportedForKeyException cpointer?]
-  [NSOwnedObjectIdentityHashCallBacks exact-nonnegative-integer?]
-  [NSOwnedPointerHashCallBacks exact-nonnegative-integer?]
-  [NSOwnedPointerMapKeyCallBacks exact-nonnegative-integer?]
-  [NSOwnedPointerMapValueCallBacks exact-nonnegative-integer?]
+  [NSOwnedObjectIdentityHashCallBacks cpointer?]
+  [NSOwnedPointerHashCallBacks cpointer?]
+  [NSOwnedPointerMapKeyCallBacks cpointer?]
+  [NSOwnedPointerMapValueCallBacks cpointer?]
   [NSPOSIXErrorDomain cpointer?]
   [NSParseErrorException cpointer?]
   [NSPersianCalendar cpointer?]
@@ -518,7 +517,7 @@
   [NSPersonNameComponentNickname cpointer?]
   [NSPersonNameComponentPrefix cpointer?]
   [NSPersonNameComponentSuffix cpointer?]
-  [NSPointerToStructHashCallBacks exact-nonnegative-integer?]
+  [NSPointerToStructHashCallBacks cpointer?]
   [NSPortDidBecomeInvalidNotification cpointer?]
   [NSPortReceiveException cpointer?]
   [NSPortSendException cpointer?]
@@ -827,9 +826,9 @@
   [NSWillBecomeMultiThreadedNotification cpointer?]
   [NSXMLParserErrorDomain cpointer?]
   [NSYearMonthWeekDesignations cpointer?]
-  [NSZeroPoint any/c]
-  [NSZeroRect any/c]
-  [NSZeroSize any/c]
+  [NSZeroPoint cpointer?]
+  [NSZeroRect cpointer?]
+  [NSZeroSize cpointer?]
   )
 
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
@@ -903,7 +902,7 @@
 (define NSDistinctUnionOfObjectsKeyValueOperator (get-ffi-obj 'NSDistinctUnionOfObjectsKeyValueOperator _fw-lib _id))
 (define NSDistinctUnionOfSetsKeyValueOperator (get-ffi-obj 'NSDistinctUnionOfSetsKeyValueOperator _fw-lib _id))
 (define NSEarlierTimeDesignations (get-ffi-obj 'NSEarlierTimeDesignations _fw-lib _id))
-(define NSEdgeInsetsZero (get-ffi-obj 'NSEdgeInsetsZero _fw-lib _NSEdgeInsets))
+(define NSEdgeInsetsZero (ffi-obj-ref 'NSEdgeInsetsZero _fw-lib))
 (define NSErrorFailingURLStringKey (get-ffi-obj 'NSErrorFailingURLStringKey _fw-lib _id))
 (define NSExtensionItemAttachmentsKey (get-ffi-obj 'NSExtensionItemAttachmentsKey _fw-lib _id))
 (define NSExtensionItemAttributedContentTextKey (get-ffi-obj 'NSExtensionItemAttributedContentTextKey _fw-lib _id))
@@ -1007,12 +1006,12 @@
 (define NSInflectionReferentConceptAttributeName (get-ffi-obj 'NSInflectionReferentConceptAttributeName _fw-lib _id))
 (define NSInflectionRuleAttributeName (get-ffi-obj 'NSInflectionRuleAttributeName _fw-lib _id))
 (define NSInlinePresentationIntentAttributeName (get-ffi-obj 'NSInlinePresentationIntentAttributeName _fw-lib _id))
-(define NSIntHashCallBacks (get-ffi-obj 'NSIntHashCallBacks _fw-lib _uint64))
-(define NSIntMapKeyCallBacks (get-ffi-obj 'NSIntMapKeyCallBacks _fw-lib _uint64))
-(define NSIntMapValueCallBacks (get-ffi-obj 'NSIntMapValueCallBacks _fw-lib _uint64))
-(define NSIntegerHashCallBacks (get-ffi-obj 'NSIntegerHashCallBacks _fw-lib _uint64))
-(define NSIntegerMapKeyCallBacks (get-ffi-obj 'NSIntegerMapKeyCallBacks _fw-lib _uint64))
-(define NSIntegerMapValueCallBacks (get-ffi-obj 'NSIntegerMapValueCallBacks _fw-lib _uint64))
+(define NSIntHashCallBacks (ffi-obj-ref 'NSIntHashCallBacks _fw-lib))
+(define NSIntMapKeyCallBacks (ffi-obj-ref 'NSIntMapKeyCallBacks _fw-lib))
+(define NSIntMapValueCallBacks (ffi-obj-ref 'NSIntMapValueCallBacks _fw-lib))
+(define NSIntegerHashCallBacks (ffi-obj-ref 'NSIntegerHashCallBacks _fw-lib))
+(define NSIntegerMapKeyCallBacks (ffi-obj-ref 'NSIntegerMapKeyCallBacks _fw-lib))
+(define NSIntegerMapValueCallBacks (ffi-obj-ref 'NSIntegerMapValueCallBacks _fw-lib))
 (define NSInternalInconsistencyException (get-ffi-obj 'NSInternalInconsistencyException _fw-lib _id))
 (define NSInternationalCurrencyString (get-ffi-obj 'NSInternationalCurrencyString _fw-lib _id))
 (define NSInvalidArchiveOperationException (get-ffi-obj 'NSInvalidArchiveOperationException _fw-lib _id))
@@ -1315,25 +1314,25 @@
 (define NSNetServicesErrorDomain (get-ffi-obj 'NSNetServicesErrorDomain _fw-lib _id))
 (define NSNextDayDesignations (get-ffi-obj 'NSNextDayDesignations _fw-lib _id))
 (define NSNextNextDayDesignations (get-ffi-obj 'NSNextNextDayDesignations _fw-lib _id))
-(define NSNonOwnedPointerHashCallBacks (get-ffi-obj 'NSNonOwnedPointerHashCallBacks _fw-lib _uint64))
-(define NSNonOwnedPointerMapKeyCallBacks (get-ffi-obj 'NSNonOwnedPointerMapKeyCallBacks _fw-lib _uint64))
-(define NSNonOwnedPointerMapValueCallBacks (get-ffi-obj 'NSNonOwnedPointerMapValueCallBacks _fw-lib _uint64))
-(define NSNonOwnedPointerOrNullMapKeyCallBacks (get-ffi-obj 'NSNonOwnedPointerOrNullMapKeyCallBacks _fw-lib _uint64))
-(define NSNonRetainedObjectHashCallBacks (get-ffi-obj 'NSNonRetainedObjectHashCallBacks _fw-lib _uint64))
-(define NSNonRetainedObjectMapKeyCallBacks (get-ffi-obj 'NSNonRetainedObjectMapKeyCallBacks _fw-lib _uint64))
-(define NSNonRetainedObjectMapValueCallBacks (get-ffi-obj 'NSNonRetainedObjectMapValueCallBacks _fw-lib _uint64))
+(define NSNonOwnedPointerHashCallBacks (ffi-obj-ref 'NSNonOwnedPointerHashCallBacks _fw-lib))
+(define NSNonOwnedPointerMapKeyCallBacks (ffi-obj-ref 'NSNonOwnedPointerMapKeyCallBacks _fw-lib))
+(define NSNonOwnedPointerMapValueCallBacks (ffi-obj-ref 'NSNonOwnedPointerMapValueCallBacks _fw-lib))
+(define NSNonOwnedPointerOrNullMapKeyCallBacks (ffi-obj-ref 'NSNonOwnedPointerOrNullMapKeyCallBacks _fw-lib))
+(define NSNonRetainedObjectHashCallBacks (ffi-obj-ref 'NSNonRetainedObjectHashCallBacks _fw-lib))
+(define NSNonRetainedObjectMapKeyCallBacks (ffi-obj-ref 'NSNonRetainedObjectMapKeyCallBacks _fw-lib))
+(define NSNonRetainedObjectMapValueCallBacks (ffi-obj-ref 'NSNonRetainedObjectMapValueCallBacks _fw-lib))
 (define NSOSStatusErrorDomain (get-ffi-obj 'NSOSStatusErrorDomain _fw-lib _id))
-(define NSObjectHashCallBacks (get-ffi-obj 'NSObjectHashCallBacks _fw-lib _uint64))
+(define NSObjectHashCallBacks (ffi-obj-ref 'NSObjectHashCallBacks _fw-lib))
 (define NSObjectInaccessibleException (get-ffi-obj 'NSObjectInaccessibleException _fw-lib _id))
-(define NSObjectMapKeyCallBacks (get-ffi-obj 'NSObjectMapKeyCallBacks _fw-lib _uint64))
-(define NSObjectMapValueCallBacks (get-ffi-obj 'NSObjectMapValueCallBacks _fw-lib _uint64))
+(define NSObjectMapKeyCallBacks (ffi-obj-ref 'NSObjectMapKeyCallBacks _fw-lib))
+(define NSObjectMapValueCallBacks (ffi-obj-ref 'NSObjectMapValueCallBacks _fw-lib))
 (define NSObjectNotAvailableException (get-ffi-obj 'NSObjectNotAvailableException _fw-lib _id))
 (define NSOldStyleException (get-ffi-obj 'NSOldStyleException _fw-lib _id))
 (define NSOperationNotSupportedForKeyException (get-ffi-obj 'NSOperationNotSupportedForKeyException _fw-lib _id))
-(define NSOwnedObjectIdentityHashCallBacks (get-ffi-obj 'NSOwnedObjectIdentityHashCallBacks _fw-lib _uint64))
-(define NSOwnedPointerHashCallBacks (get-ffi-obj 'NSOwnedPointerHashCallBacks _fw-lib _uint64))
-(define NSOwnedPointerMapKeyCallBacks (get-ffi-obj 'NSOwnedPointerMapKeyCallBacks _fw-lib _uint64))
-(define NSOwnedPointerMapValueCallBacks (get-ffi-obj 'NSOwnedPointerMapValueCallBacks _fw-lib _uint64))
+(define NSOwnedObjectIdentityHashCallBacks (ffi-obj-ref 'NSOwnedObjectIdentityHashCallBacks _fw-lib))
+(define NSOwnedPointerHashCallBacks (ffi-obj-ref 'NSOwnedPointerHashCallBacks _fw-lib))
+(define NSOwnedPointerMapKeyCallBacks (ffi-obj-ref 'NSOwnedPointerMapKeyCallBacks _fw-lib))
+(define NSOwnedPointerMapValueCallBacks (ffi-obj-ref 'NSOwnedPointerMapValueCallBacks _fw-lib))
 (define NSPOSIXErrorDomain (get-ffi-obj 'NSPOSIXErrorDomain _fw-lib _id))
 (define NSParseErrorException (get-ffi-obj 'NSParseErrorException _fw-lib _id))
 (define NSPersianCalendar (get-ffi-obj 'NSPersianCalendar _fw-lib _id))
@@ -1345,7 +1344,7 @@
 (define NSPersonNameComponentNickname (get-ffi-obj 'NSPersonNameComponentNickname _fw-lib _id))
 (define NSPersonNameComponentPrefix (get-ffi-obj 'NSPersonNameComponentPrefix _fw-lib _id))
 (define NSPersonNameComponentSuffix (get-ffi-obj 'NSPersonNameComponentSuffix _fw-lib _id))
-(define NSPointerToStructHashCallBacks (get-ffi-obj 'NSPointerToStructHashCallBacks _fw-lib _uint64))
+(define NSPointerToStructHashCallBacks (ffi-obj-ref 'NSPointerToStructHashCallBacks _fw-lib))
 (define NSPortDidBecomeInvalidNotification (get-ffi-obj 'NSPortDidBecomeInvalidNotification _fw-lib _id))
 (define NSPortReceiveException (get-ffi-obj 'NSPortReceiveException _fw-lib _id))
 (define NSPortSendException (get-ffi-obj 'NSPortSendException _fw-lib _id))
@@ -1654,6 +1653,6 @@
 (define NSWillBecomeMultiThreadedNotification (get-ffi-obj 'NSWillBecomeMultiThreadedNotification _fw-lib _id))
 (define NSXMLParserErrorDomain (get-ffi-obj 'NSXMLParserErrorDomain _fw-lib _id))
 (define NSYearMonthWeekDesignations (get-ffi-obj 'NSYearMonthWeekDesignations _fw-lib _id))
-(define NSZeroPoint (get-ffi-obj 'NSZeroPoint _fw-lib _NSPoint))
-(define NSZeroRect (get-ffi-obj 'NSZeroRect _fw-lib _NSRect))
-(define NSZeroSize (get-ffi-obj 'NSZeroSize _fw-lib _NSSize))
+(define NSZeroPoint (ffi-obj-ref 'NSZeroPoint _fw-lib))
+(define NSZeroRect (ffi-obj-ref 'NSZeroRect _fw-lib))
+(define NSZeroSize (ffi-obj-ref 'NSZeroSize _fw-lib))

@@ -503,6 +503,7 @@ fn map_top_level_constant(node: &AbiNode) -> Option<ir::Constant> {
         source: Some(DeclarationSource::SwiftInterface),
         provenance: build_provenance(node),
         doc_refs: build_doc_refs(node),
+        macro_value: None,
     })
 }
 

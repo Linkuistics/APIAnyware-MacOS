@@ -52,8 +52,8 @@ pub fn collect_dependencies(
             continue;
         }
 
-        let content = fs::read_to_string(&file)
-            .map_err(|e| BundleError::ReadSource(file.clone(), e))?;
+        let content =
+            fs::read_to_string(&file).map_err(|e| BundleError::ReadSource(file.clone(), e))?;
         let parent = file.parent().expect("source file has parent");
 
         for raw in scan_rkt_string_literals(&content) {
@@ -147,7 +147,10 @@ mod tests {
                        "../runtime/objc-base.rkt"
                        "../runtime/coerce.rkt")"#,
         );
-        assert_eq!(lits, vec!["../runtime/objc-base.rkt", "../runtime/coerce.rkt"]);
+        assert_eq!(
+            lits,
+            vec!["../runtime/objc-base.rkt", "../runtime/coerce.rkt"]
+        );
     }
 
     #[test]
@@ -176,8 +179,7 @@ mod tests {
     fn handles_escaped_quotes() {
         // Path contains a literal escaped quote — not realistic, but we
         // shouldn't trip on it.
-        let lits =
-            scan_rkt_string_literals(r#"(require "weird\"name.rkt" "normal.rkt")"#);
+        let lits = scan_rkt_string_literals(r#"(require "weird\"name.rkt" "normal.rkt")"#);
         assert_eq!(lits, vec![r#"weird\"name.rkt"#, "normal.rkt"]);
     }
 

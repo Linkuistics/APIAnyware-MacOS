@@ -23,6 +23,11 @@ fn is_struct_data_symbol(type_ref: &TypeRef) -> bool {
     matches!(type_ref.kind, TypeRefKind::Struct { .. })
 }
 
+/// Returns true if any constant in the list uses a macro-defined value (CFSTR).
+fn has_cfstr_constants(constants: &[Constant]) -> bool {
+    constants.iter().any(|c| c.macro_value.is_some())
+}
+
 /// Generate a Racket constants file for a framework.
 pub fn generate_constants_file(constants: &[Constant], framework: &str) -> String {
     let mapper = RacketFfiTypeMapper;
@@ -35,6 +40,7 @@ pub fn generate_constants_file(constants: &[Constant], framework: &str) -> Strin
             .map(|c| &c.constant_type),
         &mapper,
     );
+    let needs_cfstr = has_cfstr_constants(constants);
     let mut w = CodeWriter::new();
     w.line("#lang racket/base");
     write_line!(w, ";; Generated constant definitions for {}", framework);
@@ -58,7 +64,9 @@ pub fn generate_constants_file(constants: &[Constant], framework: &str) -> Strin
     } else {
         w.line("(provide/contract");
         for constant in constants {
-            let contract = if is_struct_data_symbol(&constant.constant_type) {
+            let contract = if constant.macro_value.is_some() {
+                "(or/c cpointer? #f)".to_string()
+            } else if is_struct_data_symbol(&constant.constant_type) {
                 "cpointer?".to_string()
             } else {
                 map_contract(&constant.constant_type, false)
@@ -69,7 +77,8 @@ pub fn generate_constants_file(constants: &[Constant], framework: &str) -> Strin
     }
     w.blank_line();
 
-    // Load framework dylib
+    // Load framework dylib (needed even if all constants are CFSTR — other
+    // files in the framework may re-export this module).
     write_line!(
         w,
         "(define _fw-lib (ffi-lib \"{}\"))",
@@ -77,8 +86,21 @@ pub fn generate_constants_file(constants: &[Constant], framework: &str) -> Strin
     );
     w.blank_line();
 
+    // CFSTR preamble: a helper that constructs CFString constants at load time.
+    // kCFStringEncodingUTF8 = #x08000100.
+    if needs_cfstr {
+        w.line(";; CFSTR macro constant support");
+        w.line("(define _cfstr-lib (ffi-lib \"/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation\"))");
+        w.line("(define _cfstr-create (get-ffi-obj 'CFStringCreateWithCString _cfstr-lib");
+        w.line("                                   (_fun _pointer _string _uint32 -> _pointer)))");
+        w.line("(define (_make-cfstr s) (_cfstr-create #f s #x08000100))");
+        w.blank_line();
+    }
+
     for constant in constants {
-        if is_struct_data_symbol(&constant.constant_type) {
+        if let Some(ref value) = constant.macro_value {
+            write_line!(w, "(define {} (_make-cfstr \"{}\"))", constant.name, value);
+        } else if is_struct_data_symbol(&constant.constant_type) {
             write_line!(
                 w,
                 "(define {} (ffi-obj-ref '{} _fw-lib))",
@@ -115,6 +137,7 @@ mod tests {
             source: None,
             provenance: None,
             doc_refs: None,
+            macro_value: None,
         }
     }
 
@@ -128,6 +151,7 @@ mod tests {
             source: None,
             provenance: None,
             doc_refs: None,
+            macro_value: None,
         }
     }
 
@@ -435,6 +459,116 @@ mod tests {
         assert!(
             output.contains("(define _dispatch_data_destructor_free (get-ffi-obj '_dispatch_data_destructor_free _fw-lib _pointer))"),
             "Block global must use get-ffi-obj. Output was:\n{output}"
+        );
+    }
+
+    fn make_cfstr_constant(name: &str, value: &str) -> Constant {
+        Constant {
+            name: name.to_string(),
+            constant_type: TypeRef {
+                nullable: true,
+                kind: TypeRefKind::Id,
+            },
+            source: None,
+            provenance: None,
+            doc_refs: None,
+            macro_value: Some(value.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_cfstr_constant_emits_create_call() {
+        let constants = vec![make_cfstr_constant("kAXWindowsAttribute", "AXWindows")];
+        let output = generate_constants_file(&constants, "ApplicationServices");
+        assert!(
+            output.contains("(define kAXWindowsAttribute (_make-cfstr \"AXWindows\"))"),
+            "CFSTR constant should emit _make-cfstr call. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_cfstr_constant_contract() {
+        let constants = vec![make_cfstr_constant("kAXWindowsAttribute", "AXWindows")];
+        let output = generate_constants_file(&constants, "ApplicationServices");
+        assert!(
+            output.contains("[kAXWindowsAttribute (or/c cpointer? #f)]"),
+            "CFSTR constant contract should be (or/c cpointer? #f). Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_cfstr_preamble_present() {
+        let constants = vec![make_cfstr_constant("kAXWindowsAttribute", "AXWindows")];
+        let output = generate_constants_file(&constants, "ApplicationServices");
+        assert!(
+            output.contains("_make-cfstr"),
+            "CFSTR preamble should be present. Output was:\n{output}"
+        );
+        assert!(
+            output.contains("CFStringCreateWithCString"),
+            "CFSTR preamble should reference CFStringCreateWithCString. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_cfstr_preamble_absent_when_no_macros() {
+        let constants = vec![make_constant(
+            "TKVersionString",
+            TypeRefKind::Class {
+                name: "NSString".into(),
+                framework: None,
+                params: vec![],
+            },
+        )];
+        let output = generate_constants_file(&constants, "TestKit");
+        assert!(
+            !output.contains("_make-cfstr"),
+            "CFSTR preamble should not be present without CFSTR constants. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_mixed_cfstr_and_regular_constants() {
+        let constants = vec![
+            make_cfstr_constant("kAXWindowsAttribute", "AXWindows"),
+            make_constant(
+                "TKDefaultTimeout",
+                TypeRefKind::Primitive {
+                    name: "double".into(),
+                },
+            ),
+        ];
+        let output = generate_constants_file(&constants, "ApplicationServices");
+        assert!(
+            output.contains("(define kAXWindowsAttribute (_make-cfstr \"AXWindows\"))"),
+            "CFSTR constant should use _make-cfstr. Output was:\n{output}"
+        );
+        assert!(
+            output.contains(
+                "(define TKDefaultTimeout (get-ffi-obj 'TKDefaultTimeout _fw-lib _double))"
+            ),
+            "Regular constant should use get-ffi-obj. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_struct_typedef_global_uses_ffi_obj_ref() {
+        // Struct typedefs (e.g. CFDictionaryKeyCallBacks) that resolve
+        // to Struct in the IR must also use ffi-obj-ref.
+        let constants = vec![make_constant(
+            "kCFTypeDictionaryKeyCallBacks",
+            TypeRefKind::Struct {
+                name: "CFDictionaryKeyCallBacks".into(),
+            },
+        )];
+        let output = generate_constants_file(&constants, "CoreFoundation");
+        assert!(
+            output.contains("(define kCFTypeDictionaryKeyCallBacks (ffi-obj-ref 'kCFTypeDictionaryKeyCallBacks _fw-lib))"),
+            "Struct typedef globals must use ffi-obj-ref. Output was:\n{output}"
+        );
+        assert!(
+            output.contains("[kCFTypeDictionaryKeyCallBacks cpointer?]"),
+            "Struct typedef global contract should be cpointer?. Output was:\n{output}"
         );
     }
 }

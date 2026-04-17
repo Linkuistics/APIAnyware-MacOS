@@ -39,7 +39,7 @@ cargo run --example bundle_app -p apianyware-macos-bundle-racket-oo -- file-list
 
 Output: `apps/<name>/build/<App Name>.app` (gitignored). The display
 name is derived from the kebab-case script name (`file-lister` →
-`File Lister`); the bundle id is `com.apianyware.<NoSpaceTitle>`.
+`File Lister`); the bundle id is `com.linkuistics.<NoSpaceTitle>`.
 
 Layout convention inside `Resources/racket-app/` mirrors the source
 tree: `apps/<name>/<name>.rkt` for the entry, sibling `runtime/`,

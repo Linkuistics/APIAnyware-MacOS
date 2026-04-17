@@ -458,4 +458,10 @@ pub struct Constant {
     /// Documentation references.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc_refs: Option<DocRefs>,
+
+    /// For macro-defined constants (e.g. `CFSTR("...")`), the literal string
+    /// value embedded in the macro. When present, the emitter generates a
+    /// runtime-constructed CFString instead of a `get-ffi-obj` / `dlsym` lookup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub macro_value: Option<String>,
 }

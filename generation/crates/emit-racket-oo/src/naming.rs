@@ -56,6 +56,53 @@ pub fn make_method_name(class_name: &str, selector: &str) -> String {
     }
 }
 
+/// Generate a class-method wrapper name, disambiguating against an instance
+/// method that shares the same selector. When `disambiguate` is true, the
+/// class variant gains a `-class` suffix (inserted before the mutating `!`
+/// marker, if present): "nsevent-modifier-flags-class".
+pub fn make_class_method_name(class_name: &str, selector: &str, disambiguate: bool) -> String {
+    let base = make_method_name(class_name, selector);
+    if !disambiguate {
+        return base;
+    }
+    match base.strip_suffix('!') {
+        Some(stem) => format!("{stem}-class!"),
+        None => format!("{base}-class"),
+    }
+}
+
+/// Generate a class-property getter name, disambiguating against an
+/// instance property whose getter shares the same Racket name.
+pub fn make_class_property_getter_name(
+    class_name: &str,
+    property_name: &str,
+    disambiguate: bool,
+) -> String {
+    let base = make_property_getter_name(class_name, property_name);
+    if disambiguate {
+        format!("{base}-class")
+    } else {
+        base
+    }
+}
+
+/// Generate a class-property setter name, disambiguating against an
+/// instance property whose setter shares the same Racket name.
+pub fn make_class_property_setter_name(
+    class_name: &str,
+    property_name: &str,
+    disambiguate: bool,
+) -> String {
+    let base = make_property_setter_name(class_name, property_name);
+    if !disambiguate {
+        return base;
+    }
+    match base.strip_suffix('!') {
+        Some(stem) => format!("{stem}-class!"),
+        None => format!("{base}-class"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +150,25 @@ mod tests {
         assert_eq!(
             make_method_name("NSString", "UTF8String"),
             "nsstring-utf8-string"
+        );
+    }
+
+    #[test]
+    fn test_class_method_disambiguation() {
+        // Without disambiguation, the class variant matches the instance name.
+        assert_eq!(
+            make_class_method_name("NSEvent", "modifierFlags", false),
+            "nsevent-modifier-flags"
+        );
+        // With disambiguation, the class variant gains a `-class` suffix.
+        assert_eq!(
+            make_class_method_name("NSEvent", "modifierFlags", true),
+            "nsevent-modifier-flags-class"
+        );
+        // Mutating selectors keep `!` at the tail after disambiguation.
+        assert_eq!(
+            make_class_method_name("NSFoo", "setShared:", true),
+            "nsfoo-set-shared-class!"
         );
     }
 }

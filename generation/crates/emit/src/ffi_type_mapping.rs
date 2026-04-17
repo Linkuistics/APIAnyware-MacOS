@@ -93,6 +93,20 @@ fn map_geometry_struct_alias(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Detect ObjC generic type parameters (ObjectType, KeyType, ElementType, etc.)
+/// vs framework-prefixed enum aliases (AXValueType, NSBezelType, etc.).
+///
+/// Generic type params start with a single uppercase letter followed by lowercase
+/// (e.g., "ObjectType", "KeyType"). Framework-prefixed aliases start with 2+
+/// uppercase letters (e.g., "NSType", "AXValueType", "CGColorRenderingIntent").
+pub fn is_generic_type_param(name: &str) -> bool {
+    let mut chars = name.chars();
+    match (chars.next(), chars.next()) {
+        (Some(a), Some(b)) => a.is_ascii_uppercase() && b.is_ascii_lowercase(),
+        _ => false,
+    }
+}
+
 /// Racket FFI type mapper.
 ///
 /// Maps IR types to Racket FFI type expressions (`_id`, `_uint64`, `_NSRect`, etc.).
@@ -132,6 +146,7 @@ impl FfiTypeMapper for RacketFfiTypeMapper {
             TypeRefKind::Selector => "_pointer".to_string(),
             TypeRefKind::ClassRef => "_pointer".to_string(),
             TypeRefKind::Block { .. } => "_pointer".to_string(),
+            TypeRefKind::CString => "_string".to_string(),
             TypeRefKind::Pointer => "_pointer".to_string(),
             TypeRefKind::Struct { name } => map_geometry_struct_alias(name)
                 .map(|s| s.to_string())
@@ -142,22 +157,11 @@ impl FfiTypeMapper for RacketFfiTypeMapper {
                 if let Some(ffi_type) = map_geometry_struct_alias(name) {
                     return ffi_type.to_string();
                 }
-                // Generic type params (ObjectType, KeyType) → _id
-                // Framework-prefixed aliases (NSStringEncoding) → _uint64
-                if name.ends_with("Type")
-                    && !name.starts_with("NS")
-                    && !name.starts_with("CG")
-                    && !name.starts_with("CF")
-                    && !name.starts_with("UI")
-                    && !name.starts_with("AV")
-                    && !name.starts_with("CK")
-                    && !name.starts_with("MK")
-                    && !name.starts_with("CL")
-                    && !name.starts_with("WK")
-                    && !name.starts_with("SC")
-                    && !name.starts_with("MT")
-                    && !name.starts_with("CA")
-                {
+                // Generic ObjC type params (ObjectType, KeyType, ElementType)
+                // start with a single uppercase letter followed by lowercase.
+                // Framework-prefixed aliases (NSStringEncoding, AXValueType,
+                // CGColorRenderingIntent) start with 2+ uppercase letters.
+                if name.ends_with("Type") && is_generic_type_param(name) {
                     "_id".to_string()
                 } else {
                     "_uint64".to_string()
@@ -606,5 +610,51 @@ mod tests {
             name: "NSStringEncoding".into(),
             framework: None,
         })));
+    }
+
+    #[test]
+    fn test_generic_type_param_detection() {
+        // Generic ObjC type params: single uppercase then lowercase
+        assert!(is_generic_type_param("ObjectType"));
+        assert!(is_generic_type_param("KeyType"));
+        assert!(is_generic_type_param("ValueType"));
+        assert!(is_generic_type_param("ElementType"));
+        assert!(is_generic_type_param("ContentType"));
+        assert!(is_generic_type_param("ResultType"));
+
+        // Framework-prefixed: 2+ uppercase letters at start
+        assert!(!is_generic_type_param("NSBezelType"));
+        assert!(!is_generic_type_param("AXValueType"));
+        assert!(!is_generic_type_param("CGColorRenderingIntent"));
+        assert!(!is_generic_type_param("CFStringEncoding"));
+        assert!(!is_generic_type_param("WKContentMode"));
+        assert!(!is_generic_type_param("MTLResourceType"));
+    }
+
+    #[test]
+    fn test_framework_prefixed_alias_maps_to_uint64() {
+        let m = RacketFfiTypeMapper;
+        // AXValueType is a framework-prefixed enum alias → _uint64
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "AXValueType".into(),
+                    framework: None,
+                }),
+                false
+            ),
+            "_uint64"
+        );
+        // ObjectType is a generic type param → _id
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "ObjectType".into(),
+                    framework: None,
+                }),
+                false
+            ),
+            "_id"
+        );
     }
 }

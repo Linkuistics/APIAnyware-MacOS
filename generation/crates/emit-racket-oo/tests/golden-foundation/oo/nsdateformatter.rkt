@@ -13,19 +13,27 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsattributedstring? v) (objc-instance-of? v "NSAttributedString"))
+(define (nscalendar? v) (objc-instance-of? v "NSCalendar"))
+(define (nsdate? v) (objc-instance-of? v "NSDate"))
+(define (nslocale? v) (objc-instance-of? v "NSLocale"))
+(define (nsstring? v) (objc-instance-of? v "NSString"))
+(define (nstimezone? v) (objc-instance-of? v "NSTimeZone"))
 (provide NSDateFormatter)
 (provide/contract
-  [nsdateformatter-am-symbol (c-> objc-object? any/c)]
+  [nsdateformatter-am-symbol (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsdateformatter-set-am-symbol! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsdateformatter-pm-symbol (c-> objc-object? any/c)]
+  [nsdateformatter-pm-symbol (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsdateformatter-set-pm-symbol! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsdateformatter-calendar (c-> objc-object? any/c)]
+  [nsdateformatter-calendar (c-> objc-object? (or/c nscalendar? objc-nil?))]
   [nsdateformatter-set-calendar! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsdateformatter-date-format (c-> objc-object? any/c)]
+  [nsdateformatter-date-format (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsdateformatter-set-date-format! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsdateformatter-date-style (c-> objc-object? exact-nonnegative-integer?)]
   [nsdateformatter-set-date-style! (c-> objc-object? exact-nonnegative-integer? void?)]
-  [nsdateformatter-default-date (c-> objc-object? any/c)]
+  [nsdateformatter-default-date (c-> objc-object? (or/c nsdate? objc-nil?))]
   [nsdateformatter-set-default-date! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsdateformatter-default-formatter-behavior (c-> exact-nonnegative-integer?)]
   [nsdateformatter-set-default-formatter-behavior! (c-> exact-nonnegative-integer? void?)]
@@ -39,11 +47,11 @@
   [nsdateformatter-set-formatting-context! (c-> objc-object? exact-nonnegative-integer? void?)]
   [nsdateformatter-generates-calendar-dates (c-> objc-object? boolean?)]
   [nsdateformatter-set-generates-calendar-dates! (c-> objc-object? boolean? void?)]
-  [nsdateformatter-gregorian-start-date (c-> objc-object? any/c)]
+  [nsdateformatter-gregorian-start-date (c-> objc-object? (or/c nsdate? objc-nil?))]
   [nsdateformatter-set-gregorian-start-date! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsdateformatter-lenient (c-> objc-object? boolean?)]
   [nsdateformatter-set-lenient! (c-> objc-object? boolean? void?)]
-  [nsdateformatter-locale (c-> objc-object? any/c)]
+  [nsdateformatter-locale (c-> objc-object? (or/c nslocale? objc-nil?))]
   [nsdateformatter-set-locale! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsdateformatter-long-era-symbols (c-> objc-object? any/c)]
   [nsdateformatter-set-long-era-symbols! (c-> objc-object? (or/c string? objc-object? #f) void?)]
@@ -71,9 +79,9 @@
   [nsdateformatter-set-standalone-weekday-symbols! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsdateformatter-time-style (c-> objc-object? exact-nonnegative-integer?)]
   [nsdateformatter-set-time-style! (c-> objc-object? exact-nonnegative-integer? void?)]
-  [nsdateformatter-time-zone (c-> objc-object? any/c)]
+  [nsdateformatter-time-zone (c-> objc-object? (or/c nstimezone? objc-nil?))]
   [nsdateformatter-set-time-zone! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsdateformatter-two-digit-start-date (c-> objc-object? any/c)]
+  [nsdateformatter-two-digit-start-date (c-> objc-object? (or/c nsdate? objc-nil?))]
   [nsdateformatter-set-two-digit-start-date! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsdateformatter-very-short-month-symbols (c-> objc-object? any/c)]
   [nsdateformatter-set-very-short-month-symbols! (c-> objc-object? (or/c string? objc-object? #f) void?)]
@@ -85,19 +93,19 @@
   [nsdateformatter-set-very-short-weekday-symbols! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsdateformatter-weekday-symbols (c-> objc-object? any/c)]
   [nsdateformatter-set-weekday-symbols! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsdateformatter-attributed-string-for-object-value-with-default-attributes (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) any/c)]
-  [nsdateformatter-date-from-string (c-> objc-object? (or/c string? objc-object? #f) any/c)]
-  [nsdateformatter-editing-string-for-object-value (c-> objc-object? (or/c string? objc-object? #f) any/c)]
+  [nsdateformatter-attributed-string-for-object-value-with-default-attributes (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c nsattributedstring? objc-nil?))]
+  [nsdateformatter-date-from-string (c-> objc-object? (or/c string? objc-object? #f) (or/c nsdate? objc-nil?))]
+  [nsdateformatter-editing-string-for-object-value (c-> objc-object? (or/c string? objc-object? #f) (or/c nsstring? objc-nil?))]
   [nsdateformatter-get-object-value-for-string-error-description (c-> objc-object? (or/c cpointer? #f) (or/c string? objc-object? #f) (or/c cpointer? #f) boolean?)]
   [nsdateformatter-get-object-value-for-string-range-error (c-> objc-object? (or/c cpointer? #f) (or/c string? objc-object? #f) (or/c cpointer? #f) (or/c cpointer? #f) boolean?)]
   [nsdateformatter-is-lenient (c-> objc-object? boolean?)]
   [nsdateformatter-is-partial-string-valid-new-editing-string-error-description (c-> objc-object? (or/c string? objc-object? #f) (or/c cpointer? #f) (or/c cpointer? #f) boolean?)]
   [nsdateformatter-is-partial-string-valid-proposed-selected-range-original-string-original-selected-range-error-description (c-> objc-object? (or/c cpointer? #f) (or/c cpointer? #f) (or/c string? objc-object? #f) any/c (or/c cpointer? #f) boolean?)]
   [nsdateformatter-set-localized-date-format-from-template! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsdateformatter-string-for-object-value (c-> objc-object? (or/c string? objc-object? #f) any/c)]
-  [nsdateformatter-string-from-date (c-> objc-object? (or/c string? objc-object? #f) any/c)]
-  [nsdateformatter-date-format-from-template-options-locale (c-> (or/c string? objc-object? #f) exact-nonnegative-integer? (or/c string? objc-object? #f) any/c)]
-  [nsdateformatter-localized-string-from-date-date-style-time-style (c-> (or/c string? objc-object? #f) exact-nonnegative-integer? exact-nonnegative-integer? any/c)]
+  [nsdateformatter-string-for-object-value (c-> objc-object? (or/c string? objc-object? #f) (or/c nsstring? objc-nil?))]
+  [nsdateformatter-string-from-date (c-> objc-object? (or/c string? objc-object? #f) (or/c nsstring? objc-nil?))]
+  [nsdateformatter-date-format-from-template-options-locale (c-> (or/c string? objc-object? #f) exact-nonnegative-integer? (or/c string? objc-object? #f) (or/c nsstring? objc-nil?))]
+  [nsdateformatter-localized-string-from-date-date-style-time-style (c-> (or/c string? objc-object? #f) exact-nonnegative-integer? exact-nonnegative-integer? (or/c nsstring? objc-nil?))]
   )
 
 ;; --- Class reference ---

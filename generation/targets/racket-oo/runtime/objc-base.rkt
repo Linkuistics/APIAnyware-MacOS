@@ -33,7 +33,8 @@
          objc-null?
          objc-null
          objc-nil?
-         nil->false)
+         nil->false
+         objc-instance-of?)
 
 ;; --- Autorelease pool (fallback when Swift helpers unavailable) ---
 
@@ -194,3 +195,39 @@
   (lambda args
     (with-autorelease-pool
       (apply callback args))))
+
+;; --- Class introspection ─────────────────────────────────────
+
+;; objc_getClass returns the Class object for a given class name, or #f.
+(define _objc_getClass
+  (get-ffi-obj "objc_getClass" objc-lib
+    (_fun _string -> _pointer)))
+
+;; Cache class lookups — the same class name is queried from many return sites.
+(define class-cache (make-hash))
+
+(define (get-objc-class name)
+  (hash-ref! class-cache name
+    (lambda ()
+      (define cls (_objc_getClass name))
+      (if (and cls (not (ptr-equal? cls #f)))
+          (cast cls _pointer _id)
+          #f))))
+
+;; (objc-instance-of? v class-name) → boolean?
+;; Returns #t if v is an ObjC object that is an instance of the named class
+;; or any of its subclasses (backed by isKindOfClass:).
+;; Returns #f for #f, objc-null, non-objc-object values, or unknown class names.
+(define (objc-instance-of? v class-name)
+  (cond
+    [(not v) #f]
+    [(and (objc-object? v) (objc-null? v)) #f]
+    [else
+     (define cls (get-objc-class class-name))
+     (and cls
+          (let ([ptr (cond
+                       [(objc-object? v) (cast (objc-object-ptr v) _pointer _id)]
+                       [(cpointer? v) (cast v _pointer _id)]
+                       [else #f])])
+            (and ptr
+                 (tell #:type _bool ptr isKindOfClass: cls))))]))

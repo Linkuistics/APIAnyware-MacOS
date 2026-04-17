@@ -14,6 +14,16 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/AppKit.framework/AppKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nscolor? v) (objc-instance-of? v "NSColor"))
+(define (nsdata? v) (objc-instance-of? v "NSData"))
+(define (nsimage? v) (objc-instance-of? v "NSImage"))
+(define (nsimagerep? v) (objc-instance-of? v "NSImageRep"))
+(define (nsimagesymbolconfiguration? v) (objc-instance-of? v "NSImageSymbolConfiguration"))
+(define (nslocale? v) (objc-instance-of? v "NSLocale"))
+(define (nsstring? v) (objc-instance-of? v "NSString"))
+(define (opaquetypearchetype? v) (objc-instance-of? v "OpaqueTypeArchetype"))
 (provide NSImage)
 (provide/contract
   [make-nsimage-init-with-cg-image-size (c-> (or/c cpointer? #f) any/c any/c)]
@@ -24,12 +34,12 @@
   [make-nsimage-init-with-data-ignoring-orientation (c-> (or/c string? objc-object? #f) any/c)]
   [make-nsimage-init-with-pasteboard (c-> (or/c string? objc-object? #f) any/c)]
   [make-nsimage-init-with-size (c-> any/c any/c)]
-  [nsimage-tiff-representation (c-> objc-object? any/c)]
-  [nsimage-accessibility-description (c-> objc-object? any/c)]
+  [nsimage-tiff-representation (c-> objc-object? (or/c nsdata? objc-nil?))]
+  [nsimage-accessibility-description (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsimage-set-accessibility-description! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsimage-alignment-rect (c-> objc-object? any/c)]
   [nsimage-set-alignment-rect! (c-> objc-object? any/c void?)]
-  [nsimage-background-color (c-> objc-object? any/c)]
+  [nsimage-background-color (c-> objc-object? (or/c nscolor? objc-nil?))]
   [nsimage-set-background-color! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsimage-cache-mode (c-> objc-object? exact-nonnegative-integer?)]
   [nsimage-set-cache-mode! (c-> objc-object? exact-nonnegative-integer? void?)]
@@ -39,7 +49,7 @@
   [nsimage-set-delegate! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsimage-image-types (c-> any/c)]
   [nsimage-image-unfiltered-types (c-> any/c)]
-  [nsimage-locale (c-> objc-object? any/c)]
+  [nsimage-locale (c-> objc-object? (or/c nslocale? objc-nil?))]
   [nsimage-matches-on-multiple-resolution (c-> objc-object? boolean?)]
   [nsimage-set-matches-on-multiple-resolution! (c-> objc-object? boolean? void?)]
   [nsimage-matches-only-on-best-fitting-axis (c-> objc-object? boolean?)]
@@ -51,38 +61,38 @@
   [nsimage-set-resizing-mode! (c-> objc-object? exact-nonnegative-integer? void?)]
   [nsimage-size (c-> objc-object? any/c)]
   [nsimage-set-size! (c-> objc-object? any/c void?)]
-  [nsimage-symbol-configuration (c-> objc-object? any/c)]
+  [nsimage-symbol-configuration (c-> objc-object? (or/c nsimagesymbolconfiguration? objc-nil?))]
   [nsimage-template (c-> objc-object? boolean?)]
   [nsimage-set-template! (c-> objc-object? boolean? void?)]
-  [nsimage-transfer-representation (c-> any/c)]
+  [nsimage-transfer-representation (c-> (or/c opaquetypearchetype? objc-nil?))]
   [nsimage-uses-eps-on-resolution-mismatch (c-> objc-object? boolean?)]
   [nsimage-set-uses-eps-on-resolution-mismatch! (c-> objc-object? boolean? void?)]
   [nsimage-valid (c-> objc-object? boolean?)]
   [nsimage-cg-image-for-proposed-rect-context-hints (c-> objc-object? (or/c cpointer? #f) (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c cpointer? #f))]
-  [nsimage-tiff-representation-using-compression-factor (c-> objc-object? exact-nonnegative-integer? real? any/c)]
+  [nsimage-tiff-representation-using-compression-factor (c-> objc-object? exact-nonnegative-integer? real? (or/c nsdata? objc-nil?))]
   [nsimage-add-representation! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsimage-add-representations! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsimage-best-representation-for-rect-context-hints (c-> objc-object? any/c (or/c string? objc-object? #f) (or/c string? objc-object? #f) any/c)]
+  [nsimage-best-representation-for-rect-context-hints (c-> objc-object? any/c (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c nsimagerep? objc-nil?))]
   [nsimage-draw-at-point-from-rect-operation-fraction (c-> objc-object? any/c any/c exact-nonnegative-integer? real? void?)]
   [nsimage-draw-in-rect (c-> objc-object? any/c void?)]
   [nsimage-draw-in-rect-from-rect-operation-fraction (c-> objc-object? any/c any/c exact-nonnegative-integer? real? void?)]
   [nsimage-draw-in-rect-from-rect-operation-fraction-respect-flipped-hints (c-> objc-object? any/c any/c exact-nonnegative-integer? real? boolean? (or/c string? objc-object? #f) void?)]
   [nsimage-draw-representation-in-rect (c-> objc-object? (or/c string? objc-object? #f) any/c boolean?)]
   [nsimage-hit-test-rect-with-image-destination-rect-context-hints-flipped (c-> objc-object? any/c any/c (or/c string? objc-object? #f) (or/c string? objc-object? #f) boolean? boolean?)]
-  [nsimage-image-with-locale (c-> objc-object? (or/c string? objc-object? #f) any/c)]
-  [nsimage-image-with-symbol-configuration (c-> objc-object? (or/c string? objc-object? #f) any/c)]
+  [nsimage-image-with-locale (c-> objc-object? (or/c string? objc-object? #f) (or/c nsimage? objc-nil?))]
+  [nsimage-image-with-symbol-configuration (c-> objc-object? (or/c string? objc-object? #f) (or/c nsimage? objc-nil?))]
   [nsimage-init-by-referencing-file (c-> objc-object? (or/c string? objc-object? #f) any/c)]
   [nsimage-init-by-referencing-url (c-> objc-object? (or/c string? objc-object? #f) any/c)]
   [nsimage-is-template (c-> objc-object? boolean?)]
   [nsimage-is-valid (c-> objc-object? boolean?)]
   [nsimage-layer-contents-for-contents-scale (c-> objc-object? real? any/c)]
-  [nsimage-name (c-> objc-object? any/c)]
+  [nsimage-name (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsimage-recache (c-> objc-object? void?)]
   [nsimage-recommended-layer-contents-scale (c-> objc-object? real? real?)]
   [nsimage-remove-representation! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsimage-set-name! (c-> objc-object? (or/c string? objc-object? #f) boolean?)]
   [nsimage-can-init-with-pasteboard (c-> (or/c string? objc-object? #f) boolean?)]
-  [nsimage-image-named (c-> (or/c string? objc-object? #f) any/c)]
+  [nsimage-image-named (c-> (or/c string? objc-object? #f) (or/c nsimage? objc-nil?))]
   [nsimage-image-with-size-flipped-drawing-handler (c-> any/c boolean? (or/c procedure? #f) any/c)]
   [nsimage-image-with-symbol-name-bundle-variable-value (c-> (or/c string? objc-object? #f) (or/c string? objc-object? #f) real? any/c)]
   [nsimage-image-with-symbol-name-variable-value (c-> (or/c string? objc-object? #f) real? any/c)]

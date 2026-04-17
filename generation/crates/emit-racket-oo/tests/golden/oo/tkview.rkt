@@ -12,17 +12,21 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/TestKit.framework/TestKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsrect? v) (objc-instance-of? v "NSRect"))
+(define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide TKView)
 (provide/contract
-  [tkview-title (c-> objc-object? any/c)]
+  [tkview-title (c-> objc-object? (or/c nsstring? objc-nil?))]
   [tkview-set-title! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [tkview-hidden (c-> objc-object? boolean?)]
   [tkview-set-hidden! (c-> objc-object? boolean? void?)]
   [tkview-tag (c-> objc-object? any/c)]
   [tkview-set-tag! (c-> objc-object? any/c void?)]
-  [tkview-frame (c-> objc-object? any/c)]
+  [tkview-frame (c-> objc-object? (or/c nsrect? objc-nil?))]
   [tkview-dealloc (c-> objc-object? void?)]
-  [tkview-description (c-> objc-object? any/c)]
+  [tkview-description (c-> objc-object? (or/c nsstring? objc-nil?))]
   )
 
 ;; --- Class reference ---

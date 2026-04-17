@@ -14,16 +14,14 @@
 //! H1 when present (so `ui-controls-gallery` correctly becomes
 //! `UI Controls Gallery`, not `Ui Controls Gallery`), falling back to a
 //! kebab→title conversion. The bundle id is derived from the display
-//! name (`com.apianyware.<NoSpaceTitle>`). The runtime path defaults to
+//! name (`com.linkuistics.<NoSpaceTitle>`). The runtime path defaults to
 //! `/opt/homebrew/bin/racket`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use apianyware_macos_bundle_racket_oo::{
-    bundle_app, read_display_name_from_spec, AppSpec,
-};
+use apianyware_macos_bundle_racket_oo::{bundle_app, read_display_name_from_spec, AppSpec};
 
 fn main() -> ExitCode {
     let arg = std::env::args().nth(1).unwrap_or_else(|| {
@@ -88,7 +86,7 @@ fn bundle_one(
     let mut spec = AppSpec::from_script_name(script);
     let spec_path = knowledge_apps.join(script).join("spec.md");
     if let Some(display) = read_display_name_from_spec(&spec_path) {
-        spec.bundle_id = format!("com.apianyware.{}", display.replace(' ', ""));
+        spec.bundle_id = format!("com.linkuistics.{}", display.replace(' ', ""));
         spec.app_name = display;
     }
 

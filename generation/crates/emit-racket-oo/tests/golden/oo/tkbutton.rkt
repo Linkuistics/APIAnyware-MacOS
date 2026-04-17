@@ -13,17 +13,21 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/TestKit.framework/TestKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsrect? v) (objc-instance-of? v "NSRect"))
+(define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide TKButton)
 (provide/contract
-  [tkbutton-title (c-> objc-object? any/c)]
+  [tkbutton-title (c-> objc-object? (or/c nsstring? objc-nil?))]
   [tkbutton-set-title! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [tkbutton-hidden (c-> objc-object? boolean?)]
   [tkbutton-set-hidden! (c-> objc-object? boolean? void?)]
   [tkbutton-tag (c-> objc-object? any/c)]
   [tkbutton-set-tag! (c-> objc-object? any/c void?)]
-  [tkbutton-frame (c-> objc-object? any/c)]
+  [tkbutton-frame (c-> objc-object? (or/c nsrect? objc-nil?))]
   [tkbutton-dealloc (c-> objc-object? void?)]
-  [tkbutton-description (c-> objc-object? any/c)]
+  [tkbutton-description (c-> objc-object? (or/c nsstring? objc-nil?))]
   [tkbutton-set-needs-display! (c-> objc-object? void?)]
   [tkbutton-animate-with-duration-animations (c-> objc-object? real? (or/c procedure? #f) void?)]
   )

@@ -84,38 +84,48 @@
 
 ;; --- NSArray conversions ---
 
-;; Convert a Racket list of raw ObjC pointers to an NSArray (retained +1)
+;; Convert a Racket list of raw ObjC pointers to an NSArray.
+;; Returns an objc-object wrapper around a +1-retained NSMutableArray so
+;; callers can pass the result directly into class-wrapper param contracts
+;; (which reject raw cpointers since 2026-04-16). Pass through
+;; unwrap-objc-object when a raw pointer is needed for `tell` / objc_msgSend.
 (define (list->nsarray lst)
   (let ([arr (tell (tell NSMutableArray alloc) init)])
     (for ([item (in-list lst)])
       (tell arr addObject: item))
-    arr))
+    (wrap-objc-object arr #:retained #t)))
 
-;; Convert an NSArray to a Racket list of raw ObjC pointers
+;; Convert an NSArray to a Racket list of raw ObjC pointers.
+;; Accepts either a raw cpointer or an objc-object wrapper.
 (define (nsarray->list nsarr)
-  (let ([count (tell #:type _NSUInteger nsarr count)])
+  (let* ([raw (unwrap-objc-object nsarr)]
+         [count (tell #:type _NSUInteger raw count)])
     (for/list ([i (in-range count)])
-      (cast (msg-uint64->id nsarr sel-objectAtIndex i) _pointer _id))))
+      (cast (msg-uint64->id raw sel-objectAtIndex i) _pointer _id))))
 
 ;; --- NSDictionary conversions ---
 
-;; Convert a Racket hash (string keys → ObjC pointer values) to NSDictionary (retained +1)
+;; Convert a Racket hash (string keys → ObjC pointer values) to NSDictionary.
+;; Returns an objc-object wrapper around a +1-retained NSMutableDictionary;
+;; see list->nsarray for the rationale.
 (define (hash->nsdictionary ht)
   (let ([dict (tell (tell NSMutableDictionary alloc) init)])
     (for ([(k v) (in-hash ht)])
       (let ([nskey (string->nsstring k)])
         (tell dict setObject: v forKey: nskey)
         (tell nskey release)))
-    dict))
+    (wrap-objc-object dict #:retained #t)))
 
-;; Convert an NSDictionary to a Racket hash (string keys → ObjC pointers)
+;; Convert an NSDictionary to a Racket hash (string keys → ObjC pointers).
+;; Accepts either a raw cpointer or an objc-object wrapper.
 (define (nsdictionary->hash nsdict)
-  (let* ([keys (tell nsdict allKeys)]
+  (let* ([raw (unwrap-objc-object nsdict)]
+         [keys (tell raw allKeys)]
          [count (tell #:type _NSUInteger keys count)]
          [ht (make-hash)])
     (for ([i (in-range count)])
       (let* ([key (cast (msg-uint64->id keys sel-objectAtIndex i) _pointer _id)]
-             [val (cast (msg-id->id nsdict sel-objectForKey key) _pointer _id)]
+             [val (cast (msg-id->id raw sel-objectForKey key) _pointer _id)]
              [key-str (nsstring->string key)])
         (hash-set! ht key-str val)))
     ht))

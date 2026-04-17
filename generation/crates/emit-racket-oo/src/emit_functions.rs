@@ -9,7 +9,9 @@
 //! types at module boundaries using Racket contracts mapped from IR TypeRef.
 
 use apianyware_macos_emit::code_writer::CodeWriter;
-use apianyware_macos_emit::ffi_type_mapping::{FfiTypeMapper, RacketFfiTypeMapper};
+use apianyware_macos_emit::ffi_type_mapping::{
+    is_generic_type_param, FfiTypeMapper, RacketFfiTypeMapper,
+};
 use apianyware_macos_emit::write_line;
 use apianyware_macos_types::ir::Function;
 use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
@@ -54,6 +56,15 @@ pub fn map_contract(type_ref: &TypeRef, is_return_type: bool) -> String {
             }
         }
         TypeRefKind::Selector | TypeRefKind::ClassRef => "cpointer?".to_string(),
+        TypeRefKind::CString => {
+            if is_return_type {
+                // C `const char *` returns can be NULL; Racket's `_string`
+                // FFI type converts NULL to #f, so the contract must accept it.
+                "(or/c string? #f)".to_string()
+            } else {
+                "string?".to_string()
+            }
+        }
         TypeRefKind::Pointer => "(or/c cpointer? #f)".to_string(),
         TypeRefKind::Block { .. } | TypeRefKind::FunctionPointer { .. } => {
             "(or/c cpointer? #f)".to_string()
@@ -62,24 +73,11 @@ pub fn map_contract(type_ref: &TypeRef, is_return_type: bool) -> String {
         TypeRefKind::Alias { name, .. } => {
             if is_known_geometry_struct(name) {
                 "any/c".to_string()
-            } else if name.ends_with("Type")
-                && !name.starts_with("NS")
-                && !name.starts_with("CG")
-                && !name.starts_with("CF")
-                && !name.starts_with("UI")
-                && !name.starts_with("AV")
-                && !name.starts_with("CK")
-                && !name.starts_with("MK")
-                && !name.starts_with("CL")
-                && !name.starts_with("WK")
-                && !name.starts_with("SC")
-                && !name.starts_with("MT")
-                && !name.starts_with("CA")
-            {
-                // Generic type params → object
+            } else if name.ends_with("Type") && is_generic_type_param(name) {
+                // Generic type params (ObjectType, KeyType) → object
                 "cpointer?".to_string()
             } else {
-                // Framework-prefixed aliases → _uint64
+                // Framework-prefixed aliases (NSBezelType, AXValueType) → integer
                 "exact-nonnegative-integer?".to_string()
             }
         }
@@ -186,7 +184,24 @@ pub fn generate_functions_file(functions: &[Function], framework: &str) -> Strin
     w.blank_line();
 
     // Function definitions
-    for func in &emittable {
+    for (i, func) in emittable.iter().enumerate() {
+        // Emit thread-safety warning for functions with callback parameters.
+        // _cprocedure callbacks SIGILL when invoked from a non-main OS thread
+        // on Racket CS; #:async-apply deadlocks under nsapplication-run.
+        let has_callback = func.params.iter().any(|p| {
+            matches!(
+                p.param_type.kind,
+                TypeRefKind::FunctionPointer { .. } | TypeRefKind::Block { .. }
+            )
+        });
+        if has_callback {
+            if i > 0 {
+                w.blank_line();
+            }
+            w.line("; WARNING: callback parameter — _cprocedure invoked from a foreign");
+            w.line(";   OS thread (GCD worker, libdispatch) SIGILLs on Racket CS.");
+            w.line(";   #:async-apply deadlocks under nsapplication-run.");
+        }
         let param_types: Vec<String> = func
             .params
             .iter()
@@ -399,6 +414,35 @@ mod tests {
             },
         };
         assert_eq!(map_contract(&alias, false), "exact-nonnegative-integer?");
+    }
+
+    #[test]
+    fn test_contract_cstring_param_is_string() {
+        let cstr = TypeRef {
+            nullable: false,
+            kind: TypeRefKind::CString,
+        };
+        assert_eq!(
+            map_contract(&cstr, false),
+            "string?",
+            "CString params should accept string? (Racket auto-converts to C char*)"
+        );
+    }
+
+    #[test]
+    fn test_contract_cstring_return_includes_false() {
+        // C functions returning `const char *` can return NULL.
+        // Racket's `_string` FFI type converts NULL to #f, so the
+        // contract must accept #f to avoid a contract violation.
+        let cstr = TypeRef {
+            nullable: false,
+            kind: TypeRefKind::CString,
+        };
+        assert_eq!(
+            map_contract(&cstr, true),
+            "(or/c string? #f)",
+            "CString returns must accept #f (NULL maps to #f via _string FFI type)"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -905,6 +949,135 @@ mod tests {
         assert!(
             output.contains("-> _id"),
             "Non-libdispatch _id returns must stay as _id. Output was:\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // CString function generation (Bug: nullable return contracts)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_cstring_return_contract_includes_false() {
+        // CFStringGetCStringPtr returns `const char *` which can be NULL.
+        // The contract must include #f.
+        let functions = vec![make_function(
+            "CFStringGetCStringPtr",
+            vec![
+                make_param("theString", TypeRefKind::Pointer),
+                make_param(
+                    "encoding",
+                    TypeRefKind::Primitive {
+                        name: "uint32".into(),
+                    },
+                ),
+            ],
+            TypeRefKind::CString,
+            false,
+            false,
+        )];
+        let output = generate_functions_file(&functions, "CoreFoundation");
+        assert!(
+            output.contains("(or/c string? #f)"),
+            "CString return contract must include #f for NULL. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_cstring_param_contract_is_string() {
+        // Function taking a C string param — contract should be string?, not nullable.
+        let functions = vec![make_function(
+            "TKLookup",
+            vec![make_param("name", TypeRefKind::CString)],
+            TypeRefKind::Primitive {
+                name: "int32".into(),
+            },
+            false,
+            false,
+        )];
+        let output = generate_functions_file(&functions, "TestKit");
+        assert!(
+            output.contains("[TKLookup (c-> string? exact-integer?)]"),
+            "CString param contract should be string?. Output was:\n{output}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Foreign-thread safety warnings for callback parameters
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_function_pointer_param_emits_thread_warning() {
+        // Functions with callback (function pointer) parameters should
+        // emit a warning comment about _cprocedure SIGILL on foreign threads.
+        let functions = vec![Function {
+            name: "CGEventTapCreate".to_string(),
+            params: vec![
+                Param {
+                    name: "tap".to_string(),
+                    param_type: TypeRef {
+                        nullable: false,
+                        kind: TypeRefKind::Primitive {
+                            name: "uint32".into(),
+                        },
+                    },
+                },
+                Param {
+                    name: "callback".to_string(),
+                    param_type: TypeRef {
+                        nullable: false,
+                        kind: TypeRefKind::FunctionPointer {
+                            name: Some("CGEventTapCallBack".into()),
+                            params: vec![],
+                            return_type: Box::new(TypeRef {
+                                nullable: false,
+                                kind: TypeRefKind::Pointer,
+                            }),
+                        },
+                    },
+                },
+            ],
+            return_type: TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Pointer,
+            },
+            inline: false,
+            variadic: false,
+            source: None,
+            provenance: None,
+            doc_refs: None,
+        }];
+        let output = generate_functions_file(&functions, "CoreGraphics");
+        assert!(
+            output.contains("; WARNING:"),
+            "Function with callback param should have a thread-safety warning. Output was:\n{output}"
+        );
+        assert!(
+            output.contains("_cprocedure"),
+            "Warning should mention _cprocedure. Output was:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_no_callback_param_no_warning() {
+        // Functions without callback params should have no warning.
+        let functions = vec![make_function(
+            "TKSimple",
+            vec![make_param(
+                "x",
+                TypeRefKind::Primitive {
+                    name: "double".into(),
+                },
+            )],
+            TypeRefKind::Primitive {
+                name: "void".into(),
+            },
+            false,
+            false,
+        )];
+        let output = generate_functions_file(&functions, "TestKit");
+        assert!(
+            !output.contains("; WARNING:"),
+            "Functions without callbacks should have no warning. Output was:\n{output}"
         );
     }
 }

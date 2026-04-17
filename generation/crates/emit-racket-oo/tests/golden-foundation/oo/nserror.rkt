@@ -13,16 +13,19 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide NSError)
 (provide/contract
   [make-nserror-init-with-domain-code-user-info (c-> (or/c string? objc-object? #f) exact-integer? (or/c string? objc-object? #f) any/c)]
   [nserror-code (c-> objc-object? exact-integer?)]
-  [nserror-domain (c-> objc-object? any/c)]
-  [nserror-help-anchor (c-> objc-object? any/c)]
-  [nserror-localized-description (c-> objc-object? any/c)]
-  [nserror-localized-failure-reason (c-> objc-object? any/c)]
+  [nserror-domain (c-> objc-object? (or/c nsstring? objc-nil?))]
+  [nserror-help-anchor (c-> objc-object? (or/c nsstring? objc-nil?))]
+  [nserror-localized-description (c-> objc-object? (or/c nsstring? objc-nil?))]
+  [nserror-localized-failure-reason (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nserror-localized-recovery-options (c-> objc-object? any/c)]
-  [nserror-localized-recovery-suggestion (c-> objc-object? any/c)]
+  [nserror-localized-recovery-suggestion (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nserror-recovery-attempter (c-> objc-object? any/c)]
   [nserror-underlying-errors (c-> objc-object? any/c)]
   [nserror-user-info (c-> objc-object? any/c)]

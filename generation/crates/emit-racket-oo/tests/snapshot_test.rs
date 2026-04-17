@@ -110,8 +110,8 @@ fn snapshot_racket_oo_testkit() {
     assert_eq!(result.classes_emitted, 5);
     assert_eq!(result.protocols_emitted, 2);
     assert_eq!(result.enums_emitted, 1);
-    assert_eq!(result.functions_emitted, 4); // 6 total minus 1 variadic, 1 inline
-    assert_eq!(result.constants_emitted, 2);
+    assert_eq!(result.functions_emitted, 6); // 8 total minus 1 variadic, 1 inline
+    assert_eq!(result.constants_emitted, 3);
 
     // The emitter writes to {output_dir}/{lowercase_framework_name}/
     let generated_framework_dir = temp_dir.path().join("testkit");

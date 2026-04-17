@@ -24,8 +24,9 @@ use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 /// - `TKCopying` protocol — required `copyWithZone:` method
 /// - `TKDelegate` protocol — optional callbacks with void/bool/id return types
 /// - `TKAlignment` enum — 3 values
-/// - 2 constants: `TKVersionString`, `TKDefaultTimeout`
-/// - 4 C functions: `TKComputeDistance`, `TKTransformPoint`, `TKReset`, `TKCreateBuffer`
+/// - 3 constants: `TKVersionString`, `TKDefaultTimeout`, `TKStatusAttribute` (CFSTR macro)
+/// - 6 C functions: `TKComputeDistance`, `TKTransformPoint`, `TKReset`, `TKCreateBuffer`,
+///   `TKGetName` (CString return), `TKRegisterCallback` (function pointer param)
 ///   (plus 1 variadic and 1 inline function to test filtering)
 pub fn build_snapshot_test_framework() -> Framework {
     Framework {
@@ -51,10 +52,16 @@ pub fn build_snapshot_test_framework() -> Framework {
             build_tk_transform_point(),
             build_tk_reset(),
             build_tk_create_buffer(),
+            build_tk_get_name(),
+            build_tk_register_callback(),
             build_tk_log_variadic(),
             build_tk_fast_hash_inline(),
         ],
-        constants: vec![build_version_constant(), build_timeout_constant()],
+        constants: vec![
+            build_version_constant(),
+            build_timeout_constant(),
+            build_cfstr_constant(),
+        ],
         class_annotations: vec![],
         api_patterns: vec![],
         enrichment: None,
@@ -492,6 +499,65 @@ fn build_tk_create_buffer() -> Function {
     }
 }
 
+/// `TKGetName` — function returning `const char *` (CString). Exercises
+/// nullable return contract: `_string` maps NULL to `#f`, contract must accept it.
+fn build_tk_get_name() -> Function {
+    Function {
+        name: "TKGetName".to_string(),
+        params: vec![param(
+            "id",
+            TypeRef {
+                nullable: false,
+                kind: TypeRefKind::Primitive {
+                    name: "uint32".to_string(),
+                },
+            },
+        )],
+        return_type: TypeRef {
+            nullable: false,
+            kind: TypeRefKind::CString,
+        },
+        inline: false,
+        variadic: false,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
+/// `TKRegisterCallback` — function with a C callback parameter.
+/// Exercises foreign-thread safety warning emission.
+fn build_tk_register_callback() -> Function {
+    Function {
+        name: "TKRegisterCallback".to_string(),
+        params: vec![
+            param("context", type_pointer()),
+            Param {
+                name: "callback".to_string(),
+                param_type: TypeRef {
+                    nullable: false,
+                    kind: TypeRefKind::FunctionPointer {
+                        name: Some("TKCallbackFunc".to_string()),
+                        params: vec![type_pointer(), TypeRef {
+                            nullable: false,
+                            kind: TypeRefKind::Primitive {
+                                name: "int32".to_string(),
+                            },
+                        }],
+                        return_type: Box::new(type_void()),
+                    },
+                },
+            },
+        ],
+        return_type: type_void(),
+        inline: false,
+        variadic: false,
+        source: None,
+        provenance: None,
+        doc_refs: None,
+    }
+}
+
 /// `TKLog` — variadic function (should be skipped by emitter).
 fn build_tk_log_variadic() -> Function {
     Function {
@@ -629,6 +695,7 @@ fn build_version_constant() -> Constant {
         source: None,
         provenance: None,
         doc_refs: None,
+        macro_value: None,
     }
 }
 
@@ -639,6 +706,21 @@ fn build_timeout_constant() -> Constant {
         source: None,
         provenance: None,
         doc_refs: None,
+        macro_value: None,
+    }
+}
+
+fn build_cfstr_constant() -> Constant {
+    Constant {
+        name: "TKStatusAttribute".to_string(),
+        constant_type: TypeRef {
+            nullable: true,
+            kind: TypeRefKind::Id,
+        },
+        source: None,
+        provenance: None,
+        doc_refs: None,
+        macro_value: Some("TKStatus".to_string()),
     }
 }
 
@@ -663,8 +745,8 @@ mod tests {
         assert_eq!(fw.classes.len(), 5);
         assert_eq!(fw.protocols.len(), 2);
         assert_eq!(fw.enums.len(), 1);
-        assert_eq!(fw.functions.len(), 6);
-        assert_eq!(fw.constants.len(), 2);
+        assert_eq!(fw.functions.len(), 8);
+        assert_eq!(fw.constants.len(), 3);
     }
 
     #[test]

@@ -23,7 +23,7 @@ pub const DEFAULT_RACKET_PATH: &str = "/opt/homebrew/bin/racket";
 pub struct AppSpec {
     /// Display name (`CFBundleName`, menu-bar bold name). Example: `"File Lister"`.
     pub app_name: String,
-    /// Bundle identifier (`CFBundleIdentifier`). Example: `"com.apianyware.FileLister"`.
+    /// Bundle identifier (`CFBundleIdentifier`). Example: `"com.linkuistics.FileLister"`.
     pub bundle_id: String,
     /// Source directory + entry-script base name. Example: `"file-lister"`.
     pub script_name: String,
@@ -35,12 +35,12 @@ impl AppSpec {
     /// Derive an [`AppSpec`] from a kebab-case script name.
     ///
     /// `"file-lister"` → display `"File Lister"`, bundle id
-    /// `"com.apianyware.FileLister"`. The runtime path defaults to
+    /// `"com.linkuistics.FileLister"`. The runtime path defaults to
     /// [`DEFAULT_RACKET_PATH`] and can be overridden afterwards.
     pub fn from_script_name(script_name: impl Into<String>) -> Self {
         let script_name = script_name.into();
         let app_name = title_case_kebab(&script_name);
-        let bundle_id = format!("com.apianyware.{}", app_name.replace(' ', ""));
+        let bundle_id = format!("com.linkuistics.{}", app_name.replace(' ', ""));
         Self {
             app_name,
             bundle_id,
@@ -220,14 +220,17 @@ mod tests {
 
     #[test]
     fn title_case_three_words() {
-        assert_eq!(title_case_kebab("ui-controls-gallery"), "Ui Controls Gallery");
+        assert_eq!(
+            title_case_kebab("ui-controls-gallery"),
+            "Ui Controls Gallery"
+        );
     }
 
     #[test]
     fn from_script_name_derives_display_and_bundle_id() {
         let spec = AppSpec::from_script_name("file-lister");
         assert_eq!(spec.app_name, "File Lister");
-        assert_eq!(spec.bundle_id, "com.apianyware.FileLister");
+        assert_eq!(spec.bundle_id, "com.linkuistics.FileLister");
         assert_eq!(spec.script_name, "file-lister");
         assert_eq!(spec.runtime_path, DEFAULT_RACKET_PATH);
     }
@@ -236,6 +239,6 @@ mod tests {
     fn from_script_name_handles_single_word() {
         let spec = AppSpec::from_script_name("counter");
         assert_eq!(spec.app_name, "Counter");
-        assert_eq!(spec.bundle_id, "com.apianyware.Counter");
+        assert_eq!(spec.bundle_id, "com.linkuistics.Counter");
     }
 }

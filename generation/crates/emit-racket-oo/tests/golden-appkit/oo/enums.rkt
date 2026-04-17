@@ -536,7 +536,6 @@
 (define NSDragOperationPrivate 8)
 (define NSDragOperationMove 16)
 (define NSDragOperationDelete 32)
-(define NSDragOperationEvery -1)
 (define NSDragOperationAll_Obsolete 15)
 (define NSDragOperationAll 15)
 
@@ -606,7 +605,6 @@
 (define NSEventMaskDirectTouch 137438953472)
 (define NSEventMaskChangeMode 274877906944)
 (define NSEventMaskMouseCancelled 1099511627776)
-(define NSEventMaskAny -1)
 
 ;; NSEventModifierFlags
 (define NSEventModifierFlagCapsLock 65536)
@@ -741,7 +739,7 @@
 (define NSFontDescriptorTraitTightLeading 32768)
 (define NSFontDescriptorTraitLooseLeading 65536)
 (define NSFontDescriptorTraitEmphasized 2)
-(define NSFontDescriptorClassMask -268435456)
+(define NSFontDescriptorClassMask 4026531840)
 (define NSFontDescriptorClassUnknown 0)
 (define NSFontDescriptorClassOldStyleSerifs 268435456)
 (define NSFontDescriptorClassTransitionalSerifs 536870912)
@@ -749,10 +747,10 @@
 (define NSFontDescriptorClassClarendonSerifs 1073741824)
 (define NSFontDescriptorClassSlabSerifs 1342177280)
 (define NSFontDescriptorClassFreeformSerifs 1879048192)
-(define NSFontDescriptorClassSansSerif -2147483648)
-(define NSFontDescriptorClassOrnamentals -1879048192)
-(define NSFontDescriptorClassScripts -1610612736)
-(define NSFontDescriptorClassSymbolic -1073741824)
+(define NSFontDescriptorClassSansSerif 2147483648)
+(define NSFontDescriptorClassOrnamentals 2415919104)
+(define NSFontDescriptorClassScripts 2684354560)
+(define NSFontDescriptorClassSymbolic 3221225472)
 
 ;; NSFontPanelModeMask
 (define NSFontPanelModeMaskFace 1)
@@ -1786,7 +1784,6 @@
 (define NSTouchPhaseEnded 8)
 (define NSTouchPhaseCancelled 16)
 (define NSTouchPhaseTouching 7)
-(define NSTouchPhaseAny -1)
 
 ;; NSTouchType
 (define NSTouchTypeDirect 0)
@@ -2248,7 +2245,7 @@
 (define NSFontSymbolicClass -1073741824)
 
 ;; enum (unnamed at /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/AppKit.framework/Headers/NSFontDescriptor.h:220:1)
-(define NSFontFamilyClassMask -268435456)
+(define NSFontFamilyClassMask 4026531840)
 
 ;; enum (unnamed at /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/AppKit.framework/Headers/NSFontDescriptor.h:224:1)
 (define NSFontItalicTrait 1)
@@ -2270,7 +2267,7 @@
 (define NSFontPanelShadowEffectModeMask 4096)
 (define NSFontPanelAllEffectsModeMask 1048320)
 (define NSFontPanelStandardModesMask 65535)
-(define NSFontPanelAllModesMask -1)
+(define NSFontPanelAllModesMask 4294967295)
 
 ;; enum (unnamed at /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/AppKit.framework/Headers/NSFontPanel.h:82:1)
 (define NSFPPreviewButton 131)

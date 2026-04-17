@@ -74,16 +74,14 @@
       (with-autorelease-pool
         (let* ([s1 (string->nsstring "a")]
                [s2 (string->nsstring "b")]
-               [arr (list->nsarray (list s1 s2))]
-               [obj (wrap-objc-object arr #:retained #t)])
+               [obj (list->nsarray (list s1 s2))])
           (check-equal? (nsarray-count obj) 2 "Count should be 2"))))
 
     (test-case "NSArray first-object and last-object"
       (with-autorelease-pool
         (let* ([s1 (string->nsstring "first")]
                [s2 (string->nsstring "last")]
-               [arr (list->nsarray (list s1 s2))]
-               [obj (wrap-objc-object arr #:retained #t)])
+               [obj (list->nsarray (list s1 s2))])
           (let ([first (nsarray-first-object obj)]
                 [last (nsarray-last-object obj)])
             (check-true (objc-object? first))
@@ -94,8 +92,7 @@
     (test-case "NSArray description"
       (with-autorelease-pool
         (let* ([s1 (string->nsstring "x")]
-               [arr (list->nsarray (list s1))]
-               [obj (wrap-objc-object arr #:retained #t)]
+               [obj (list->nsarray (list s1))]
                [desc (nsarray-description obj)])
           (check-true (objc-object? desc))))))
 
@@ -104,21 +101,19 @@
 
     (test-case "NSMutableArray add and count"
       (with-autorelease-pool
-        (let* ([arr (wrap-objc-object (tell (tell NSMutableArray alloc) init)
-                                      #:retained #t)]
-               [s1 (string->nsstring "item1")])
-          ;; TypedMsgSend methods expect raw pointers for id params — pass nsstring directly
-          (nsmutablearray-add-object! arr s1)
+        (let ([arr (wrap-objc-object (tell (tell NSMutableArray alloc) init)
+                                     #:retained #t)])
+          ;; Generated wrappers reject raw cpointers; pass a Racket string
+          ;; and let coerce-arg convert it to NSString at the boundary.
+          (nsmutablearray-add-object! arr "item1")
           (check-equal? (nsarray-count arr) 1 "Count should be 1 after adding"))))
 
     (test-case "NSMutableArray remove-last-object!"
       (with-autorelease-pool
-        (let* ([arr (wrap-objc-object (tell (tell NSMutableArray alloc) init)
-                                      #:retained #t)]
-               [s1 (string->nsstring "item")]
-               [s2 (string->nsstring "item2")])
-          (nsmutablearray-add-object! arr s1)
-          (nsmutablearray-add-object! arr s2)
+        (let ([arr (wrap-objc-object (tell (tell NSMutableArray alloc) init)
+                                     #:retained #t)])
+          (nsmutablearray-add-object! arr "item")
+          (nsmutablearray-add-object! arr "item2")
           (check-equal? (nsarray-count arr) 2)
           (nsmutablearray-remove-last-object! arr)
           (check-equal? (nsarray-count arr) 1 "Count should be 1 after removing last")))))

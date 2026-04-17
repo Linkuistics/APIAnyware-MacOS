@@ -12,14 +12,18 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/AppKit.framework/AppKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsstatusbar? v) (objc-instance-of? v "NSStatusBar"))
+(define (nsstatusitem? v) (objc-instance-of? v "NSStatusItem"))
 (provide NSStatusBar)
 (provide/contract
-  [nsstatusbar-system-status-bar (c-> any/c)]
+  [nsstatusbar-system-status-bar (c-> (or/c nsstatusbar? objc-nil?))]
   [nsstatusbar-thickness (c-> objc-object? real?)]
   [nsstatusbar-vertical (c-> objc-object? boolean?)]
   [nsstatusbar-is-vertical (c-> objc-object? boolean?)]
   [nsstatusbar-remove-status-item! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsstatusbar-status-item-with-length (c-> objc-object? real? any/c)]
+  [nsstatusbar-status-item-with-length (c-> objc-object? real? (or/c nsstatusitem? objc-nil?))]
   )
 
 ;; --- Class reference ---

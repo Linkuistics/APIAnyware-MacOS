@@ -12,9 +12,12 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide NSLock)
 (provide/contract
-  [nslock-name (c-> objc-object? any/c)]
+  [nslock-name (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nslock-set-name! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nslock-lock-before-date (c-> objc-object? (or/c string? objc-object? #f) boolean?)]
   [nslock-try-lock (c-> objc-object? boolean?)]

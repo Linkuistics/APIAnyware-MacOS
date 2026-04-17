@@ -185,6 +185,7 @@ fn describe_type_kind(kind: &TypeRefKind) -> String {
         TypeRefKind::Class { name, .. } => format!("class:{name}"),
         TypeRefKind::ClassRef => "Class".to_string(),
         TypeRefKind::Selector => "SEL".to_string(),
+        TypeRefKind::CString => "c_string".to_string(),
         TypeRefKind::Pointer => "pointer".to_string(),
         TypeRefKind::Primitive { name } => name.clone(),
         TypeRefKind::Struct { name } => format!("struct:{name}"),

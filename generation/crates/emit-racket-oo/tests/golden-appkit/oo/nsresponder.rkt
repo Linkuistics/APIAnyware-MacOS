@@ -12,19 +12,26 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/AppKit.framework/AppKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsmenu? v) (objc-instance-of? v "NSMenu"))
+(define (nsresponder? v) (objc-instance-of? v "NSResponder"))
+(define (nstouchbar? v) (objc-instance-of? v "NSTouchBar"))
+(define (nsundomanager? v) (objc-instance-of? v "NSUndoManager"))
+(define (nsuseractivity? v) (objc-instance-of? v "NSUserActivity"))
 (provide NSResponder)
 (provide/contract
   [make-nsresponder-init-with-coder (c-> (or/c string? objc-object? #f) any/c)]
   [nsresponder-accepts-first-responder (c-> objc-object? boolean?)]
-  [nsresponder-menu (c-> objc-object? any/c)]
+  [nsresponder-menu (c-> objc-object? (or/c nsmenu? objc-nil?))]
   [nsresponder-set-menu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsresponder-next-responder (c-> objc-object? any/c)]
+  [nsresponder-next-responder (c-> objc-object? (or/c nsresponder? objc-nil?))]
   [nsresponder-set-next-responder! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsresponder-restorable-state-key-paths (c-> any/c)]
-  [nsresponder-touch-bar (c-> objc-object? any/c)]
+  [nsresponder-touch-bar (c-> objc-object? (or/c nstouchbar? objc-nil?))]
   [nsresponder-set-touch-bar! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsresponder-undo-manager (c-> objc-object? any/c)]
-  [nsresponder-user-activity (c-> objc-object? any/c)]
+  [nsresponder-undo-manager (c-> objc-object? (or/c nsundomanager? objc-nil?))]
+  [nsresponder-user-activity (c-> objc-object? (or/c nsuseractivity? objc-nil?))]
   [nsresponder-set-user-activity! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsresponder-become-first-responder (c-> objc-object? boolean?)]
   [nsresponder-begin-gesture-with-event! (c-> objc-object? (or/c string? objc-object? #f) void?)]

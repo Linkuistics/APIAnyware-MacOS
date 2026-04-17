@@ -242,7 +242,7 @@ let config = StubConfig {
     script_resource_name: "main".into(),
     script_resource_type: "{ext}".into(),
     script_resource_dir: "{target}-app".into(),
-    bundle_identifier: "com.apianyware.{target}.MyApp".into(),
+    bundle_identifier: "com.linkuistics.{target}.MyApp".into(),
 };
 let app_path = create_app_bundle(&config, output_dir)?;
 // Populate app_path/Contents/Resources/{target}-app/ with scripts and runtime files

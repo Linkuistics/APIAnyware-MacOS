@@ -14,6 +14,12 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/AppKit.framework/AppKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsfont? v) (objc-instance-of? v "NSFont"))
+(define (nsmenu? v) (objc-instance-of? v "NSMenu"))
+(define (nsmenuitem? v) (objc-instance-of? v "NSMenuItem"))
+(define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide NSMenu)
 (provide/contract
   [make-nsmenu-init-with-coder (c-> (or/c string? objc-object? #f) any/c)]
@@ -26,9 +32,9 @@
   [nsmenu-set-automatically-inserts-writing-tools-items! (c-> objc-object? boolean? void?)]
   [nsmenu-delegate (c-> objc-object? any/c)]
   [nsmenu-set-delegate! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsmenu-font (c-> objc-object? any/c)]
+  [nsmenu-font (c-> objc-object? (or/c nsfont? objc-nil?))]
   [nsmenu-set-font! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsmenu-highlighted-item (c-> objc-object? any/c)]
+  [nsmenu-highlighted-item (c-> objc-object? (or/c nsmenuitem? objc-nil?))]
   [nsmenu-item-array (c-> objc-object? any/c)]
   [nsmenu-set-item-array! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-menu-bar-height (c-> objc-object? real?)]
@@ -47,15 +53,15 @@
   [nsmenu-shows-state-column (c-> objc-object? boolean?)]
   [nsmenu-set-shows-state-column! (c-> objc-object? boolean? void?)]
   [nsmenu-size (c-> objc-object? any/c)]
-  [nsmenu-supermenu (c-> objc-object? any/c)]
+  [nsmenu-supermenu (c-> objc-object? (or/c nsmenu? objc-nil?))]
   [nsmenu-set-supermenu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsmenu-title (c-> objc-object? any/c)]
+  [nsmenu-title (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsmenu-set-title! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsmenu-torn-off (c-> objc-object? boolean?)]
   [nsmenu-user-interface-layout-direction (c-> objc-object? exact-nonnegative-integer?)]
   [nsmenu-set-user-interface-layout-direction! (c-> objc-object? exact-nonnegative-integer? void?)]
   [nsmenu-add-item! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsmenu-add-item-with-title-action-key-equivalent! (c-> objc-object? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) any/c)]
+  [nsmenu-add-item-with-title-action-key-equivalent! (c-> objc-object? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) (or/c nsmenuitem? objc-nil?))]
   [nsmenu-cancel-tracking (c-> objc-object? void?)]
   [nsmenu-cancel-tracking-without-animation (c-> objc-object? void?)]
   [nsmenu-index-of-item (c-> objc-object? (or/c string? objc-object? #f) exact-integer?)]
@@ -65,11 +71,11 @@
   [nsmenu-index-of-item-with-target-and-action (c-> objc-object? (or/c string? objc-object? #f) string? exact-integer?)]
   [nsmenu-index-of-item-with-title (c-> objc-object? (or/c string? objc-object? #f) exact-integer?)]
   [nsmenu-insert-item-at-index! (c-> objc-object? (or/c string? objc-object? #f) exact-integer? void?)]
-  [nsmenu-insert-item-with-title-action-key-equivalent-at-index! (c-> objc-object? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) exact-integer? any/c)]
-  [nsmenu-item-at-index (c-> objc-object? exact-integer? any/c)]
+  [nsmenu-insert-item-with-title-action-key-equivalent-at-index! (c-> objc-object? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) exact-integer? (or/c nsmenuitem? objc-nil?))]
+  [nsmenu-item-at-index (c-> objc-object? exact-integer? (or/c nsmenuitem? objc-nil?))]
   [nsmenu-item-changed (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsmenu-item-with-tag (c-> objc-object? exact-integer? any/c)]
-  [nsmenu-item-with-title (c-> objc-object? (or/c string? objc-object? #f) any/c)]
+  [nsmenu-item-with-tag (c-> objc-object? exact-integer? (or/c nsmenuitem? objc-nil?))]
+  [nsmenu-item-with-title (c-> objc-object? (or/c string? objc-object? #f) (or/c nsmenuitem? objc-nil?))]
   [nsmenu-perform-action-for-item-at-index! (c-> objc-object? exact-integer? void?)]
   [nsmenu-perform-key-equivalent! (c-> objc-object? (or/c string? objc-object? #f) boolean?)]
   [nsmenu-pop-up-menu-positioning-item-at-location-in-view (c-> objc-object? (or/c string? objc-object? #f) any/c (or/c string? objc-object? #f) boolean?)]

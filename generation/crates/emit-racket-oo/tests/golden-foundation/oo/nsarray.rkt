@@ -12,18 +12,25 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (mirror? v) (objc-instance-of? v "Mirror"))
+(define (nsarray? v) (objc-instance-of? v "NSArray"))
+(define (nsdata? v) (objc-instance-of? v "NSData"))
+(define (nsfastenumerationiterator? v) (objc-instance-of? v "NSFastEnumerationIterator"))
+(define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide NSArray)
 (provide/contract
   [make-nsarray-init-with-coder (c-> (or/c string? objc-object? #f) any/c)]
   [make-nsarray-init-with-objects-count (c-> (or/c cpointer? #f) exact-nonnegative-integer? any/c)]
   [nsarray-count (c-> objc-object? exact-nonnegative-integer?)]
-  [nsarray-custom-mirror (c-> objc-object? any/c)]
-  [nsarray-description (c-> objc-object? any/c)]
+  [nsarray-custom-mirror (c-> objc-object? (or/c mirror? objc-nil?))]
+  [nsarray-description (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsarray-first-object (c-> objc-object? any/c)]
   [nsarray-last-object (c-> objc-object? any/c)]
-  [nsarray-sorted-array-hint (c-> objc-object? any/c)]
+  [nsarray-sorted-array-hint (c-> objc-object? (or/c nsdata? objc-nil?))]
   [nsarray-underestimated-count (c-> objc-object? exact-integer?)]
-  [nsarray-make-iterator (c-> objc-object? any/c)]
+  [nsarray-make-iterator (c-> objc-object? (or/c nsfastenumerationiterator? objc-nil?))]
   [nsarray-object-at-index (c-> objc-object? exact-nonnegative-integer? any/c)]
   )
 

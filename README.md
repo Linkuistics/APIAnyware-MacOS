@@ -231,7 +231,7 @@ cargo run --example bundle_app -p apianyware-macos-bundle-racket-oo -- file-list
 
 The `file-lister` argument is the script name (the `apps/<name>/<name>.rkt`
 identifier). Display name (`File Lister`) and bundle id
-(`com.apianyware.FileLister`) are derived from the kebab-case form. Full
+(`com.linkuistics.FileLister`) are derived from the kebab-case form. Full
 API:
 
 ```rust

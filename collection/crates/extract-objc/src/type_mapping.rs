@@ -8,6 +8,18 @@ use clang::{Type, TypeKind};
 
 use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 
+/// Check if a pointee type is `char` (i.e., the pointer is `char *` or
+/// `const char *`). Only matches the `char` type itself (CharS on
+/// signed-char platforms, CharU on unsigned-char platforms), not
+/// `signed char` or `unsigned char` which are byte/integer types.
+///
+/// Callers must additionally check `pointee.is_const_qualified()` to
+/// distinguish `const char *` (C input strings → `CString`) from
+/// `char *` (output buffers → `Pointer`).
+fn is_c_string_pointee(pointee: &Type<'_>) -> bool {
+    matches!(pointee.get_kind(), TypeKind::CharS | TypeKind::CharU)
+}
+
 /// Map a libclang `Type` to our IR `TypeRef`.
 pub fn map_type(clang_type: &Type<'_>) -> TypeRef {
     let nullable = is_nullable(clang_type);
@@ -52,11 +64,17 @@ fn map_type_kind(clang_type: &Type<'_>) -> TypeRefKind {
         // Block pointer
         TypeKind::BlockPointer => map_block_type(clang_type),
 
-        // C pointer types: check for function pointer (void (*)(int, ...))
+        // C pointer types: function pointer, C string, or generic pointer
         TypeKind::Pointer => {
             if let Some(pointee) = clang_type.get_pointee_type() {
                 if pointee.get_kind() == TypeKind::FunctionPrototype {
                     return map_function_pointer_type(&pointee, None);
+                }
+                // Only const char * → CString (input strings).
+                // Non-const char * is an output buffer — must stay as Pointer
+                // so callers can pass malloc'd memory and read back results.
+                if is_c_string_pointee(&pointee) && pointee.is_const_qualified() {
+                    return TypeRefKind::CString;
                 }
             }
             TypeRefKind::Pointer
@@ -232,7 +250,10 @@ fn map_typedef(clang_type: &Type<'_>) -> TypeRefKind {
         "id" => return TypeRefKind::Id,
         "Class" => return TypeRefKind::ClassRef,
         "SEL" => return TypeRefKind::Selector,
-        "BOOL" => {
+        // ObjC BOOL and Carbon Boolean (unsigned char used as boolean).
+        // Without this, Boolean resolves to uint8 and Racket treats 0 as
+        // truthy (only #f is falsy), silently breaking boolean-context usage.
+        "BOOL" | "Boolean" => {
             return TypeRefKind::Primitive {
                 name: "bool".to_string(),
             }
@@ -270,22 +291,24 @@ fn map_typedef(clang_type: &Type<'_>) -> TypeRefKind {
         // Object pointer typedefs (NSImageName → NSString *, etc.) → resolve to id/class
         TypeKind::ObjCObjectPointer => map_objc_object_pointer(&canonical),
 
-        // Pointer typedefs: check for function pointer (e.g., CGEventTapCallBack)
+        // Pointer typedefs: function pointer, C string, or generic pointer
         TypeKind::Pointer => {
             if let Some(pointee) = canonical.get_pointee_type() {
                 if pointee.get_kind() == TypeKind::FunctionPrototype {
                     return map_function_pointer_type(&pointee, Some(name));
                 }
+                if is_c_string_pointee(&pointee) && pointee.is_const_qualified() {
+                    return TypeRefKind::CString;
+                }
             }
             TypeRefKind::Pointer
         }
 
-        // Struct typedefs (NSRect → CGRect, etc.) → keep as Alias for geometry
-        // struct matching in the FFI mapper
-        TypeKind::Record => TypeRefKind::Alias {
-            name,
-            framework: None,
-        },
+        // Struct typedefs (NSRect → CGRect, CFDictionaryKeyCallBacks, etc.)
+        // → Struct with the typedef name. The FFI mapper's geometry struct
+        // detection works on both Struct and Alias names, and is_struct_data_symbol
+        // needs Struct to correctly emit ffi-obj-ref for struct-typed globals.
+        TypeKind::Record => TypeRefKind::Struct { name },
 
         // Enum typedefs (NSBezelStyle, etc.) → keep as Alias so emitters can
         // use _uint64 for bitmask/enum values

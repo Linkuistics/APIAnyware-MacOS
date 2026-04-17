@@ -71,7 +71,7 @@
             _void))
 
          ;; Call enumerateObjectsUsingBlock:
-         (msg-send-block arr sel-enumerate blk)
+         (msg-send-block (unwrap-objc-object arr) sel-enumerate blk)
 
          ;; Verify all 3 elements were visited
          (let ([result (reverse (unbox seen))])
@@ -101,7 +101,7 @@
             (list _pointer _uint64 _pointer)
             _void))
 
-         (msg-send-block arr sel-enumerate blk)
+         (msg-send-block (unwrap-objc-object arr) sel-enumerate blk)
 
          (let ([result (reverse (unbox seen))])
            (check-equal? result '("first" "second")
@@ -130,7 +130,7 @@
             (list _pointer _pointer)
             _int64))
 
-         (let* ([sorted-ptr (msg-send-block->id arr sel-sorted blk)]
+         (let* ([sorted-ptr (msg-send-block->id (unwrap-objc-object arr) sel-sorted blk)]
                 [sorted (cast sorted-ptr _pointer _id)]
                 [sorted-list (nsarray->list sorted)]
                 [values (map (lambda (n) (tell #:type _int n intValue)) sorted-list)])
@@ -151,7 +151,7 @@
             (list _pointer _uint64 _pointer)
             _void
             (lambda (blk)
-              (msg-send-block arr sel-enumerate blk)
+              (msg-send-block (unwrap-objc-object arr) sel-enumerate blk)
               (unbox count))))
 
          (check-equal? result 1 "Block should have been called once")

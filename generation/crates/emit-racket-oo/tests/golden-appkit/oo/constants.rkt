@@ -3,8 +3,7 @@
 
 (require ffi/unsafe
          ffi/unsafe/objc
-         (rename-in racket/contract [-> c->])
-         "../../../runtime/type-mapping.rkt")
+         (rename-in racket/contract [-> c->]))
 
 (provide/contract
   [NSAbortModalException cpointer?]
@@ -563,7 +562,7 @@
   [NSDeviceResolution cpointer?]
   [NSDeviceSize cpointer?]
   [NSDeviceWhiteColorSpace cpointer?]
-  [NSDirectionalEdgeInsetsZero any/c]
+  [NSDirectionalEdgeInsetsZero cpointer?]
   [NSDirectoryFileType cpointer?]
   [NSDisplayNameBindingOption cpointer?]
   [NSDisplayPatternBindingOption cpointer?]
@@ -2026,7 +2025,7 @@
 (define NSDeviceResolution (get-ffi-obj 'NSDeviceResolution _fw-lib _id))
 (define NSDeviceSize (get-ffi-obj 'NSDeviceSize _fw-lib _id))
 (define NSDeviceWhiteColorSpace (get-ffi-obj 'NSDeviceWhiteColorSpace _fw-lib _id))
-(define NSDirectionalEdgeInsetsZero (get-ffi-obj 'NSDirectionalEdgeInsetsZero _fw-lib _NSDirectionalEdgeInsets))
+(define NSDirectionalEdgeInsetsZero (ffi-obj-ref 'NSDirectionalEdgeInsetsZero _fw-lib))
 (define NSDirectoryFileType (get-ffi-obj 'NSDirectoryFileType _fw-lib _id))
 (define NSDisplayNameBindingOption (get-ffi-obj 'NSDisplayNameBindingOption _fw-lib _id))
 (define NSDisplayPatternBindingOption (get-ffi-obj 'NSDisplayPatternBindingOption _fw-lib _id))

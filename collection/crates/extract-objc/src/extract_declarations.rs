@@ -14,6 +14,7 @@ use apianyware_macos_types::provenance::{
     Availability, DeclarationSource, DocRefs, SourceProvenance,
 };
 use apianyware_macos_types::skipped_symbol_reason;
+use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
 
 use crate::type_mapping::map_type;
 
@@ -57,6 +58,12 @@ pub fn extract_from_translation_unit(
 
         match entity.get_kind() {
             EntityKind::ObjCInterfaceDecl => {
+                // Note: is_definition() cannot be used here — in Clang's AST,
+                // @interface is a declaration (not a definition; @implementation
+                // is the definition, but it lives in .m files absent from SDK
+                // headers). Forward @class declarations produce ObjCClassRef
+                // cursors, not ObjCInterfaceDecl, so no forward-decl shadowing
+                // is possible for this entity kind.
                 if let Some(name) = entity.get_name() {
                     if seen_classes.insert(name.clone()) {
                         if let Some(class) =
@@ -68,12 +75,16 @@ pub fn extract_from_translation_unit(
                 }
             }
             EntityKind::ObjCProtocolDecl => {
-                if let Some(name) = entity.get_name() {
-                    if seen_protocols.insert(name.clone()) {
-                        if let Some(protocol) =
-                            extract_protocol(&entity, sdk_path, &mut result.skipped_symbols)
-                        {
-                            result.protocols.push(protocol);
+                // @protocol Foo; forward declarations must be skipped so the
+                // seen_protocols guard doesn't shadow the full @protocol definition.
+                if entity.is_definition() {
+                    if let Some(name) = entity.get_name() {
+                        if seen_protocols.insert(name.clone()) {
+                            if let Some(protocol) =
+                                extract_protocol(&entity, sdk_path, &mut result.skipped_symbols)
+                            {
+                                result.protocols.push(protocol);
+                            }
                         }
                     }
                 }
@@ -104,10 +115,14 @@ pub fn extract_from_translation_unit(
                 }
             }
             EntityKind::StructDecl => {
-                if let Some(name) = entity.get_name() {
-                    if !name.is_empty() && seen_structs.insert(name.clone()) {
-                        if let Some(st) = extract_struct(&entity, sdk_path) {
-                            result.structs.push(st);
+                // struct Foo; forward declarations must be skipped so the
+                // seen_structs guard doesn't shadow the full struct definition.
+                if entity.is_definition() {
+                    if let Some(name) = entity.get_name() {
+                        if !name.is_empty() && seen_structs.insert(name.clone()) {
+                            if let Some(st) = extract_struct(&entity, sdk_path) {
+                                result.structs.push(st);
+                            }
                         }
                     }
                 }
@@ -130,6 +145,19 @@ pub fn extract_from_translation_unit(
                             extract_constant(&entity, sdk_path, &mut result.skipped_symbols)
                         {
                             result.constants.push(constant);
+                        }
+                    }
+                }
+            }
+            EntityKind::MacroDefinition => {
+                if let Some(name) = entity.get_name() {
+                    if seen_constants.insert(name.clone()) {
+                        if let Some(constant) = extract_cfstr_macro_constant(&entity, sdk_path) {
+                            result.constants.push(constant);
+                        } else {
+                            // Not a CFSTR macro — remove from seen set so a
+                            // VarDecl with the same name can still be extracted.
+                            seen_constants.remove(&name);
                         }
                     }
                 }
@@ -782,7 +810,75 @@ fn extract_constant(
         source: Some(DeclarationSource::ObjcHeader),
         provenance: Some(provenance),
         doc_refs: Some(doc_refs),
+        macro_value: None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// CFSTR macro constant extraction
+// ---------------------------------------------------------------------------
+
+/// Extract a CFSTR macro constant from a `MacroDefinition` entity.
+///
+/// Matches the pattern `#define kFoo CFSTR("literal")` by tokenizing the
+/// macro's source range and looking for the `CFSTR ( "..." )` token sequence.
+/// Returns `None` for non-CFSTR macros (function-like macros, non-matching
+/// expansions, etc.).
+fn extract_cfstr_macro_constant(entity: &Entity<'_>, sdk_path: &Path) -> Option<ir::Constant> {
+    let name = entity.get_name()?;
+
+    // Skip private/reserved names
+    if name.starts_with("__") {
+        return None;
+    }
+
+    // Only object-like macros — CFSTR("...") is not a function-like macro
+    if entity.is_function_like_macro() {
+        return None;
+    }
+
+    let range = entity.get_range()?;
+    let tokens = range.tokenize();
+    let string_value = extract_cfstr_value_from_tokens(&tokens)?;
+
+    let provenance = extract_provenance(entity, sdk_path);
+    let doc_refs = extract_doc_refs(entity);
+
+    Some(ir::Constant {
+        name,
+        // CFSTR returns CFStringRef (toll-free bridged with NSString).
+        // Marked nullable because CFStringCreateWithCString can technically
+        // return NULL, though it won't for valid UTF-8 literals.
+        constant_type: TypeRef {
+            nullable: true,
+            kind: TypeRefKind::Id,
+        },
+        source: Some(DeclarationSource::ObjcHeader),
+        provenance: Some(provenance),
+        doc_refs: Some(doc_refs),
+        macro_value: Some(string_value),
+    })
+}
+
+/// Parse a CFSTR("literal") pattern from macro definition tokens.
+///
+/// The token sequence for `#define kFoo CFSTR("Bar")` is typically:
+/// `kFoo` `CFSTR` `(` `"Bar"` `)` — the `#define` keyword is not a token
+/// in the entity's range, but the macro name is.
+fn extract_cfstr_value_from_tokens(tokens: &[clang::token::Token<'_>]) -> Option<String> {
+    for window in tokens.windows(4) {
+        if window[0].get_spelling() == "CFSTR"
+            && window[1].get_spelling() == "("
+            && window[2].get_kind() == clang::token::TokenKind::Literal
+            && window[3].get_spelling() == ")"
+        {
+            let literal = window[2].get_spelling();
+            // Strip surrounding double quotes from the C string literal
+            let trimmed = literal.strip_prefix('"')?.strip_suffix('"')?;
+            return Some(trimmed.to_string());
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -945,8 +1041,7 @@ fn is_from_framework(entity: &Entity<'_>, framework_name: &str, sdk_path: &Path)
     }
     const SUBFRAMEWORK_ALLOWLIST: &[&str] = &["ApplicationServices"];
     if SUBFRAMEWORK_ALLOWLIST.contains(&framework_name) {
-        let framework_root =
-            format!("System/Library/Frameworks/{framework_name}.framework/");
+        let framework_root = format!("System/Library/Frameworks/{framework_name}.framework/");
         if path_str.starts_with(&framework_root) && path_str.contains("/Headers/") {
             return true;
         }

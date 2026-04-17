@@ -257,6 +257,7 @@ fn format_method_params(method: &Method) -> String {
                 TypeRefKind::FunctionPointer { name, .. } => name
                     .clone()
                     .unwrap_or_else(|| "function_pointer".to_string()),
+                TypeRefKind::CString => "c_string".to_string(),
                 TypeRefKind::Pointer => "pointer".to_string(),
             };
             format!("{}:{}", p.name, type_desc)

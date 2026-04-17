@@ -13,38 +13,51 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/AppKit.framework/AppKit"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsappearance? v) (objc-instance-of? v "NSAppearance"))
+(define (nsdocktile? v) (objc-instance-of? v "NSDockTile"))
+(define (nsevent? v) (objc-instance-of? v "NSEvent"))
+(define (nsgraphicscontext? v) (objc-instance-of? v "NSGraphicsContext"))
+(define (nsimage? v) (objc-instance-of? v "NSImage"))
+(define (nsmenu? v) (objc-instance-of? v "NSMenu"))
+(define (nsresponder? v) (objc-instance-of? v "NSResponder"))
+(define (nstouchbar? v) (objc-instance-of? v "NSTouchBar"))
+(define (nsundomanager? v) (objc-instance-of? v "NSUndoManager"))
+(define (nsuseractivity? v) (objc-instance-of? v "NSUserActivity"))
+(define (nswindow? v) (objc-instance-of? v "NSWindow"))
 (provide NSApplication)
 (provide/contract
   [make-nsapplication-init-with-coder (c-> (or/c string? objc-object? #f) any/c)]
   [nsapplication-accepts-first-responder (c-> objc-object? boolean?)]
   [nsapplication-active (c-> objc-object? boolean?)]
-  [nsapplication-appearance (c-> objc-object? any/c)]
+  [nsapplication-appearance (c-> objc-object? (or/c nsappearance? objc-nil?))]
   [nsapplication-set-appearance! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsapplication-application-icon-image (c-> objc-object? any/c)]
+  [nsapplication-application-icon-image (c-> objc-object? (or/c nsimage? objc-nil?))]
   [nsapplication-set-application-icon-image! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsapplication-application-should-suppress-high-dynamic-range-content (c-> objc-object? boolean?)]
   [nsapplication-automatic-customize-touch-bar-menu-item-enabled (c-> objc-object? boolean?)]
   [nsapplication-set-automatic-customize-touch-bar-menu-item-enabled! (c-> objc-object? boolean? void?)]
-  [nsapplication-context (c-> objc-object? any/c)]
-  [nsapplication-current-event (c-> objc-object? any/c)]
+  [nsapplication-context (c-> objc-object? (or/c nsgraphicscontext? objc-nil?))]
+  [nsapplication-current-event (c-> objc-object? (or/c nsevent? objc-nil?))]
   [nsapplication-current-system-presentation-options (c-> objc-object? exact-nonnegative-integer?)]
   [nsapplication-delegate (c-> objc-object? any/c)]
   [nsapplication-set-delegate! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsapplication-dock-tile (c-> objc-object? any/c)]
-  [nsapplication-effective-appearance (c-> objc-object? any/c)]
+  [nsapplication-dock-tile (c-> objc-object? (or/c nsdocktile? objc-nil?))]
+  [nsapplication-effective-appearance (c-> objc-object? (or/c nsappearance? objc-nil?))]
   [nsapplication-enabled-remote-notification-types (c-> objc-object? exact-nonnegative-integer?)]
   [nsapplication-full-keyboard-access-enabled (c-> objc-object? boolean?)]
-  [nsapplication-help-menu (c-> objc-object? any/c)]
+  [nsapplication-help-menu (c-> objc-object? (or/c nsmenu? objc-nil?))]
   [nsapplication-set-help-menu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsapplication-hidden (c-> objc-object? boolean?)]
-  [nsapplication-key-window (c-> objc-object? any/c)]
-  [nsapplication-main-menu (c-> objc-object? any/c)]
+  [nsapplication-key-window (c-> objc-object? (or/c nswindow? objc-nil?))]
+  [nsapplication-main-menu (c-> objc-object? (or/c nsmenu? objc-nil?))]
   [nsapplication-set-main-menu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsapplication-main-window (c-> objc-object? any/c)]
-  [nsapplication-menu (c-> objc-object? any/c)]
+  [nsapplication-main-window (c-> objc-object? (or/c nswindow? objc-nil?))]
+  [nsapplication-menu (c-> objc-object? (or/c nsmenu? objc-nil?))]
   [nsapplication-set-menu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsapplication-modal-window (c-> objc-object? any/c)]
-  [nsapplication-next-responder (c-> objc-object? any/c)]
+  [nsapplication-modal-window (c-> objc-object? (or/c nswindow? objc-nil?))]
+  [nsapplication-next-responder (c-> objc-object? (or/c nsresponder? objc-nil?))]
   [nsapplication-set-next-responder! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsapplication-occlusion-state (c-> objc-object? exact-nonnegative-integer?)]
   [nsapplication-ordered-documents (c-> objc-object? any/c)]
@@ -55,19 +68,19 @@
   [nsapplication-registered-for-remote-notifications (c-> objc-object? boolean?)]
   [nsapplication-restorable-state-key-paths (c-> any/c)]
   [nsapplication-running (c-> objc-object? boolean?)]
-  [nsapplication-services-menu (c-> objc-object? any/c)]
+  [nsapplication-services-menu (c-> objc-object? (or/c nsmenu? objc-nil?))]
   [nsapplication-set-services-menu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsapplication-services-provider (c-> objc-object? any/c)]
   [nsapplication-set-services-provider! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsapplication-shared-application (c-> any/c)]
-  [nsapplication-touch-bar (c-> objc-object? any/c)]
+  [nsapplication-touch-bar (c-> objc-object? (or/c nstouchbar? objc-nil?))]
   [nsapplication-set-touch-bar! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsapplication-undo-manager (c-> objc-object? any/c)]
-  [nsapplication-user-activity (c-> objc-object? any/c)]
+  [nsapplication-undo-manager (c-> objc-object? (or/c nsundomanager? objc-nil?))]
+  [nsapplication-user-activity (c-> objc-object? (or/c nsuseractivity? objc-nil?))]
   [nsapplication-set-user-activity! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsapplication-user-interface-layout-direction (c-> objc-object? exact-nonnegative-integer?)]
   [nsapplication-windows (c-> objc-object? any/c)]
-  [nsapplication-windows-menu (c-> objc-object? any/c)]
+  [nsapplication-windows-menu (c-> objc-object? (or/c nsmenu? objc-nil?))]
   [nsapplication-set-windows-menu! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsapplication-abort-modal (c-> objc-object? void?)]
   [nsapplication-activate (c-> objc-object? void?)]
@@ -152,7 +165,7 @@
   [nsapplication-valid-requestor-for-send-type-return-type (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) any/c)]
   [nsapplication-wants-forwarded-scroll-events-for-axis (c-> objc-object? exact-nonnegative-integer? boolean?)]
   [nsapplication-wants-scroll-events-for-swipe-tracking-on-axis (c-> objc-object? exact-nonnegative-integer? boolean?)]
-  [nsapplication-window-with-window-number (c-> objc-object? exact-integer? any/c)]
+  [nsapplication-window-with-window-number (c-> objc-object? exact-integer? (or/c nswindow? objc-nil?))]
   [nsapplication-yield-activation-to-application (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsapplication-yield-activation-to-application-with-bundle-identifier (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsapplication-detach-drawing-thread-to-target-with-object (c-> string? (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]

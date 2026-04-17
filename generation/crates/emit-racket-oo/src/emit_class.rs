@@ -9,7 +9,7 @@
 
 use apianyware_macos_emit::code_writer::CodeWriter;
 use apianyware_macos_emit::ffi_type_mapping::{FfiTypeMapper, RacketFfiTypeMapper};
-use apianyware_macos_emit::naming::camel_to_kebab;
+use apianyware_macos_emit::naming::{camel_to_kebab, class_name_to_lowercase};
 use apianyware_macos_emit::write_line;
 use apianyware_macos_types::ir::{Class, Method, Param, Property};
 use apianyware_macos_types::type_ref::{TypeRef, TypeRefKind};
@@ -20,6 +20,7 @@ use crate::method_filter::{
     returns_void, DispatchStrategy,
 };
 use crate::naming::{
+    make_class_method_name, make_class_property_getter_name, make_class_property_setter_name,
     make_method_name, make_property_getter_name, make_property_setter_name,
     make_unique_constructor_name,
 };
@@ -34,10 +35,34 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
     let mut w = CodeWriter::new();
 
     let methods = effective_methods(cls);
-    let properties = effective_properties(cls);
+    let mut properties = effective_properties(cls);
 
-    // Build property name set for collision detection
-    let property_names = build_property_name_set(cls, &properties);
+    // Build a set of class method names so we can suppress instance properties
+    // that collide. Example: +[NSMenuItem separatorItem] (class factory returning
+    // NSMenuItem*) shares the Racket name "nsmenuitem-separator-item" with the
+    // instance property "separatorItem" (bool getter). The class method wins
+    // because the property's boolean check is already available via isSeparatorItem.
+    let class_method_names: std::collections::HashSet<String> = methods
+        .iter()
+        .filter(|m| m.class_method && !m.init_method)
+        .map(|m| make_method_name(&cls.name, &m.selector))
+        .collect();
+
+    // Remove instance properties whose getter name collides with a class method
+    properties.retain(|p| {
+        if p.class_property {
+            return true;
+        }
+        let getter = make_property_getter_name(&cls.name, &p.name);
+        !class_method_names.contains(&getter)
+    });
+
+    // Build property name sets partitioned by class vs instance level.
+    // Class methods only collide with class property names, and instance
+    // methods only collide with instance property names. This prevents
+    // e.g. +[NSMenuItem separatorItem] (class factory) from being suppressed
+    // by the instance property "separatorItem" (boolean getter).
+    let prop_names = build_property_name_sets(cls, &properties);
 
     // Separate method categories
     let init_methods: Vec<&Method> = methods.iter().filter(|m| m.init_method).copied().collect();
@@ -46,7 +71,7 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
         .filter(|m| {
             m.class_method
                 && !m.init_method
-                && !method_collides_with_property(&cls.name, m, &property_names)
+                && !method_collides_with_property(&cls.name, m, &prop_names.class_property_names)
         })
         .copied()
         .collect();
@@ -55,7 +80,7 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
         .filter(|m| {
             !m.class_method
                 && !m.init_method
-                && !method_collides_with_property(&cls.name, m, &property_names)
+                && !method_collides_with_property(&cls.name, m, &prop_names.instance_property_names)
         })
         .copied()
         .collect();
@@ -64,9 +89,55 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
     let needs_structs = class_has_struct_types(cls, &mapper);
     let sig_map = collect_class_signatures(cls, &mapper);
 
+    // Names that must be disambiguated from a same-named instance binding.
+    // Example: NSEvent has both @property(class) modifierFlags and
+    // @property(readonly) modifierFlags; without disambiguation they emit
+    // two `(define)` forms sharing the identifier `nsevent-modifier-flags`,
+    // triggering "module: identifier already defined" at load time. The
+    // class variant gets a `-class` suffix. Same collision can occur for
+    // +selector vs -selector methods.
+    let instance_method_names: std::collections::HashSet<String> = instance_methods
+        .iter()
+        .filter(|m| is_supported_method(m))
+        .map(|m| make_method_name(&cls.name, &m.selector))
+        .collect();
+    let instance_property_names_only: std::collections::HashSet<String> = properties
+        .iter()
+        .filter(|p| !p.class_property)
+        .map(|p| make_property_getter_name(&cls.name, &p.name))
+        .collect();
+    let instance_bindings: std::collections::HashSet<String> = instance_method_names
+        .iter()
+        .chain(instance_property_names_only.iter())
+        .cloned()
+        .collect();
+    let class_method_disambig: std::collections::HashSet<String> = class_methods
+        .iter()
+        .filter(|m| is_supported_method(m))
+        .filter(|m| instance_bindings.contains(&make_method_name(&cls.name, &m.selector)))
+        .map(|m| m.selector.clone())
+        .collect();
+    let class_property_disambig: std::collections::HashSet<String> = properties
+        .iter()
+        .filter(|p| p.class_property)
+        .filter(|p| instance_bindings.contains(&make_property_getter_name(&cls.name, &p.name)))
+        .map(|p| p.name.clone())
+        .collect();
+
     // Build export contracts
     let exports = build_export_contracts(
         cls,
+        &properties,
+        &init_methods,
+        &instance_methods,
+        &class_methods,
+        &class_method_disambig,
+        &class_property_disambig,
+    );
+
+    // Collect class names for return-type predicates (must be defined before
+    // provide/contract references them)
+    let return_class_names = collect_return_type_class_names(
         &properties,
         &init_methods,
         &instance_methods,
@@ -75,6 +146,9 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
 
     // Header
     emit_header(&mut w, &cls.name, framework, needs_blocks, needs_structs);
+
+    // Class-specific return predicates (must precede provide/contract)
+    emit_class_predicates(&mut w, &return_class_names);
 
     // Provide with contracts
     emit_provide(&mut w, &cls.name, &exports);
@@ -99,7 +173,8 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
     if !properties.is_empty() {
         w.line(";; --- Properties ---");
         for p in &properties {
-            emit_property(&mut w, &cls.name, p, &sig_map, &mapper);
+            let disambig = p.class_property && class_property_disambig.contains(&p.name);
+            emit_property(&mut w, &cls.name, p, disambig, &sig_map, &mapper);
         }
         w.blank_line();
     }
@@ -108,7 +183,7 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
     if !instance_methods.is_empty() {
         w.line(";; --- Instance methods ---");
         for m in &instance_methods {
-            emit_method(&mut w, &cls.name, m, false, &sig_map, &mapper);
+            emit_method(&mut w, &cls.name, m, false, false, &sig_map, &mapper);
         }
     }
 
@@ -117,7 +192,8 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
         w.blank_line();
         w.line(";; --- Class methods ---");
         for m in &class_methods {
-            emit_method(&mut w, &cls.name, m, true, &sig_map, &mapper);
+            let disambig = class_method_disambig.contains(&m.selector);
+            emit_method(&mut w, &cls.name, m, true, disambig, &sig_map, &mapper);
         }
     }
 
@@ -176,27 +252,40 @@ fn effective_properties(cls: &Class) -> Vec<&Property> {
     } else {
         cls.all_properties.iter().collect()
     };
-    // Deduplicate by property name — category merging or inheritance flattening
-    // can produce duplicate entries for the same property
+    // Deduplicate by generated Racket getter name — ObjC and Swift extractors
+    // can produce the same property with different casing (e.g. "CGDirectDisplayID"
+    // vs "cgDirectDisplayID"), which both map to the same Racket identifier.
     let mut seen = std::collections::HashSet::new();
     properties
         .into_iter()
-        .filter(|p| seen.insert(p.name.clone()))
+        .filter(|p| seen.insert(make_property_getter_name(&cls.name, &p.name)))
         .collect()
 }
 
-fn build_property_name_set(
-    cls: &Class,
-    properties: &[&Property],
-) -> std::collections::HashSet<String> {
-    let mut names = std::collections::HashSet::new();
+/// Property name sets partitioned by class vs instance level.
+struct PropertyNameSets {
+    class_property_names: std::collections::HashSet<String>,
+    instance_property_names: std::collections::HashSet<String>,
+}
+
+fn build_property_name_sets(cls: &Class, properties: &[&Property]) -> PropertyNameSets {
+    let mut class_names = std::collections::HashSet::new();
+    let mut instance_names = std::collections::HashSet::new();
     for p in properties {
-        names.insert(make_property_getter_name(&cls.name, &p.name));
+        let target = if p.class_property {
+            &mut class_names
+        } else {
+            &mut instance_names
+        };
+        target.insert(make_property_getter_name(&cls.name, &p.name));
         if !p.readonly {
-            names.insert(make_property_setter_name(&cls.name, &p.name));
+            target.insert(make_property_setter_name(&cls.name, &p.name));
         }
     }
-    names
+    PropertyNameSets {
+        class_property_names: class_names,
+        instance_property_names: instance_names,
+    }
 }
 
 fn method_collides_with_property(
@@ -255,14 +344,67 @@ fn map_param_contract(type_ref: &TypeRef) -> String {
 }
 
 /// Map a TypeRef to a contract for class wrapper return position.
+///
+/// `TypeRefKind::Class { name }` emits a class-specific predicate (e.g. `nsview?`)
+/// that checks `isKindOfClass:` at runtime. Object returns are permitted to be
+/// nil by default: many Cocoa properties (PDFView.document, NSTableView.dataSource,
+/// NSWindow.firstResponder, …) legitimately return nil until the object is
+/// configured, so the contract is `(or/c <class-pred>? objc-nil?)` unless the
+/// IR explicitly marks the return as `_Nonnull`.
 fn map_return_contract(type_ref: &TypeRef) -> String {
     match &type_ref.kind {
-        // Object returns are wrapped by wrap-objc-object → opaque value
-        TypeRefKind::Class { .. } | TypeRefKind::Id | TypeRefKind::Instancetype => {
-            "any/c".to_string()
+        TypeRefKind::Class { name, .. } => {
+            let pred = format!("{}?", class_name_to_lowercase(name));
+            format!("(or/c {pred} objc-nil?)")
         }
-        // Everything else delegates to the standard contract mapper
+        TypeRefKind::Id | TypeRefKind::Instancetype => "any/c".to_string(),
         _ => map_contract(type_ref, true),
+    }
+}
+
+/// Make the predicate name for a class: "NSView" → "nsview?".
+fn make_class_predicate_name(class_name: &str) -> String {
+    format!("{}?", class_name_to_lowercase(class_name))
+}
+
+/// Collect class names referenced in return types of properties and methods.
+/// Returns a sorted, deduplicated set of ObjC class names that need
+/// predicate definitions in the generated file.
+fn collect_return_type_class_names(
+    properties: &[&Property],
+    init_methods: &[&Method],
+    instance_methods: &[&Method],
+    class_methods: &[&Method],
+) -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for p in properties {
+        if let TypeRefKind::Class { name, .. } = &p.property_type.kind {
+            names.insert(name.clone());
+        }
+    }
+    let all_methods = init_methods
+        .iter()
+        .chain(instance_methods.iter())
+        .chain(class_methods.iter());
+    for m in all_methods {
+        if let TypeRefKind::Class { name, .. } = &m.return_type.kind {
+            names.insert(name.clone());
+        }
+    }
+    names.into_iter().collect()
+}
+
+/// Emit inline predicate definitions for class-specific return contracts.
+/// Each predicate is backed by `objc-instance-of?` from `objc-base.rkt`.
+fn emit_class_predicates(w: &mut CodeWriter, class_names: &[String]) {
+    if class_names.is_empty() {
+        return;
+    }
+    w.blank_line();
+    w.line(";; --- Class predicates ---");
+    for name in class_names {
+        let pred = make_class_predicate_name(name);
+        write_line!(w, "(define ({pred} v) (objc-instance-of? v \"{name}\"))");
     }
 }
 
@@ -293,6 +435,8 @@ fn build_export_contracts(
     init_methods: &[&Method],
     instance_methods: &[&Method],
     class_methods: &[&Method],
+    class_method_disambig: &std::collections::HashSet<String>,
+    class_property_disambig: &std::collections::HashSet<String>,
 ) -> Vec<ExportContract> {
     let mut exports = Vec::new();
 
@@ -313,8 +457,13 @@ fn build_export_contracts(
 
     // Properties
     for p in properties {
+        let disambig = p.class_property && class_property_disambig.contains(&p.name);
         // Getter
-        let getter = make_property_getter_name(&cls.name, &p.name);
+        let getter = if p.class_property {
+            make_class_property_getter_name(&cls.name, &p.name, disambig)
+        } else {
+            make_property_getter_name(&cls.name, &p.name)
+        };
         let return_contract = map_return_contract(&p.property_type);
         let contract = if p.class_property {
             format_arrow_contract(&[], &return_contract)
@@ -328,7 +477,11 @@ fn build_export_contracts(
 
         // Setter (if not readonly)
         if !p.readonly {
-            let setter = make_property_setter_name(&cls.name, &p.name);
+            let setter = if p.class_property {
+                make_class_property_setter_name(&cls.name, &p.name, disambig)
+            } else {
+                make_property_setter_name(&cls.name, &p.name)
+            };
             let value_contract = map_param_contract(&p.property_type);
             let self_arg = if p.class_property {
                 vec![]
@@ -363,7 +516,11 @@ fn build_export_contracts(
         if !is_supported_method(m) {
             continue;
         }
-        let name = make_method_name(&cls.name, &m.selector);
+        let name = make_class_method_name(
+            &cls.name,
+            &m.selector,
+            class_method_disambig.contains(&m.selector),
+        );
         let param_contracts: Vec<String> = m
             .params
             .iter()
@@ -593,10 +750,15 @@ fn emit_property(
     w: &mut CodeWriter,
     class_name: &str,
     prop: &Property,
+    disambiguate: bool,
     sig_map: &SignatureMap,
     mapper: &dyn FfiTypeMapper,
 ) {
-    let getter_name = make_property_getter_name(class_name, &prop.name);
+    let getter_name = if prop.class_property {
+        make_class_property_getter_name(class_name, &prop.name, disambiguate)
+    } else {
+        make_property_getter_name(class_name, &prop.name)
+    };
     let ffi_type = mapper.map_type(&prop.property_type, false);
 
     // Getter
@@ -636,7 +798,11 @@ fn emit_property(
             first_char.to_uppercase(),
             &prop.name[first_char.len_utf8()..]
         );
-        let setter_name = make_property_setter_name(class_name, &prop.name);
+        let setter_name = if prop.class_property {
+            make_class_property_setter_name(class_name, &prop.name, disambiguate)
+        } else {
+            make_property_setter_name(class_name, &prop.name)
+        };
 
         // Class-method (static) property setters take no receiver — the
         // class metaobject is the target. Instance setters take `self`.
@@ -707,6 +873,7 @@ fn emit_method(
     class_name: &str,
     method: &Method,
     is_class_method: bool,
+    disambiguate: bool,
     sig_map: &SignatureMap,
     mapper: &dyn FfiTypeMapper,
 ) {
@@ -719,7 +886,11 @@ fn emit_method(
         .iter()
         .map(|p| camel_to_kebab(&p.name))
         .collect();
-    let fn_name = make_method_name(class_name, &method.selector);
+    let fn_name = if is_class_method {
+        make_class_method_name(class_name, &method.selector, disambiguate)
+    } else {
+        make_method_name(class_name, &method.selector)
+    };
     let ret_is_id = returns_object_type(method, mapper);
     let ret_is_void = returns_void(method, mapper);
 
@@ -1821,6 +1992,199 @@ mod tests {
         assert!(
             output.contains("(sel_registerName action)"),
             "SEL param should be wrapped with sel_registerName in body, got:\n{output}"
+        );
+    }
+
+    // --- NSScreen duplicate property deduplication ---
+
+    #[test]
+    fn test_effective_properties_deduplicates_by_racket_name() {
+        // ObjC extracts "CGDirectDisplayID", Swift extracts "cgDirectDisplayID"
+        // Both map to the same Racket name "nsscreen-cg-direct-display-id"
+        let cls = Class {
+            name: "NSScreen".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![
+                make_test_property(
+                    "CGDirectDisplayID",
+                    TypeRefKind::Primitive {
+                        name: "uint32".into(),
+                    },
+                    true,
+                ),
+                make_test_property(
+                    "cgDirectDisplayID",
+                    TypeRefKind::Primitive {
+                        name: "uint32".into(),
+                    },
+                    true,
+                ),
+            ],
+            methods: vec![],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let props = effective_properties(&cls);
+        assert_eq!(
+            props.len(),
+            1,
+            "Properties with the same Racket name should be deduplicated, got: {:?}",
+            props.iter().map(|p| &p.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_nsscreen_no_duplicate_define() {
+        let cls = Class {
+            name: "NSScreen".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![
+                make_test_property(
+                    "CGDirectDisplayID",
+                    TypeRefKind::Primitive {
+                        name: "uint32".into(),
+                    },
+                    true,
+                ),
+                make_test_property(
+                    "cgDirectDisplayID",
+                    TypeRefKind::Primitive {
+                        name: "uint32".into(),
+                    },
+                    true,
+                ),
+            ],
+            methods: vec![],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "AppKit");
+        let count = output
+            .matches("(define (nsscreen-cg-direct-display-id")
+            .count();
+        assert_eq!(
+            count, 1,
+            "Should have exactly one define for nsscreen-cg-direct-display-id, got {count}"
+        );
+    }
+
+    // --- NSMenuItem class method vs instance property collision ---
+
+    #[test]
+    fn test_class_method_not_suppressed_by_instance_property() {
+        // +separatorItem (class method returning NSMenuItem*) should NOT be
+        // suppressed by the instance property "separatorItem" (bool)
+        let cls = Class {
+            name: "NSMenuItem".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![make_test_property(
+                "separatorItem",
+                TypeRefKind::Primitive {
+                    name: "bool".into(),
+                },
+                true,
+            )],
+            methods: vec![
+                make_test_method(
+                    "separatorItem",
+                    true, // class method
+                    false,
+                    vec![],
+                    TypeRef {
+                        nullable: false,
+                        kind: TypeRefKind::Class {
+                            name: "NSMenuItem".into(),
+                            framework: None,
+                            params: vec![],
+                        },
+                    },
+                ),
+                make_test_method(
+                    "isSeparatorItem",
+                    false, // instance method
+                    false,
+                    vec![],
+                    TypeRef {
+                        nullable: false,
+                        kind: TypeRefKind::Primitive {
+                            name: "bool".into(),
+                        },
+                    },
+                ),
+            ],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "AppKit");
+
+        // The class method +separatorItem should be emitted (returns an object)
+        assert!(
+            output.contains("(define (nsmenuitem-separator-item)"),
+            "Class method +separatorItem should be emitted as nsmenuitem-separator-item (no self param), got:\n{output}"
+        );
+        // The instance property getter should be suppressed (class method wins)
+        assert!(
+            !output.contains("(define (nsmenuitem-separator-item self)"),
+            "Instance property getter should be suppressed when class method claims the same name, got:\n{output}"
+        );
+        // Exactly one define for the name
+        let count = output.matches("(define (nsmenuitem-separator-item").count();
+        assert_eq!(
+            count, 1,
+            "Should have exactly one define for nsmenuitem-separator-item, got {count}"
+        );
+        // The instance method isSeparatorItem should also be emitted
+        assert!(
+            output.contains("(define (nsmenuitem-is-separator-item self)"),
+            "Instance method isSeparatorItem should be emitted, got:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_class_method_suppressed_by_class_property() {
+        // A class method SHOULD still be suppressed if it collides with a class property
+        let cls = Class {
+            name: "NSFont".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![make_test_class_property(
+                "systemFontSize",
+                TypeRefKind::Primitive {
+                    name: "double".into(),
+                },
+                true,
+            )],
+            methods: vec![make_test_method(
+                "systemFontSize",
+                true, // class method
+                false,
+                vec![],
+                TypeRef {
+                    nullable: false,
+                    kind: TypeRefKind::Primitive {
+                        name: "double".into(),
+                    },
+                },
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "AppKit");
+        let count = output.matches("(define (nsfont-system-font-size").count();
+        assert_eq!(
+            count, 1,
+            "Class property and class method with same name should produce only one define, got {count}"
         );
     }
 }

@@ -74,7 +74,17 @@ pub enum TypeRefKind {
         return_type: Box<TypeRef>,
     },
 
-    /// Raw C pointer (e.g., `const char *`, `void *`).
+    /// C string pointer (`const char *` only).
+    ///
+    /// Non-const `char *` (output buffers) maps to `Pointer` instead, since
+    /// auto-converting string types lose writes to the buffer.
+    /// Distinguished from generic `Pointer` so emitters can use auto-converting
+    /// string types (e.g., Racket's `_string` which auto-marshals between Racket
+    /// strings and C strings).
+    #[serde(rename = "c_string")]
+    CString,
+
+    /// Raw C pointer (e.g., `void *`, `int *`).
     #[serde(rename = "pointer")]
     Pointer,
 

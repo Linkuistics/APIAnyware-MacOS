@@ -12,16 +12,23 @@
 (define _fw-lib (ffi-lib "/System/Library/Frameworks/Foundation.framework/Foundation"))
 (define _objc-lib (ffi-lib "libobjc"))
 
+
+;; --- Class predicates ---
+(define (nsarray? v) (objc-instance-of? v "NSArray"))
+(define (nsdata? v) (objc-instance-of? v "NSData"))
+(define (nsstring? v) (objc-instance-of? v "NSString"))
+(define (nsurl? v) (objc-instance-of? v "NSURL"))
+(define (nsuserdefaults? v) (objc-instance-of? v "NSUserDefaults"))
 (provide NSUserDefaults)
 (provide/contract
   [make-nsuserdefaults-init-with-suite-name (c-> (or/c string? objc-object? #f) any/c)]
-  [nsuserdefaults-standard-user-defaults (c-> any/c)]
+  [nsuserdefaults-standard-user-defaults (c-> (or/c nsuserdefaults? objc-nil?))]
   [nsuserdefaults-volatile-domain-names (c-> objc-object? any/c)]
-  [nsuserdefaults-url-for-key (c-> objc-object? (or/c string? objc-object? #f) any/c)]
+  [nsuserdefaults-url-for-key (c-> objc-object? (or/c string? objc-object? #f) (or/c nsurl? objc-nil?))]
   [nsuserdefaults-add-suite-named! (c-> objc-object? (or/c string? objc-object? #f) void?)]
-  [nsuserdefaults-array-for-key (c-> objc-object? (or/c string? objc-object? #f) any/c)]
+  [nsuserdefaults-array-for-key (c-> objc-object? (or/c string? objc-object? #f) (or/c nsarray? objc-nil?))]
   [nsuserdefaults-bool-for-key (c-> objc-object? (or/c string? objc-object? #f) boolean?)]
-  [nsuserdefaults-data-for-key (c-> objc-object? (or/c string? objc-object? #f) any/c)]
+  [nsuserdefaults-data-for-key (c-> objc-object? (or/c string? objc-object? #f) (or/c nsdata? objc-nil?))]
   [nsuserdefaults-dictionary-for-key (c-> objc-object? (or/c string? objc-object? #f) any/c)]
   [nsuserdefaults-dictionary-representation (c-> objc-object? any/c)]
   [nsuserdefaults-double-for-key (c-> objc-object? (or/c string? objc-object? #f) real?)]
@@ -45,7 +52,7 @@
   [nsuserdefaults-set-url-for-key! (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
   [nsuserdefaults-set-volatile-domain-for-name! (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
   [nsuserdefaults-string-array-for-key (c-> objc-object? (or/c string? objc-object? #f) any/c)]
-  [nsuserdefaults-string-for-key (c-> objc-object? (or/c string? objc-object? #f) any/c)]
+  [nsuserdefaults-string-for-key (c-> objc-object? (or/c string? objc-object? #f) (or/c nsstring? objc-nil?))]
   [nsuserdefaults-synchronize (c-> objc-object? boolean?)]
   [nsuserdefaults-volatile-domain-for-name (c-> objc-object? (or/c string? objc-object? #f) any/c)]
   [nsuserdefaults-reset-standard-user-defaults! (c-> void?)]

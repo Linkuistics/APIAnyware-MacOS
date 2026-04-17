@@ -38,12 +38,19 @@ use apianyware_macos_types::ir::Framework;
 
 const RUNTIME_FILES: &[&str] = &[
     "app-menu.rkt",
+    "ax-helpers.rkt",
     "block.rkt",
+    "cf-bridge.rkt",
+    "cgevent-helpers.rkt",
     "coerce.rkt",
     "delegate.rkt",
     "dynamic-class.rkt",
     "main-thread.rkt",
+    "nsevent-helpers.rkt",
+    "nsview-helpers.rkt",
     "objc-base.rkt",
+    "objc-interop.rkt",
+    "spi-helpers.rkt",
     "swift-helpers.rkt",
     "type-mapping.rkt",
     "variadic-helpers.rkt",
@@ -60,6 +67,9 @@ const REQUIRED_FRAMEWORKS: &[&str] = &[
     "libdispatch",
     "Network",
     "NetworkExtension",
+    "PDFKit",
+    "SceneKit",
+    "WebKit",
 ];
 
 const APPS: &[&str] = &[
@@ -67,6 +77,9 @@ const APPS: &[&str] = &[
     "counter",
     "ui-controls-gallery",
     "file-lister",
+    "drawing-canvas",
+    "pdfkit-viewer",
+    "scenekit-viewer",
 ];
 
 /// Library files exercised via `dynamic-require`. Each entry is a path
@@ -115,6 +128,9 @@ const LIBRARY_LOAD_CHECKS: &[&str] = &[
     "generated/oo/coregraphics/functions.rkt",
     "generated/oo/coretext/constants.rkt",
     "generated/oo/appkit/nsmenuitem.rkt",
+    "generated/oo/appkit/nsevent.rkt",
+    "generated/oo/appkit/nsscreen.rkt",
+    "generated/oo/webkit/wkwebview.rkt",
     "generated/oo/applicationservices/functions.rkt",
     "generated/oo/libdispatch/functions.rkt",
     "generated/oo/libdispatch/constants.rkt",
@@ -123,6 +139,13 @@ const LIBRARY_LOAD_CHECKS: &[&str] = &[
     "generated/oo/network/constants.rkt",
     "generated/oo/corespotlight/constants.rkt",
     "runtime/dynamic-class.rkt",
+    "runtime/nsevent-helpers.rkt",
+    "runtime/nsview-helpers.rkt",
+    "runtime/cf-bridge.rkt",
+    "runtime/ax-helpers.rkt",
+    "runtime/cgevent-helpers.rkt",
+    "runtime/objc-interop.rkt",
+    "runtime/spi-helpers.rkt",
 ];
 
 fn crate_root() -> PathBuf {
@@ -370,6 +393,59 @@ fn runtime_load_apps_via_raco_make() {
         APPS.len(),
         APPS.join(", ")
     );
+}
+
+#[test]
+fn runtime_block_nil_guard() {
+    if skip_unless_enabled("runtime_block_nil_guard") {
+        return;
+    }
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    copy_runtime(&temp.path().join("runtime")).expect("copy runtime");
+    copy_lib(&temp.path().join("lib")).expect("copy lib");
+
+    let script = "\
+#lang racket/base
+(require ffi/unsafe \"runtime/block.rkt\")
+
+;; Test 1: make-objc-block with #f returns (values #f #f)
+(define-values (block-ptr block-id)
+  (make-objc-block #f (list) _void))
+(unless (and (not block-ptr) (not block-id))
+  (eprintf \"FAIL: make-objc-block #f should return (values #f #f), got ~a ~a~n\" block-ptr block-id)
+  (exit 1))
+
+;; Test 2: free-objc-block with #f is a no-op
+(free-objc-block #f)
+
+;; Test 3: call-with-objc-block with #f passes #f to body
+(define-values (result cb-id)
+  (call-with-objc-block #f (list) _void (lambda (bp) bp)))
+(unless (and (not result) (not cb-id))
+  (eprintf \"FAIL: call-with-objc-block #f should yield #f, got ~a ~a~n\" result cb-id)
+  (exit 1))
+
+(printf \"OK: make-objc-block nil guard — 3 checks passed~n\")
+";
+
+    let script_path = temp.path().join("__nil_guard_test.rkt");
+    std::fs::write(&script_path, script).expect("write nil guard test script");
+
+    let output = Command::new("racket")
+        .arg(&script_path)
+        .output()
+        .expect("invoke racket");
+
+    if !output.status.success() {
+        panic!(
+            "make-objc-block nil guard test failed.\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+
+    eprintln!("{}", String::from_utf8_lossy(&output.stdout).trim_end());
 }
 
 /// Encode a Rust string as a Racket string literal, escaping `"` and `\`.
