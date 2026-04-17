@@ -341,3 +341,18 @@ Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
 
 ### `bool`/`BOOL` returns emit `_uint8`, not `_bool` (generator bug)
 The emitter maps `bool`/`BOOL` return types to `_uint8` instead of `_bool`. Racket's `_uint8` returns an integer, so callers must coerce manually (`(not (zero? v))`) or risk silent truthy bugs. Fix requires the FFI type mapper to route `TypeRefKind::Primitive { kind: Bool }` returns to `_bool`. Filed in core backlog.
+
+### Class-return contracts are non-nullable (generator bug)
+Object-returning properties get contracts like `pdfdocument?` via `collect_return_type_class_names` + `map_return_contract`. The generated predicate (`(define (pdfdocument? v) (objc-instance-of? v "PDFDocument"))`) returns `#f` for a NULL-pointered `objc-object`, so any Cocoa property that returns nil for "no value yet" (e.g. `PDFView.document` before assignment, `PDFView.currentPage` on empty view, `NSTableView.dataSource` before wiring, `NSWindow.firstResponder` under rare timing) fails its own return contract. **Workaround:** track the object in Racket state instead of asking the wrapper back (see PDFKit Viewer's `current-document`), or wrap the call in `(with-handlers ([exn:fail:contract? (lambda _ …)]) …)` to fall back. Filed in core backlog 2026-04-17; fix is to default object returns to `(or/c <class-pred>? objc-null?)` unless the IR marks the return nonnull.
+
+### `list->nsarray` / `hash->nsdictionary` return raw cpointers (contract gap)
+Both helpers return the raw `(tell (tell NSMutableArray alloc) init)` pointer. Class-wrapper param contracts (`(or/c string? objc-object? #f)`, which excludes `cpointer?` per the 2026-04-16 tightening) reject that at the call boundary. **Caller-side workaround:** `(wrap-objc-object (list->nsarray …) #:retained #t)` — `alloc+init` is +1 retained, so the wrapper's finalizer balances correctly. Filed in core backlog 2026-04-17; fix is to move the wrap inside the helpers themselves.
+
+### `PDFViewPageChangedNotification` observer pattern
+First app (PDFKit Viewer) to use NSNotificationCenter. Key bits:
+1. The notification name constant is generated as `(get-ffi-obj 'PDFViewPageChangedNotification _fw-lib _id)` — a raw `_id`-typed cpointer. `nsnotificationcenter-add-observer-selector-name-object!`'s `name` contract is `(or/c string? objc-object? #f)` — raw cpointers rejected. Wrap via `(borrow-objc-object PDFViewPageChangedNotification)` — the constant's lifetime is tied to the dylib, so no retain/release is needed.
+2. The observer is a `make-delegate` with a `pageChanged:` handler (selector can be any valid ObjC identifier ending in `:`) and `#:param-types (hash "pageChanged:" '(object))` so the NSNotification arg arrives as an `objc-object?` wrapper (not needed here since we don't read the notification, but harmless).
+3. Keep the `make-delegate` result in a module-level variable — Cocoa holds observers weakly; a GC'd observer silently stops firing.
+
+### Sample app registration in runtime load harness
+Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app therefore requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports any framework not already built by the hermetic tree. For PDFKit Viewer: added `"PDFKit"` to `REQUIRED_FRAMEWORKS` and `"pdfkit-viewer"` + `"drawing-canvas"` (previously missed) to `APPS`. All 6 sample apps now exercised via `raco make` under the harness (~55s for the full run).

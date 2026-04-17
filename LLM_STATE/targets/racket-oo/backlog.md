@@ -122,7 +122,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 #### PDFKit Viewer
-- **Status:** not_started
+- **Status:** done
 - **Dependencies:** none — PDFKit collection already lands via top-level
   symlink-resolved discovery (`Quartz.framework/Frameworks/PDFKit.framework`
   is a symlink; libclang resolves to canonical top-level path; 29 classes,
@@ -133,7 +133,26 @@ Runtime location: generation/targets/racket-oo/runtime/
   whether a non-AppKit/WebKit/SceneKit framework's generated bindings work
   end-to-end. Generated bindings live at `generation/targets/racket-oo/generated/oo/pdfkit/`.
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-- **Results:** _pending_
+- **Results:** Landed 2026-04-17. First sample app to exercise PDFKit
+  bindings (`PDFView`, `PDFDocument`) end-to-end and the first to observe
+  a framework `NSNotification` (`PDFViewPageChangedNotification`). Full
+  VM validation via GUIVisionVMDriver: empty state ("No PDF loaded",
+  nav buttons disabled), NSOpenPanel with `.pdf` filter working (other
+  files greyed out), PDF renders, ◀/▶ navigation advances pages, page
+  label refreshes from the notification observer, button enable/disable
+  syncs at document boundaries. `PDFKit` added to the runtime-load
+  harness's `REQUIRED_FRAMEWORKS`; `pdfkit-viewer` and `drawing-canvas`
+  added to `APPS` — all 6 sample apps now compile cleanly under `raco make`
+  in the harness (53s). Two generator gaps discovered via this app: (1)
+  `pdfview-document` / `pdfview-current-page` return contracts require
+  `pdfdocument?` / `pdfpage?` but PDFView returns nil when empty —
+  nullable class-return predicates are missing. Workaround in-app:
+  track `current-document` in Racket state; wrap `pdfview-current-page`
+  in `with-handlers` for `exn:fail:contract?`. (2) `list->nsarray`
+  returns a raw ObjC pointer; class-wrapper param contracts reject raw
+  cpointers (`(or/c string? objc-object? #f)`). Workaround: wrap result
+  in `(wrap-objc-object … #:retained #t)`. Both gaps filed in core
+  backlog.
 
 ### Future Work
 
