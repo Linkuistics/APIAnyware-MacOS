@@ -100,7 +100,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 #### SceneKit Viewer
-- **Status:** not_started
+- **Status:** done
 - **Dependencies:** none
 - **Description:** 3D scene viewer with animated geometry. SCNView (3D viewport),
   SCNScene, SCNNode, SCNBox/SCNSphere/SCNTorus/SCNCylinder, SCNMaterial,
@@ -112,7 +112,33 @@ Runtime location: generation/targets/racket-oo/runtime/
   confirmed multi-override `make-dynamic-subclass` works. Both patterns needed
   here. No known generator blockers.
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-- **Results:** _pending_
+- **Results:** Landed 2026-04-17. `apps/scenekit-viewer/scenekit-viewer.rkt` +
+  `knowledge/apps/scenekit-viewer/spec.md`. VM-validated end-to-end via
+  GUIVisionVMDriver: cube/sphere geometry swap, continuous NSColorPanel
+  color change (red → blue visible on sphere), rotation animation active.
+  `raco make` harness now at 7 apps (~70s). SceneKit added to
+  `REQUIRED_FRAMEWORKS`. Bundle ID `com.linkuistics.SceneKitViewer`, bundle
+  1.1 MB (only `scenekit/` + `appkit/` under generated/).
+  **Novel pattern this surfaced:** two protocol-inherited methods
+  (`SCNNode.runAction:` on SCNActionable, `SCNView.setAutoenables-
+  DefaultLighting:` on SCNSceneRenderer) not emitted on the class binding.
+  Workaround: module-local typed `objc_msgSend` aliases (app-menu.rkt
+  pattern). **Generator gap:** protocol-inherited methods are a distinct
+  axis from superclass-inherited methods (core-backlog "Emit inherited
+  methods from NSView/NSControl superclasses" addresses only superclass
+  inheritance). Filing a matching protocol-inheritance entry in core
+  backlog during triage is warranted.
+  **Avoided entirely:** SCNVector3 cstruct gap (not in `type-mapping.rkt`,
+  not in `is_known_geometry_struct`). Path: `allowsCameraControl = #t`
+  auto-places camera; geometry sits at origin; rotation uses
+  `rotateByX:y:z:duration:` which takes scalar CGFloats not a vector.
+  Spec documents this tradeoff. If a future app needs explicit camera /
+  light placement, SCNVector3 becomes a required type-mapping.rkt entry.
+  **Established pattern from this app:** `apply-current-color!` re-applies
+  the user's color to a freshly-generated firstMaterial after a geometry
+  swap. Without it, every picker change resets color to white. Worth
+  adding to memory as "`SCN*` geometry swap resets firstMaterial — track
+  color in Racket state, not on the geometry".
 
 #### Mini Browser
 - **Status:** not_started
@@ -149,14 +175,56 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 #### Racket Class System Analysis
 - **Status:** not_started
-- **Dependencies:** Note Editor, Mini Browser, and SceneKit Viewer complete
-  (Drawing Canvas done; real usage reveals which patterns matter)
+- **Dependencies:** Note Editor and Mini Browser complete (SceneKit Viewer
+  done 2026-04-17; Drawing Canvas done; real usage reveals which patterns
+  matter)
 - **Description:** Analyse the current racket-oo emitter output and runtime to
   determine whether it truly models macOS APIs using Racket's class system
   (`racket/class`) as much as possible — e.g., using `class*`, `define/public`,
   `inherit`, `super-new`, interfaces for protocols, mixins for categories.
   Identify where the current approach falls short of idiomatic Racket OO and
   propose concrete changes to make better use of the class system.
+- **Results:** _pending_
+
+#### Generator Bug Fixes (Batch — from Modaliser Learnings)
+- **Status:** not_started
+- **Dependencies:** none
+- **Description:** Four generator bugs confirmed via Modaliser usage (filed 2026-04-17).
+  All have caller-side workarounds; upstream fixes belong in the emitter.
+  1. **`nsmenuitem-separator-item`** — `separatorItem` class factory method emitted as
+     instance property. Fix: detect class factory methods in `emit_class.rs`, exclude
+     from property emission.
+  2. **`nsscreen.rkt` duplicate `define`** — prevents file from loading. Fix: dedup gap
+     in `effective_properties` or `emit_class.rs`.
+  3. **`CFStringGetCStringPtr` return contract** — `string?` should be `(or/c string? #f)`;
+     the function legitimately returns NULL on encoding mismatch. Fix: nullable CString
+     returns always emit `(or/c string? #f)`.
+  4. **Integer param widening** (`AXValueCreate`, `AXValueGetValue`, `CFNumberGetValue`) —
+     params emitted as `_uint64` where `_uint32`/`_int32` is correct. Fix: tighten the
+     integer-width mapping in `ffi_type_mapping.rs`.
+- **Results:** _pending_
+
+#### `spi-helpers.rkt` GC-malloc `free` Fix
+- **Status:** not_started
+- **Dependencies:** none
+- **Description:** `spi-helpers.rkt` calls `free` on a `(malloc …)` buffer — GC-managed
+  memory → SIGABRT at runtime. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 analogous
+  `free` calls removed already. Apply the same fix to `spi-helpers.rkt`: drop the
+  `free` call and let the GC reclaim. Filed 2026-04-17 from Modaliser learnings.
+- **Results:** _pending_
+
+#### Self-Contained App Bundling (Swift Stub Launcher)
+- **Status:** not_started
+- **Dependencies:** none
+- **Description:** Current `.app` bundles produced by `bundle-racket-oo` use absolute
+  symlinks into `generation/targets/racket-oo/`, making them machine-specific and
+  non-distributable. A distributable bundle needs: (1) bindings and runtime copied
+  verbatim (no symlinks), (2) dylib `@rpath` rewritten to `@executable_path/../Frameworks`
+  or equivalent, (3) a Swift stub launcher — ~15-line Swift file compiled with
+  `swiftc -O` that `execv`s into `/opt/homebrew/bin/racket` — so the bundle has its
+  own CDHash and independent macOS TCC permissions (camera, accessibility, etc.
+  prompt under the app's identity, not racket's). Implement in `bundle-racket-oo`
+  crate. Filed 2026-04-17 from Modaliser bundling observations.
 - **Results:** _pending_
 
 #### Developer Documentation

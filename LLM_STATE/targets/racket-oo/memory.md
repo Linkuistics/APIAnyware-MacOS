@@ -179,7 +179,7 @@ Variadic and inline functions are skipped — they can't be bound via `get-ffi-o
 - VirtioFS shared filesystem can serve stale files — use base64 transfer or restart VM
 - Always `pkill -9 -f racket` before relaunching apps
 - Racket module compilation very slow on first run (~5+ min); cached in `compiled/`
-- GUIVisionVMDriver agent `exec` can wedge after first use — SSH is the reliable fallback
+- GUIVisionVMDriver agent `exec` is reliable for long-running commands (wedge fixed 2026-04-17, re-confirmed 2026-04-17 against `brew install minimal-racket`). The `timedOut: true` response field signals a deadline-expired run — distinct from a non-zero exit code; the underlying command keeps running in the VM, so poll for completion rather than switching tools. **Do not use SSH** — `exec` is the right tool; SSH is not a supported fallback.
 
 ### Snapshot testing infrastructure
 `load_enriched_framework(name)` in `snapshot_test.rs` generalizes framework loading — adding a new framework is a file list and test function. AppKit suite has 23 curated golden files covering key class hierarchies (NSResponder→NSView→NSControl→NSButton, NSWindow, table view, menus, text, layout). Rich classes like NSButton and NSWindow exercise more typed message send variants and geometry struct handling than Foundation classes.
@@ -250,8 +250,28 @@ Create `apps/<name>/<name>.rkt` and `knowledge/apps/<name>/spec.md` with `# <Dis
 ### Accessibility menu drill-down needs a mouse click
 `guivision agent snapshot --window "Menu Bar"` only surfaces the top-level menu items (Apple, app-name). The submenu is not in the accessibility tree until the menu opens. To verify the full menu content, click the menu title via VNC (`guivision input click --connect spec.json X Y`) then `screenshot` the region. The agent's `press --role menu-item --label "Counter"` query returns `No element found matching query` because accessibility doesn't treat menu bar items as directly-pressable in the default snapshot mode.
 
-### GUIVisionVMDriver VNC password recovery
-`vm-start.sh --viewer` exports `GUIVISION_VNC_PASSWORD` but the value does NOT survive pipeline subshells — source the script with output redirected to a file (`source vm-start.sh > /tmp/start.log 2>&1`) so the env ends up in the parent shell. Persist `$GUIVISION_VNC`, `$GUIVISION_VNC_PASSWORD`, and `$GUIVISION_AGENT` to `/tmp/gv_*` files plus a `/tmp/gv_connect.json` connect spec; later `guivision` calls read them via `--connect /tmp/gv_connect.json` for authenticated VNC. The password is generated fresh per `tart run` — recovery after a lost sourcing requires re-booting the VM.
+### GUIVisionVMDriver per-VM connection spec (supports multiple VMs)
+As of 2026-04-18, `vm-start.sh` writes a per-VM spec to
+`$XDG_STATE_HOME/guivision/vms/<id>.json` (default:
+`~/.local/state/guivision/vms/<id>.json`), so multiple VMs can run
+concurrently with distinct ids. The old single `~/.guivision/connect.json`
+is gone.
+
+The VM id is auto-generated (`guivision-<hex>`) unless `--id <name>` is
+passed. `vm-start.sh` prints the id on stdout (so `ID=$(vm-start.sh ...)`
+captures it cleanly) and also logs instructions like
+`export GUIVISION_VM_ID=$ID`.
+
+CLI resolution order (highest priority first):
+  1. `--connect <path>` — explicit spec file
+  2. `--vm <id>` — resolves via `$XDG_STATE_HOME/guivision/vms/<id>.json`
+  3. `--vnc`/`--agent`/`--platform` explicit flags
+  4. `GUIVISION_VM_ID` env var
+  5. `GUIVISION_VNC`/`GUIVISION_VNC_PASSWORD`/`GUIVISION_AGENT` env vars
+
+Pick one of `--vm <id>` or `GUIVISION_VM_ID=<id>` and thread it through
+`Bash` calls — no manual `/tmp/gv_*` file-copying. `vm-stop.sh <id>`
+tears down a specific VM.
 
 ### Auto-terminating Cocoa-loop test pattern
 Tests entering `nsapplication-run` need a structured exit to avoid hanging the test runner:
@@ -334,10 +354,22 @@ Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
 `runtime/objc-interop.rkt` is a named-`provide` re-export of `ffi/unsafe` + `ffi/unsafe/objc` symbols. Wired into the runtime load harness. Listed in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
 
 ### Racket CS `malloc` returns GC memory; never `free`
-`(malloc …)` in Racket CS returns GC-tracked memory. Passing it to `free` causes SIGABRT because `free` expects C-heap pointers only. Do not call `free` on `(malloc …)` buffers — the GC reclaims them automatically. Only call `free` on memory returned by a C function that itself calls `malloc` internally. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 such `free` calls removed.
+`(malloc …)` in Racket CS returns GC-tracked memory. Passing it to `free` causes SIGABRT because `free` expects C-heap pointers only. Do not call `free` on `(malloc …)` buffers — the GC reclaims them automatically. Only call `free` on memory returned by a C function that itself calls `malloc` internally. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 such `free` calls removed. **`spi-helpers.rkt` has the same issue** — it calls `free` on a `(malloc …)` buffer; fix pending (filed 2026-04-17 from Modaliser learnings).
 
 ### NSEvent class/instance method name collision (generator bug)
 `NSEvent +modifierFlags` (class method) and `-modifierFlags` (instance method) both kebab-case to `nsevent-modifier-flags`, producing duplicate `define` forms. `nsevent.rkt` cannot be required at all. Filed in core backlog. Workaround: use raw `tell` for NSEvent properties (e.g. `locationInWindow`) instead of requiring the module. Blocked behind the broader class/instance selector-collision fix in `emit_class.rs`.
+
+### `nsmenuitem-separator-item` emitted as instance property (generator bug)
+`NSMenuItem.separatorItem` is a class factory method, but the generator emits it as an instance property getter — producing a `(nsmenuitem-separator-item self)` binding that fails at runtime. Workaround: `(tell NSMenuItem separatorItem)` directly. Fix: detect class factory methods in `emit_class.rs` and exclude them from property emission. Filed 2026-04-17 from Modaliser learnings.
+
+### `nsscreen.rkt` has duplicate `define` form (generator bug)
+`nsscreen.rkt` contains a duplicate `define` form that prevents the file from loading at all (`only-in` included). Workaround: use raw `tell` for all NSScreen calls. Filed 2026-04-17 from Modaliser learnings.
+
+### `CFStringGetCStringPtr` return contract too strict (generator bug)
+Generated contract requires `string?` return, but `CFStringGetCStringPtr` legitimately returns NULL when the internal encoding does not match the requested encoding — `_string` maps this to `#f`. The correct contract is `(or/c string? #f)`. Workaround: local override with `_pointer` return + NULL→slow-path fallback in `cfstring->string`. Fix: nullable CString returns should always emit `(or/c string? #f)`. Filed 2026-04-17 from Modaliser learnings.
+
+### Integer params widened to `_uint64` incorrectly (generator bug)
+Some integer parameters are emitted as `_uint64` where `_uint32` or `_int32` is correct. Known cases: `AXValueCreate`, `AXValueGetValue`, `CFNumberGetValue`. Zero-extension is lossless for small constants but the types are semantically wrong and widen the FFI contract. Workaround: local override bindings in callers. Filed 2026-04-17 from Modaliser learnings.
 
 ### `bool`/`BOOL` returns emit `_uint8`, not `_bool` (generator bug)
 The emitter maps `bool`/`BOOL` return types to `_uint8` instead of `_bool`. Racket's `_uint8` returns an integer, so callers must coerce manually (`(not (zero? v))`) or risk silent truthy bugs. Fix requires the FFI type mapper to route `TypeRefKind::Primitive { kind: Bool }` returns to `_bool`. Filed in core backlog.
