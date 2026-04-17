@@ -310,9 +310,12 @@ Single uppercase letter followed by lowercase chars (e.g., `ObjectType`, `KeyTyp
 
 ### AX, CGEvent, and SPI runtime helper files
 Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
-- `ax-helpers.rkt`: typed AX attribute access; `malloc`/`CFRelease` scoped internally (no `free` — see "Racket CS `malloc` returns GC memory").
-- `cgevent-helpers.rkt`: `CGEventTapCreate` + `CFRunLoop`; module-level `function-ptr` for GC stability (see "GCD main-thread dispatch"); tap fires on `CFRunLoopGetMain` so `_cprocedure` is safe without `#:async-apply` (see "`_cprocedure` callbacks unsafe from foreign OS threads").
+- `ax-helpers.rkt`: typed AX attribute access; `ax-get-attribute/raw` returns +1 owned CFTypeRef; `ax-get-attribute/array` calls `cfarray->list` with `_CFRetain` per element; `malloc`/`CFRelease` scoped internally (no `free` — see "Racket CS `malloc` returns GC memory").
+- `cgevent-helpers.rkt`: `CGEventTapCreate` + `CFRunLoop`; `make-cgevent-tap` accepts `#:on-disabled` keyword (default: auto-re-enables tap); tap pointer threaded via `tap-box` to break forward-reference cycle; exports `kCGEventTapDisabledByTimeout`/`kCGEventTapDisabledByUserInput`; module-level `function-ptr` for GC stability; tap fires on `CFRunLoopGetMain` so `_cprocedure` is safe without `#:async-apply` (see "`_cprocedure` callbacks unsafe from foreign OS threads").
 - `spi-helpers.rkt`: `_AXUIElementGetWindow` with graceful `#f` fallback.
+
+### `objc-interop.rkt` provides curated FFI symbol re-exports
+`runtime/objc-interop.rkt` is a named-`provide` re-export of `ffi/unsafe` + `ffi/unsafe/objc` symbols. Wired into the runtime load harness. Listed in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
 
 ### Racket CS `malloc` returns GC memory; never `free`
 `(malloc …)` in Racket CS returns GC-tracked memory. Passing it to `free` causes SIGABRT because `free` expects C-heap pointers only. Do not call `free` on `(malloc …)` buffers — the GC reclaims them automatically. Only call `free` on memory returned by a C function that itself calls `malloc` internally. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 such `free` calls removed.
