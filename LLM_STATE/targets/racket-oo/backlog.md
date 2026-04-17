@@ -10,7 +10,7 @@ emit `(tell #:type _void ...)` directly, closing the calling-convention gap that
 neither snapshot tests nor the runtime load harness can observe. **Runtime load
 verification harness** (`generation/crates/emit-racket-oo/tests/runtime_load_test.rs`):
 16 library `dynamic-require` checks, 10 required frameworks, plus `raco make` of
-all 4 sample apps, gated on `RUNTIME_LOAD_TEST=1` (~48s end-to-end). Class-property
+all 6 sample apps, gated on `RUNTIME_LOAD_TEST=1` (~55s end-to-end). Class-property
 setter arity bug fixed (2026-04-15) — setters now omit self for class properties.
 `_id` parameter contracts tightened with nullable marking (2026-04-15) — non-nullable
 params get 3-element union, nullable get 4-element with `#f`, matching `coerce-arg`'s
@@ -69,7 +69,9 @@ returns GC-tracked memory; `free` expects C-heap pointers. Removed all 9 `free`
 calls across 2 files. Modaliser FFI upstream blockers all landed (2026-04-17):
 `objc-interop.rkt` curated re-export module (21/21 harness checks), `ax-get-attribute/raw`
 and `ax-get-attribute/array` in `ax-helpers.rkt`, `make-cgevent-tap` `#:on-disabled`
-keyword with forward-reference tap-box plumbing.
+keyword with forward-reference tap-box plumbing. PDFKit Viewer landed 2026-04-17 —
+first app exercising PDFKit bindings and NSNotificationCenter observer pattern;
+6 apps now in `APPS` in the runtime load harness (~55s).
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -91,21 +93,9 @@ Runtime location: generation/targets/racket-oo/runtime/
   (completion block), NSOpenPanel, NSAlert (unsaved-changes), window dirty-state
   tracking. Exercises completion blocks, notification observation, and
   cross-framework rendering (AppKit + WebKit) — patterns no existing app tests.
-  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-- **Results:** _pending_
-
-#### Mini Browser
-- **Status:** not_started
-- **Dependencies:** `wkwebview.rkt` has a generator bug — `_NSEdgeInsets`
-  unbound due to `any_struct_type` not detecting `NSEdgeInsets` in WKWebView's
-  property set; the fix is tracked in the core backlog (filed 2026-04-16).
-  Workaround: use raw `tell` calls against WKWebView.
-- **Description:** Minimal web browser. WKWebView, WKNavigationDelegate (async
-  multi-step delegate: didStart → didFinish/didFail), NSURL/NSURLRequest,
-  back/forward/reload, NSProgressIndicator, NSAlert (error display).
-  Tests async multi-callback delegate pattern and cross-framework imports
-  (AppKit + WebKit + Foundation). Modaliser uses WKWebView for HTML rendering
-  but does NOT exercise WKNavigationDelegate or URL-based navigation.
+  NSNotificationCenter observer pattern is now established (PDFKit Viewer).
+  Completion block pattern (NSSavePanel `beginSheetModalForWindow:completionHandler:`)
+  is new territory — expect iteration on block-callback plumbing.
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
 
@@ -118,48 +108,37 @@ Runtime location: generation/targets/racket-oo/runtime/
   picker), NSColorPanel. "Wow factor" app — 3D rendering from Racket. Tests
   SceneKit framework end-to-end, chained object construction (scene graph),
   cross-framework NSView subclass, float-heavy API.
+  PDFKit Viewer confirmed non-AppKit frameworks work end-to-end; Drawing Canvas
+  confirmed multi-override `make-dynamic-subclass` works. Both patterns needed
+  here. No known generator blockers.
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
 
-#### PDFKit Viewer
-- **Status:** done
-- **Dependencies:** none — PDFKit collection already lands via top-level
-  symlink-resolved discovery (`Quartz.framework/Frameworks/PDFKit.framework`
-  is a symlink; libclang resolves to canonical top-level path; 29 classes,
-  3 protocols, 166 constants, 16 enums; `pdfview.rkt` loads cleanly).
-- **Description:** PDF viewer with page navigation and text search. PDFView,
-  PDFDocument, PDFPage, PDFSelection, NSNotificationCenter
-  (PDFViewPageChangedNotification), NSOpenPanel (filtered to .pdf). Tests
-  whether a non-AppKit/WebKit/SceneKit framework's generated bindings work
-  end-to-end. Generated bindings live at `generation/targets/racket-oo/generated/oo/pdfkit/`.
+#### Mini Browser
+- **Status:** not_started
+- **Dependencies:** `wkwebview.rkt` has a generator bug — `_NSEdgeInsets`
+  unbound due to `any_struct_type` not detecting `NSEdgeInsets` in WKWebView's
+  property set; root cause is `NSEdgeInsets` missing from `is_known_geometry_struct`
+  in `ffi_type_mapping.rs`. Fix tracked in core backlog (filed 2026-04-16).
+  **Workaround is functional**: use raw `tell` calls against WKWebView — skip
+  importing `wkwebview.rkt` entirely. Drawing Canvas used the same raw-`tell`
+  pattern for event handling, confirming the workaround is viable.
+- **Description:** Minimal web browser. WKWebView, WKNavigationDelegate (async
+  multi-step delegate: didStart → didFinish/didFail), NSURL/NSURLRequest,
+  back/forward/reload, NSProgressIndicator, NSAlert (error display).
+  Tests async multi-callback delegate pattern and cross-framework imports
+  (AppKit + WebKit + Foundation). Modaliser uses WKWebView for HTML rendering
+  but does NOT exercise WKNavigationDelegate or URL-based navigation.
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-- **Results:** Landed 2026-04-17. First sample app to exercise PDFKit
-  bindings (`PDFView`, `PDFDocument`) end-to-end and the first to observe
-  a framework `NSNotification` (`PDFViewPageChangedNotification`). Full
-  VM validation via GUIVisionVMDriver: empty state ("No PDF loaded",
-  nav buttons disabled), NSOpenPanel with `.pdf` filter working (other
-  files greyed out), PDF renders, ◀/▶ navigation advances pages, page
-  label refreshes from the notification observer, button enable/disable
-  syncs at document boundaries. `PDFKit` added to the runtime-load
-  harness's `REQUIRED_FRAMEWORKS`; `pdfkit-viewer` and `drawing-canvas`
-  added to `APPS` — all 6 sample apps now compile cleanly under `raco make`
-  in the harness (53s). Two generator gaps discovered via this app: (1)
-  `pdfview-document` / `pdfview-current-page` return contracts require
-  `pdfdocument?` / `pdfpage?` but PDFView returns nil when empty —
-  nullable class-return predicates are missing. Workaround in-app:
-  track `current-document` in Racket state; wrap `pdfview-current-page`
-  in `with-handlers` for `exn:fail:contract?`. (2) `list->nsarray`
-  returns a raw ObjC pointer; class-wrapper param contracts reject raw
-  cpointers (`(or/c string? objc-object? #f)`). Workaround: wrap result
-  in `(wrap-objc-object … #:retained #t)`. Both gaps filed in core
-  backlog.
+- **Results:** _pending_
 
 ### Future Work
 
 #### Framework Coverage Deepening
 - **Status:** not_started
 - **Dependencies:** none — "at least 2 more sample apps" dependency satisfied
-  (5 apps done: hello-window, counter, ui-controls-gallery, file-lister, drawing-canvas).
+  (6 apps done: hello-window, counter, ui-controls-gallery, file-lister,
+  drawing-canvas, pdfkit-viewer).
 - **Description:** Targeted tests for CoreGraphics, AVFoundation, MapKit beyond
   what sample apps cover. Scope TBD — may be better defined after app experience
   reveals which frameworks have surprising emitter edge cases. Note: the runtime
@@ -194,5 +173,7 @@ Runtime location: generation/targets/racket-oo/runtime/
   exposing a C callback type should carry a warning about the foreign-thread
   constraint. Also cover: `only-in` for generated binding subsets, auto-terminating
   Cocoa-loop test pattern, VNC/GUIVisionVMDriver workflow quirks (menu accessibility
-  drill-down requires VNC click, not agent snapshot alone).
+  drill-down requires VNC click, not agent snapshot alone), completion block
+  plumbing (NSSavePanel/NSOpenPanel), NSNotificationCenter observer lifetime
+  (keep delegate in module-level var — Cocoa holds observers weakly).
 - **Results:** _pending_
