@@ -16,26 +16,22 @@ entry triaged during a prior cycle. Provenance is recorded per-task in the
 pending cluster is `high → medium → low`; within a priority band, the
 listing order is a suggested work order, not a hard constraint.
 
-### Fix protocol emitter `method_return_kind` missing int/long primitives `[generation]` `[high]`
-- **Surfaced by:** racket-oo development (2026-04-16); `numberOfRowsInTableView:` (NSInteger/int64) was misclassified as void-returning in generated protocol files
-- **Symptom:** `emit_protocol.rs::method_return_kind` handles only void, bool, and id returns. All other primitive types (int32, int64, uint32, uint64, etc.) fall through to the "void" default. Protocol methods returning NSInteger, NSUInteger, or any primitive appear in generated bindings as void-returning, producing incorrect or crashing call sites.
-- **Suspected root cause:** The match arms in `method_return_kind` (around line 148 of `emit_protocol.rs`) are incomplete. The ObjC path has full primitive coverage in class emitters but the protocol emitter was not updated in lockstep.
-- **Fix direction:** Add int32 → `'int`, int64 → `'long` (and their unsigned counterparts) branches to `method_return_kind`. Cross-check against the full primitive coverage in `emit_class.rs` to ensure parity.
-- **Scope:** Change confined to `emit_protocol.rs`. Affects all language targets that consume generated protocol files — not just racket-oo. Regenerate protocol bindings for Foundation, AppKit, WebKit after the fix and verify `numberOfRowsInTableView:` and similar integer-returning delegate methods have correct return types.
+### Add Racket `.app` bundler for distributable builds `[generation]` `[medium]`
+- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-17); Modaliser's `.app` bundle currently uses absolute symlinks into the APIAnyware-MacOS source tree, making it machine-specific and non-distributable
+- **Symptom:** Racket app bundles built against APIAnyware-MacOS bindings symlink `bindings/` and `runtime/` from the source tree. The bundle cannot be sent to another machine or deployed without path surgery — the stub-launcher handles CDHash uniqueness but not self-contained distribution.
+- **What's needed:** A general Racket `.app` bundler that: (1) copies required `bindings/` and `runtime/` `.rkt` files into the `.app` bundle under `Contents/Resources/`; (2) patches dylib `@rpath` entries to be self-contained; (3) integrates with the existing Swift stub compilation workflow. Natural home: a new crate or tool in `generation/crates/` alongside `stub-launcher`.
+- **Fix direction:** Survey what Modaliser's `.app` currently symlinks. Enumerate the minimal transitive closure of `bindings/` and `runtime/` files. Design the bundler to copy them and rewrite `raco` collection paths or use `PLTCOLLECTS` to point inside the bundle. Coordinate with `stub-launcher` (already handles the Swift/CDHash step) so the two tools compose cleanly.
+- **Scope:** New generation-layer tooling only. Does not block runtime correctness — only distributable builds. `stub-launcher` already exists; this extends the bundling story from "unique CDHash" to "fully self-contained `.app`".
 
-### Fix class-method vs instance-property misclassification in IR / emitter `[generation]` `[high]`
+### Fix class-method vs instance-property misclassification in IR / emitter `[generation]` `[done]`
+- **Completed:** 2026-04-18
 - **Surfaced by:** racket-oo development (2026-04-16); `NSMenuItem +separatorItem` was emitted as an instance property instead of a class method
-- **Symptom:** `nsmenuitem.rkt` (and likely other generated class files) treats `+separatorItem` as an instance property, making the generated `nsmenuitem-separator-item` accessor unusable. The workaround is `(tell NSMenuItem separatorItem)` directly.
-- **Suspected root cause:** Either (a) the IR marks the method with incorrect `is_class_method` / `is_instance_method` flags at extraction time, or (b) `emit_class.rs` misroutes a class method into the property-emission path. Investigate `extract_declarations.rs` ObjC method extraction first; if flags are correct in the IR, the bug is in the emitter routing logic.
-- **Fix direction:** Confirm which layer is wrong by inspecting the collected JSON for `NSMenuItem.separatorItem`. If the IR flag is wrong, fix in `extract_declarations.rs`. If correct, fix the emitter routing in `emit_class.rs`.
-- **Scope:** After fix, regenerate `nsmenuitem.rkt` and verify `nsmenuitem-separator-item` works as a class method accessor. Audit other well-known class-method factories (`+alloc`, `+new`, `NSArray +array`, etc.) to confirm they were not also misclassified.
+- **Results:** Verified already resolved in the current generator. `nsmenuitem.rkt` emits `(nsmenuitem-separator-item)` as a zero-arg class method factory under the `;; --- Class methods ---` section (line 302 pre-regenerate), with the class-method-style contract `(c-> nsmenuitem?)`. The instance-property suppression logic lives at `emit_class.rs:44-57`: it builds a set of class-method names and removes any same-named instance property before emission, so the class-method-vs-same-named-instance-property collision case is already handled. No code changes needed for this task.
 
-### Fix duplicate symbol in `nsscreen.rkt` emitter output `[generation]` `[medium]`
+### Fix duplicate symbol in `nsscreen.rkt` emitter output `[generation]` `[done]`
+- **Completed:** 2026-04-18
 - **Surfaced by:** racket-oo development (2026-04-16); `nsscreen.rkt` load error due to duplicate symbol definition
-- **Symptom:** The generated `nsscreen.rkt` file contains a duplicate symbol definition that causes a Racket load error. At least one property getter/setter or category method is being emitted twice.
-- **Suspected root cause:** A property declared on both the base class and a category, or a method inherited via category redeclaration, passes through `emit_class.rs` dedup logic without being caught. Category property dedup by name (see memory: "Category properties need dedup by name") may not be applied consistently for all paths (e.g., class properties vs instance properties vs categories).
-- **Fix direction:** Inspect the generated `nsscreen.rkt` to identify the duplicate symbol. Trace back to which emit path produces it twice — base-class property vs category, or getter vs setter collision. Add a dedup guard at the relevant point in `emit_class.rs`.
-- **Scope:** Fix is confined to `emit_class.rs`. After fix, verify `nsscreen.rkt` loads cleanly. Audit a wider set of generated files for duplicate-symbol patterns (e.g., `grep` for identical `define` lines within the same generated file) to catch other instances before they surface at runtime.
+- **Results:** Verified current `nsscreen.rkt` has no duplicate `define` forms and loads cleanly under `runtime_load_libraries_via_dynamic_require` (added to `LIBRARY_LOAD_CHECKS` at `generation/crates/emit-racket-oo/tests/runtime_load_test.rs:131`). Earlier category-property dedup work (memory entry "Category properties need dedup by name") closed this; kept the harness entry as a regression canary.
 
 ### Emit inherited methods from NSView/NSControl superclasses in subclass bindings `[generation]` `[low]`
 - **Surfaced by:** racket-oo development (2026-04-16); WKWebView missing `setAutoresizingMask:` inherited from NSView
@@ -46,12 +42,57 @@ listing order is a suggested work order, not a hard constraint.
 - **Recommended approach:** Start with option (b) for the highest-frequency NSView/NSControl methods (`setFrame:`, `setAutoresizingMask:`, `setBounds:`, `setHidden:`, `setNeedsDisplay`). Escalate to option (a) if the coverage gap repeatedly blocks target development.
 - **Scope:** Either option is confined to the generation layer. Regenerate affected subclass bindings and verify the previously-missing methods are callable without raw `tell`.
 
-### Fix `make-objc-block` to treat `#f` as a no-op lambda `[runtime]` `[medium]`
+### Fix generator to emit `bool`/`BOOL` return types as `_bool` not `_uint8` `[generation]` `[done]`
+- **Completed:** 2026-04-18
+- **Surfaced by:** Modaliser-Racket development (2026-04-16); boolean return values from ObjC methods were always truthy in Racket
+- **Results:** Verified resolved in two layers. Extractor: `collection/crates/extract-objc/src/type_mapping.rs:256` maps `BOOL`/`Boolean` typedefs to `TypeRefKind::Primitive { name: "bool" }` with an explicit comment about the Racket truthiness gotcha. FFI mapper: `generation/crates/emit/src/ffi_type_mapping.rs:128` maps `"bool"` → `"_bool"`. Verification canary: `generated/oo/foundation/nsfilemanager.rkt:97` now declares `_msg-1` with `-> _bool`, so `fileExistsAtPath:`, `isDeletableFileAtPath:`, etc. decode `0` → `#f` and non-zero → `#t` correctly.
+
+### Fix `make-objc-block` to treat `#f` as a no-op lambda `[runtime]` `[done]`
+- **Completed:** 2026-04-18
 - **Surfaced by:** Modaliser-Racket development (2026-04-16); users pass `#f` for optional completion handler arguments
-- **Symptom:** `make-objc-block` in `runtime/block.rkt` does not handle `#f` as input. When `#f` is passed (e.g. for an optional completion handler the caller wants to ignore), the returned block stores `#f` as the callback procedure. On invocation the block attempts `(apply #f ...)`, which raises a Racket error and crashes the callback. Users are currently forced to pass an explicit no-op lambda (`(lambda args (void))`) every time they want to suppress a completion handler.
-- **Suspected root cause:** `make-objc-block` stores its `proc` argument directly with no guard. The fix is a one-line normalisation at the top of `make-objc-block`: treat `#f` as `(lambda args (void))` before storing the callback.
-- **Fix direction:** Normalise `#f` → no-op lambda inside `make-objc-block` itself so every call site benefits automatically. Do not push the workaround to callers.
-- **Scope:** Change is confined to `runtime/block.rkt`. Add a unit test: `(make-objc-block #f <type-sig>)` must produce an invocable block that returns without error. Existing tests for non-`#f` inputs must remain green.
+- **Results:** Already fixed differently than the task proposed. `make-objc-block` at `runtime/block.rkt:67-70` short-circuits `#f` to `(values #f #f)` — returning a NULL block pointer and NULL id rather than constructing a real no-op block. The ObjC-idiomatic semantic (nil block = "no callback") is tested explicitly at `test-block-creation.rkt:160-167` under "make-objc-block with #f returns NULL pointer"; the 2026-04-17 test file comments note that this is the chosen design. The task's suggested no-op-lambda normalisation would construct a real block that would always fire on the ObjC side; the current NULL path avoids the spurious callback and matches how Cocoa APIs treat a nil block argument. No code changes needed.
+
+### Strengthen generated binding contracts beyond `any/c` `[generation]` `[low]`
+- **Surfaced by:** Modaliser-Racket development (2026-04-16); contract violations (wrong receiver type, unwrapped `objc-object` vs `_id`, missing `coerce-arg`, PAC-trapping `char*` passed where NSString expected) were not caught at the binding boundary
+- **Symptom:** Generated `provide/contract` forms use `any/c` for all parameters and return types. This means: passing the wrong receiver class, passing an unwrapped `objc-object` where `_id` is expected, omitting `coerce-arg`, or passing a raw Racket string where an NSString pointer is required all fail silently or produce late crashes rather than immediate contract violations. The contracts provide no safety net during development.
+- **Possible improvements (in ascending implementation cost):**
+  - **(a) Receiver-class predicate:** Add a `(is-a? v <ClassName>%)` check on `self` parameter contracts. Catches wrong-class receivers immediately.
+  - **(b) Selector arity contract:** Emit a contract verifying the number of positional arguments matches the selector.
+  - **(c) Typed parameter contracts:** Map IR type information to Racket predicates (e.g., `_id`-typed params require `objc-object?`, string params require `string?` or `NSString?`).
+- **Fix direction:** Start with (a) as the highest-value, lowest-risk improvement. Assess impact on generated file size before committing to (b) or (c).
+- **Scope:** Generator change in `emit_class.rs` / `emit_protocol.rs`. Contracts affect generated files only — no runtime changes required for (a) or (b).
+
+### Fix generator type mapping for AXValueCreate/AXValueGetValue/CFNumberGetValue: `_uint64` should be `_uint32` or correct enum type `[generation]` `[medium]`
+- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-16)
+- **Triaged 2026-04-18, deferred:** The honest fix is broader than the task's three-function scope. `TypeRefKind::Alias` carries `name` only (`collection/crates/types/src/type_ref.rs:28`), so `RacketFfiTypeMapper::map_type` at `generation/crates/emit/src/ffi_type_mapping.rs:167` has no underlying width to consult and defaults to `_uint64` for every enum typedef — correct for `NS_ENUM(NSUInteger, …)`, wrong for `CF_ENUM(uint32_t, …)` (AX) and for `NS_ENUM(NSInteger, …)` (signedness flip). The principled fix — resolve `entity.get_enum_underlying_type()` at extraction in `collection/crates/extract-objc/src/type_mapping.rs:315`, either via a new `Primitive` emission or by extending `Alias { underlying_primitive: Option<String> }` — changes the FFI signature for enum parameters across every framework, requiring a full golden-snapshot refresh and caller-side audit for any code that relied on the `_uint64` default.
+- **Suspected root cause:** The IR type mapper resolves the relevant `CFTypeID`/enum parameters to a generic integer width without consulting the typedef's underlying type (e.g. `AXValueType` is `uint32_t`, not `uint64_t`).
+- **Fix direction:** Option A: extend `TypeRefKind::Alias` with `underlying_primitive: Option<String>`, populate at extraction from `entity.get_enum_underlying_type()`, consult in the FFI mapper. Option B: change `TypeKind::Enum` in `map_typedef` to emit `TypeRefKind::Primitive { name: <resolved> }` directly. Option B is simpler but deviates from the 2026-04-15 design rationale for keeping enum typedefs as `Alias`. Cross-reference against `HIServices/Accessibility.h` and `CoreFoundation/CFNumber.h`.
+- **Scope:** Affects at least three functions in ApplicationServices/CoreFoundation. The real blast radius is every enum-typedef parameter across all 283 frameworks. Do the full audit rather than a name-matched special case.
+
+### Fix generator to emit CF struct globals from CoreFoundation as `ffi-obj-ref` `[generation]` `[done]`
+- **Completed:** 2026-04-18
+- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-16); `kCFTypeDictionaryKeyCallBacks` and `kCFTypeDictionaryValueCallBacks` absent from generated CoreFoundation `constants.rkt`
+- **Results:** Verified resolved. `generation/targets/racket-oo/generated/oo/corefoundation/constants.rkt:595-596` emits both `kCFTypeDictionaryKeyCallBacks` and `kCFTypeDictionaryValueCallBacks` as `(ffi-obj-ref 'kCFTypeDictionaryKeyCallBacks _fw-lib)`, and the `provide/contract` lines 220-221 declare them with `cpointer?`. CoreFoundation's IR (`collection/ir/collected/CoreFoundation.json`) carries them with `TypeRefKind::Struct` (names `CFDictionaryKeyCallBacks` / `CFDictionaryValueCallBacks`); the existing `is_struct_data_symbol` path routes them to `ffi-obj-ref` the same way `_dispatch_main_q` goes.
+
+### Make class-return contracts nullable for properties that can return nil `[generation]` `[done]`
+- **Completed:** 2026-04-18
+- **Surfaced by:** racket-oo PDFKit Viewer development (2026-04-17); `pdfview-document` / `pdfview-current-page` fail their generated return contracts when the PDFView is empty
+- **Results:** `map_return_contract` at `generation/crates/emit-racket-oo/src/emit_class.rs:334-342` now emits `(or/c <class-pred>? objc-nil?)` for every `TypeRefKind::Class { name }` return. Used the safer `objc-nil?` (re-exported from `runtime/objc-base.rkt` — tolerates raw cpointers, `#f`, and objc-object wrappers) rather than the struct-specific `objc-null?`. Chose the unconditional union over a `nullable`-guarded one because unaudited ObjC headers do not reliably distinguish `_Nonnull` from unspecified; tightening later is easy once the IR-level nullability signal is trustworthy. All AppKit/Foundation goldens refreshed and the pipeline regenerated (284 frameworks, 7059 files). Verified `nsevent.rkt`, `nsscreen.rkt`, `nsmenuitem.rkt`, `wkwebview.rkt` all load cleanly under `runtime_load_libraries_via_dynamic_require` with `RUNTIME_LOAD_TEST=1`.
+
+### Auto-wrap `list->nsarray` / `hash->nsdictionary` results as `objc-object` `[runtime]` `[done]`
+- **Completed:** 2026-04-18
+- **Surfaced by:** racket-oo PDFKit Viewer development (2026-04-17); `nsopenpanel-set-allowed-file-types!` rejects the `list->nsarray` result with "contract violation: expected (or/c string? objc-object? #f), given: #<cpointer>"
+- **Results:** `list->nsarray` and `hash->nsdictionary` in `runtime/type-mapping.rkt:88` / `:103` now wrap their results via `wrap-objc-object … #:retained #t` (the `alloc+init` produces a +1-retained pointer; the finalizer balances it). Also hardened `nsarray->list` and `nsdictionary->hash` to `unwrap-objc-object` their inputs so round-trip tests and mixed callers work uniformly. Updated call sites: `apps/pdfkit-viewer/pdfkit-viewer.rkt` drops the manual `(wrap-objc-object (list->nsarray …) #:retained #t)` ceremony; `tests/test-generated-smoke.rkt` drops its extra wrap; `tests/test-block-creation.rkt` switches the raw `msg-send-block` / `msg-send-block->id` call sites to `(unwrap-objc-object arr)`. All runtime Racket tests green (`test-ffi-roundtrip.rkt`, `test-block-creation.rkt`, `test-generated-smoke.rkt`, `test-runtime-load.rkt`, `test-main-thread.rkt`).
+
+### Fix class-method / instance-method selector collision in generated bindings `[generation]` `[done]`
+- **Completed:** 2026-04-18
+- **Surfaced by:** racket-oo Drawing Canvas development (2026-04-17); `nsevent.rkt` fails to load with "module: identifier already defined" on `nsevent-modifier-flags`
+- **Results:** Disambiguation applies in two flavours because NSEvent turned out to declare `modifierFlags` as *both* `@property(class)` and `@property(readonly)` rather than as +/- methods. Added `make_class_method_name` and `make_class_property_getter_name` / `make_class_property_setter_name` in `generation/crates/emit-racket-oo/src/naming.rs`, each with a `disambiguate: bool` flag that appends `-class` to the base name (placed before a trailing `!` for mutating selectors). In `emit_class.rs::generate_class_file`, a single pass builds `instance_bindings = instance_method_names ∪ instance_property_getter_names`, then derives `class_method_disambig` and `class_property_disambig` from the class-side members whose base Racket names land in that set. Threaded both sets through `emit_method`, `emit_property`, and `build_export_contracts`. Post-regeneration: `generated/oo/appkit/nsevent.rkt` now emits `nsevent-modifier-flags-class` (class variant) alongside `nsevent-modifier-flags` (instance variant) at both the contract and the `define` site; loads cleanly under `runtime_load_libraries_via_dynamic_require`. Added `nsevent.rkt`, `nsscreen.rkt`, and `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS` at `tests/runtime_load_test.rs:131-133`, plus `WebKit` to `REQUIRED_FRAMEWORKS` so the harness copies the WebKit bindings into its temp tree. New unit test: `test_class_method_disambiguation` in `naming.rs`. All 119 Rust unit tests and the full snapshot suite green; all seven sample apps still `raco make` cleanly.
+
+### Fix generated `wkwebview.rkt` referencing unbound `_NSEdgeInsets` `[generation]` `[done]`
+- **Completed:** 2026-04-18
+- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-16); anything transitively importing `wkwebview.rkt` cannot load
+- **Results:** Verified already resolved. `generated/oo/webkit/wkwebview.rkt:11` emits the `runtime/type-mapping.rkt` require, so `_NSEdgeInsets` is in scope for the `_msg-0`/`_msg-7`/`_msg-8` FFI bindings and for `additionalSafeAreaInsets`, `alignmentRectInsets`, `maximumViewportInset` accessors. The `is_known_geometry_struct`/`any_struct_type` detection chain handles `NSEdgeInsets` properly. Added `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS` and `WebKit` to `REQUIRED_FRAMEWORKS` in `runtime_load_test.rs` so future regressions surface at test time; harness copies WebKit + dependencies and `dynamic-require`s the file successfully.
 
 ### Add HIServices/AX functions and constants to ApplicationServices extraction `[collection]` `[medium]`
 - **Surfaced by:** racket-oo Task #7 (migration of `ffi/*.rkt` to generated bindings)
@@ -140,6 +181,11 @@ listing order is a suggested work order, not a hard constraint.
 - **Priority:** Low — only bites when a framework exposes a struct global whose declared type is OS_OBJECT-based (currently only libdispatch). The manual workaround (explicit cast at the call site) is well understood. Promote if a second framework triggers the same pattern.
 
 ## Completed Tasks
+
+### Fix protocol emitter `method_return_kind` missing int/long primitives `[generation]`
+- **Completed:** 2026-04-16
+- **Surfaced by:** racket-oo development (2026-04-16); `numberOfRowsInTableView:` (NSInteger/int64) misclassified as void-returning in generated protocol files
+- **Summary:** Added int32 → `'int` and int64 → `'long` branches to `method_return_kind` in `emit_protocol.rs`. Landed as Phase 1c of racket-oo FFI Surface Elimination. `numberOfRowsInTableView:` (NSTableViewDataSource) and `tableView:nextTypeSelectMatchFromRow:toRow:forString:` (NSTableViewDelegate) now correctly classified as `'long` instead of `'void`. 6 new unit tests added. All generated AppKit protocol golden files updated. Affects all language targets consuming generated protocol files.
 
 ### Fix unsigned enum constant values (signed-component-only extraction) `[collection]`
 - **Completed:** 2026-04-15
