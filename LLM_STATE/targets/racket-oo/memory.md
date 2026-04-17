@@ -289,6 +289,8 @@ Hash mapping selectors to lists of type symbols (`'object`, `'long`, `'int`, `'b
 ### `dynamic-class.rkt` exports libobjc subclass surface
 `generation/targets/racket-oo/runtime/dynamic-class.rkt` exports: `objc-get-class`, `allocate-subclass`, `add-method!`, `register-subclass!`, `get-instance-method`, `method-type-encoding`, and `make-dynamic-subclass` (chains allocate→add-method→register in the correct order). Type aliases `_Class`/`_SEL`/`_Method`/`_IMP` exported for raw-msgSend consumers. Must be added to both `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in the harness.
 
+When overriding superclass methods, pull the type encoding string via `(method-type-encoding (get-instance-method SuperClass sel))` rather than hardcoding. Hardcoded strings drift silently if Apple changes the ABI; pulling from the live superclass method is always correct.
+
 ### libdispatch `_id` params emitted as `_pointer`
 `dispatch_queue_t`, `dispatch_group_t`, etc. resolve to `id` in the IR (under `OS_OBJECT_USE_OBJC=1`), but no wrapper classes exist in the generated bindings. The emitter maps `_id` → `_pointer` in libdispatch's `functions.rkt` so consumers can pass raw cpointers without a `(cast ... _pointer _id)` ceremony. The ABI is identical. This override is scoped to `framework == "libdispatch"` in `generate_functions_file`. If future frameworks gain the same OS-object pattern (e.g. `xpc_object_t`), extend the same override.
 
@@ -333,3 +335,9 @@ Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
 
 ### Racket CS `malloc` returns GC memory; never `free`
 `(malloc …)` in Racket CS returns GC-tracked memory. Passing it to `free` causes SIGABRT because `free` expects C-heap pointers only. Do not call `free` on `(malloc …)` buffers — the GC reclaims them automatically. Only call `free` on memory returned by a C function that itself calls `malloc` internally. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 such `free` calls removed.
+
+### NSEvent class/instance method name collision (generator bug)
+`NSEvent +modifierFlags` (class method) and `-modifierFlags` (instance method) both kebab-case to `nsevent-modifier-flags`, producing duplicate `define` forms. `nsevent.rkt` cannot be required at all. Filed in core backlog. Workaround: use raw `tell` for NSEvent properties (e.g. `locationInWindow`) instead of requiring the module. Blocked behind the broader class/instance selector-collision fix in `emit_class.rs`.
+
+### `bool`/`BOOL` returns emit `_uint8`, not `_bool` (generator bug)
+The emitter maps `bool`/`BOOL` return types to `_uint8` instead of `_bool`. Racket's `_uint8` returns an integer, so callers must coerce manually (`(not (zero? v))`) or risk silent truthy bugs. Fix requires the FFI type mapper to route `TypeRefKind::Primitive { kind: Bool }` returns to `_bool`. Filed in core backlog.
