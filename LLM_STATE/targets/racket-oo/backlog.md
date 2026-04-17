@@ -72,41 +72,6 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 ### Sample Apps
 
-#### Menu Bar Tool
-- **Status:** done (superseded)
-- **Dependencies:** none
-- **Description:** NSStatusBar, NSMenu, no-window app, timers, clipboard. Tests
-  an unusual app lifecycle (no main window, status item driven) and menu
-  construction.
-  See `knowledge/apps/menu-bar-tool/spec.md` and `test-strategy.md`.
-- **Results:** Superseded by Modaliser-Racket (`../Modaliser-Racket/`), which
-  exercises every pattern this app was designed to test — and more. Specifically:
-  NSStatusBar/NSStatusItem (`services/lifecycle.rkt`), NSMenu construction with
-  separators and target-action delegates, accessory activation policy (no dock
-  icon, no main window), NSPasteboard read/write (`services/pasteboard.rkt`),
-  GCD timer callbacks via `call-on-main-thread-after`. Modaliser also exercises
-  CGEvent taps, WKWebView, Accessibility APIs, and dynamic ObjC subclasses —
-  patterns well beyond the Menu Bar Tool's scope. The only uncovered items
-  (NSDateFormatter, NSProcessInfo, NSAlert, submenu hierarchy) are trivial
-  generated-binding calls exercising no novel runtime/emitter patterns.
-  No separate sample app needed.
-
-#### Counter
-- **Status:** done (retired)
-- **Dependencies:** none
-- **Description:** Target-action + mutable state (button + label + callback).
-- **Results:** Retired 2026-04-16 — fully subsumed. Every interactive app
-  exercises target-action + mutable state. ui-controls-gallery covers buttons
-  with callbacks. See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-
-#### File Lister
-- **Status:** done (retired)
-- **Dependencies:** none
-- **Description:** NSTableView data-source delegate, NSOpenPanel, NSFileManager.
-- **Results:** Retired 2026-04-16 — delegate pattern proven by Modaliser-Racket.
-  NSOpenPanel exercised by Note Editor. NSFileManager is a trivial binding call.
-  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-
 #### Note Editor
 - **Status:** not_started
 - **Dependencies:** none
@@ -158,13 +123,25 @@ Runtime location: generation/targets/racket-oo/runtime/
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
 
+#### Quartz/PDFKit collection fix
+- **Status:** not_started
+- **Priority:** high — gates PDFKit Viewer sample app; may also unblock Carbon/CoreServices
+- **Dependencies:** none
+- **Description:** PDFKit lives under the Quartz umbrella framework, excluded from
+  `SUBFRAMEWORK_ALLOWLIST` in `sdk.rs` because the `clang-2.0.0` crate panics with a
+  UTF-8 error when visiting a Quartz subframework path during a full collect run.
+  Two approaches:
+  (a) diagnose and fix the UTF-8 panic in `clang-2.0.0` (check for malformed header
+      paths or filenames in the Quartz tree; upgrading the crate version may help);
+  (b) add `PDFKit` as a narrow subframework-allowlist entry (same pattern as
+      `HIServices` in `ApplicationServices`) without touching Quartz broadly.
+  Option (b) is lower risk and sufficient to unblock PDFKit Viewer. Option (a) is
+  needed if Carbon/CoreServices expansion is ever desired.
+- **Results:** _pending_
+
 #### PDFKit Viewer
 - **Status:** blocked
-- **Dependencies:** Quartz/PDFKit collection fix — PDFKit lives under the
-  Quartz umbrella framework, excluded from the subframework allowlist in
-  `sdk.rs` due to a `clang-2.0.0` crate UTF-8 panic. Unblocking: fix the
-  panic and add Quartz to the allowlist, or add PDFKit as a narrow
-  subframework-allowlist entry.
+- **Dependencies:** Quartz/PDFKit collection fix (see task above).
 - **Description:** PDF viewer with page navigation and text search. PDFView,
   PDFDocument, PDFPage, PDFSelection, NSNotificationCenter
   (PDFViewPageChangedNotification), NSOpenPanel (filtered to .pdf). Tests
