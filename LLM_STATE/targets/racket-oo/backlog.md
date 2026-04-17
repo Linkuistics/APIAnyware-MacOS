@@ -109,51 +109,6 @@ Runtime location: generation/targets/racket-oo/runtime/
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
 
-#### Drawing Canvas
-- **Status:** done
-- **Dependencies:** none
-- **Description:** Freehand drawing app. Custom NSView subclass via
-  `make-dynamic-subclass` with 4+ `add-method!` overrides (drawRect:,
-  mouseDown:, mouseDragged:, mouseUp:). CoreGraphics drawing (CGContext,
-  paths, stroke color/width), NSColorPanel, NSSlider, mouse event handling.
-  Most architecturally novel app — dynamic ObjC subclass as primary pattern,
-  CoreGraphics API first exercise, mutable shared state from ObjC callbacks.
-  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-- **Results (2026-04-17):** Landed `apps/drawing-canvas/drawing-canvas.rkt`
-  + `knowledge/apps/drawing-canvas/spec.md`. Dynamic `DrawingCanvasView`
-  subclass of NSView with four overrides (`drawRect:`, `mouseDown:`,
-  `mouseDragged:`, `mouseUp:`). Type encodings pulled from NSView's own
-  `method-type-encoding` rather than hand-written — eliminates ABI-drift
-  risk for the NSRect signature. Per-stroke CGContext rendering with
-  `kCGLineCapRound` + `kCGLineJoinRound`; single-point strokes draw a
-  coincident-point segment so the round cap paints a dot (no special-case
-  branch). VM verification (GUIVisionVMDriver): window + toolbar render
-  correctly, drag produces a stroke, color picker opens and updates stroke
-  color without crash, Clear empties canvas — all confirmed via VNC
-  screenshots.
-  Key learnings:
-  (1) `tell` from `ffi/unsafe/objc` only accepts `_id`-tagged cpointers or
-  imported class refs — NOT our `objc-object?` struct wrappers. Raw
-  cpointers from ObjC trampolines must pass through `coerce-arg` before
-  hitting `tell`. Using `borrow-objc-object` alone is not enough — that
-  produces an `objc-object?` which `tell` also rejects with `id->C:
-  argument is not 'id' pointer`.
-  (2) Delegate handlers that send messages back to their `sender` argument
-  MUST declare `#:param-types (hash "selector" '(object))` or the arg
-  arrives as a raw cpointer and every generated wrapper call trips its
-  `objc-object?` self contract.
-  (3) NSColor component accessors (red/green/blue) raise NSException on
-  non-RGB colors; convert via `nscolor-color-using-color-space` with
-  `nscolorspace-device-rgb-color-space` before component extraction.
-  (4) Generator bug discovered: `nsevent.rkt` can't be required because
-  `NSEvent +modifierFlags` and `-modifierFlags` emit as the same Racket
-  identifier. Filed in core backlog. Workaround: raw `tell` for
-  `locationInWindow`.
-  Also: bundle IDs switched project-wide from `com.apianyware.*` to
-  `com.linkuistics.*` at user's direction; the 4 existing sample apps
-  pick up the new domain on next bundle build (build artefacts are
-  gitignored so no stale bundles need sweeping).
-
 #### SceneKit Viewer
 - **Status:** not_started
 - **Dependencies:** none
@@ -185,7 +140,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 #### Framework Coverage Deepening
 - **Status:** not_started
 - **Dependencies:** none — "at least 2 more sample apps" dependency satisfied
-  (4 apps done: hello-window, counter, ui-controls-gallery, file-lister).
+  (5 apps done: hello-window, counter, ui-controls-gallery, file-lister, drawing-canvas).
 - **Description:** Targeted tests for CoreGraphics, AVFoundation, MapKit beyond
   what sample apps cover. Scope TBD — may be better defined after app experience
   reveals which frameworks have surprising emitter edge cases. Note: the runtime
@@ -196,8 +151,8 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 #### Racket Class System Analysis
 - **Status:** not_started
-- **Dependencies:** Note Editor, Mini Browser, Drawing Canvas, and SceneKit
-  Viewer complete (real usage reveals which patterns matter)
+- **Dependencies:** Note Editor, Mini Browser, and SceneKit Viewer complete
+  (Drawing Canvas done; real usage reveals which patterns matter)
 - **Description:** Analyse the current racket-oo emitter output and runtime to
   determine whether it truly models macOS APIs using Racket's class system
   (`racket/class`) as much as possible — e.g., using `class*`, `define/public`,
