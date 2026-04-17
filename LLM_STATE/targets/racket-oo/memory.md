@@ -120,14 +120,14 @@ The harness uses `(dynamic-require \`(file ,p) #f)`, not `(dynamic-require p #f)
 Every FFI boundary uses `provide/contract`. Three contract mappers:
 - `map_contract` in `emit_functions.rs` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, CString return → `(or/c string? #f)` (`_string` converts NULL → `#f`), CString param → `string?`, geometry structs → `any/c`, void → `void?`. Reused by functions, constants, and class wrappers. `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
 - `map_param_contract` in `emit_class.rs` (class wrapper params): `Id`/`Class`/`Instancetype` → `(or/c string? objc-object? #f)` for all object params (always includes `#f`; `cpointer?` excluded), SEL → `string?`, `(or/c procedure? #f)` for blocks, delegates to `map_contract` for primitives.
-- `map_return_contract` in `emit_class.rs` (class wrapper returns): `any/c` for objects, delegates to `map_contract` for void/primitives.
+- `map_return_contract` in `emit_class.rs` (class wrapper returns): `<class>?` predicate for `TypeRefKind::Class { name }` (see "Class return predicates: per-file inline factory"), `any/c` for `Id`/`Instancetype`, delegates to `map_contract` for void/primitives.
 Protocol files use fixed contracts (see "Protocol file contract shape is fixed").
 
 ### Class wrapper contracts: self `objc-object?`, params typed unions
 Self uses `SELF_CONTRACT` (`"objc-object?"`) in `emit_class.rs` for instance methods and property getters/setters — rejects misuse at caller blame.
 - **Object params** (`Id`/`Class`/`Instancetype`): `(or/c string? objc-object? #f)` — always includes `#f` (ObjC nil messaging is always a no-op). `cpointer?` excluded.
 - **SEL params**: `string?` at contract boundary; wrapper calls `sel_registerName`. Applies to both methods and property setters.
-- **Object returns**: `any/c` via `map_return_contract`.
+- **Object returns**: `<class>?` predicate for `TypeRefKind::Class { name }` (see "Class return predicates: per-file inline factory"); `any/c` for `Id`/`Instancetype` via `map_return_contract`.
 `objc-object?` in scope via `coerce.rkt` re-exporting `runtime/objc-base.rkt`. Class-property methods omit `self` (see "Class-property methods omit `self`").
 
 ### Class return predicates: per-file inline factory
