@@ -18,10 +18,16 @@ directory.
 actual definition cursor, both with the same name. Any `HashSet`-based dedup guard
 on enum names in `extract_declarations.rs` must check `entity.is_definition()` before
 inserting — inserting on the first (forward-decl) visit causes the definition to be
-skipped silently, yielding zero-value enum sections. Fixed 2026-04-15: `EnumDecl` arm
-now gates `seen_enums.insert()` on `entity.is_definition()`. The same latent pattern
-exists in `StructDecl`, `ObjCInterfaceDecl`, and `ObjCProtocolDecl` arms — apply the
-same guard if those arms ever gain a seen-set.
+skipped silently, yielding zero-value enum sections. `EnumDecl`, `StructDecl`, and
+`ObjCProtocolDecl` arms all gate on `entity.is_definition()`. `ObjCInterfaceDecl`
+does not need the guard — see "`ObjCInterfaceDecl` never sees `@class` forward
+declarations".
+
+### `ObjCInterfaceDecl` never sees `@class` forward declarations
+`@class Foo;` forward declarations produce `ObjCClassRef` cursors, not
+`ObjCInterfaceDecl`. The `ObjCInterfaceDecl` arm in `extract_declarations.rs`
+therefore always sees only definition cursors and requires no `entity.is_definition()`
+guard.
 
 ### Unsigned enum constants require the u64 component
 `child.get_enum_constant_value()` returns `Option<(i64, u64)>`. For enums with a
@@ -196,3 +202,45 @@ Plain `(malloc n)` in Racket CS calls `scheme_malloc_atomic` — the buffer is G
 
 ### LLM annotations use a dedicated input directory
 Two annotation sources: (1) heuristic annotations via checkpoint output dir (`load_existing_annotations()`), (2) LLM-generated `.llm.json` files from `--llm-dir` (`load_llm_annotations()` in `llm.rs`). LLM annotations take precedence via merge logic. Workflow: `llm-extract` CLI → `.methods.json` summaries of interesting methods (block params, error out-params, delegate/observer patterns) → Claude Code subagent → `.llm.json` → `annotate --llm-dir` merges. Runs within Claude Code for cost reasons.
+
+### `const char *` maps to `TypeRefKind::CString`
+`TypeRefKind::CString` is a dedicated variant for `const char *` parameters and return
+values only; non-const `char *` stays `Pointer`. FFI type: `_string`. Return contract:
+`(or/c string? #f)`. Parameter contract: `string?`. Any new language emitter must handle
+`CString` in its FFI and contract mappers.
+
+### CFSTR constants extracted by tokenizing `MacroDefinition` range
+The `MacroDefinition` arm in `extract_declarations.rs` calls `extract_cfstr_macro_constant`,
+which scans the macro's token window for the pattern `CFSTR ( "literal" )`. Matched
+constants get `macro_value: Some(string)` in IR. Emitter generates a `_make-cfstr`
+helper via `CFStringCreateWithCString` and emits `(define k (_make-cfstr "literal"))`.
+Fragile if Apple changes the macro expansion shape for CFSTR.
+
+### Nullable class returns emit `(or/c <pred>? objc-nil?)`
+`map_return_contract` in `emit_class.rs` emits `(or/c <class-pred>? objc-nil?)` for
+`TypeRefKind::Class { name }`. The `objc-instance-of?` predicate in `objc-base.rkt`
+uses `isKindOfClass:` with a hash-cached `objc_getClass` lookup.
+
+### Class-side names get `-class` suffix on collision
+`make_class_method_name` / `make_class_property_{getter,setter}_name` take a
+`disambiguate: bool`. `generate_class_file` builds an `instance_bindings` set and
+derives `class_method_disambig` / `class_property_disambig` sets; colliding class-side
+names get a `-class` suffix. Required to avoid duplicate-define crashes (e.g., NSEvent
+`modifierFlags`).
+
+### Struct typedefs resolve to `TypeRefKind::Struct`
+`TypeKind::Record` typedefs produce `Struct { name }` (not `Alias`). This routes CF
+struct globals (e.g., `kCFTypeDictionaryKeyCallBacks`) through `is_struct_data_symbol`
+to the `ffi-obj-ref` path. See "Struct globals need address-of; pointer globals need
+dereference".
+
+### `is_generic_type_param` uses uppercase-then-lowercase heuristic
+Pattern: name starts with an uppercase letter followed by a lowercase letter (e.g., `ObjectType`,
+`KeyType`). Extracted to `pub fn is_generic_type_param` in `ffi_type_mapping.rs` and
+shared between FFI and contract mappers. No false positives in the current framework set;
+theoretically vulnerable to a single-uppercase-letter framework prefix (none exist today).
+
+### `list->nsarray`/`hash->nsdictionary` wraps as retained
+`list->nsarray` and `hash->nsdictionary` in `type-mapping.rkt` return `wrap-objc-object
+… #:retained #t`. The inverse `nsarray->list` / `nsdictionary->hash` call
+`unwrap-objc-object` on their inputs before conversion.
