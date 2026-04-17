@@ -124,8 +124,8 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 #### Quartz/PDFKit collection fix
-- **Status:** not_started
-- **Priority:** high — gates PDFKit Viewer sample app; may also unblock Carbon/CoreServices
+- **Status:** done (no-op)
+- **Priority:** —
 - **Dependencies:** none
 - **Description:** PDFKit lives under the Quartz umbrella framework, excluded from
   `SUBFRAMEWORK_ALLOWLIST` in `sdk.rs` because the `clang-2.0.0` crate panics with a
@@ -137,24 +137,38 @@ Runtime location: generation/targets/racket-oo/runtime/
       `HIServices` in `ApplicationServices`) without touching Quartz broadly.
   Option (b) is lower risk and sufficient to unblock PDFKit Viewer. Option (a) is
   needed if Carbon/CoreServices expansion is ever desired.
-- **Results:** _pending_
+- **Results:** Investigated 2026-04-17 — no fix needed. Apple stores `PDFKit.framework`
+  at the SDK top level; the `Quartz.framework/Frameworks/PDFKit.framework` entry is a
+  symlink up to that canonical path. libclang resolves declarations through the
+  symlink to the top-level path (same pattern as CoreGraphics/CoreText inside
+  ApplicationServices, documented in memory.md), so PDFKit is already discovered as
+  a top-level framework by `discover_frameworks` in `sdk.rs`. Verified: enriched
+  `PDFKit.json` contains 29 classes, 3 protocols, 166 constants, 16 enums; emitted
+  `generated/oo/pdfkit/` has 33 files; `pdfview.rkt` loads cleanly under
+  `dynamic-require`. The PDFKit Viewer sample app is therefore not actually blocked
+  on collection — it is unblocked and can be picked up directly. The task's
+  `SUBFRAMEWORK_ALLOWLIST`/Quartz panic concern is independently still real for
+  genuine non-symlinked Quartz subframeworks (ImageKit, QuartzComposer, QuartzFilters),
+  but those are not in any current critical path; file as a fresh task only if a
+  consumer needs them.
 
 #### PDFKit Viewer
-- **Status:** blocked
-- **Dependencies:** Quartz/PDFKit collection fix (see task above).
+- **Status:** not_started
+- **Dependencies:** none — PDFKit collection already lands via top-level
+  symlink-resolved discovery (see "Quartz/PDFKit collection fix" above for details).
 - **Description:** PDF viewer with page navigation and text search. PDFView,
   PDFDocument, PDFPage, PDFSelection, NSNotificationCenter
   (PDFViewPageChangedNotification), NSOpenPanel (filtered to .pdf). Tests
   whether a non-AppKit/WebKit/SceneKit framework's generated bindings work
-  end-to-end.
+  end-to-end. Generated bindings live at `generation/targets/racket-oo/generated/oo/pdfkit/`.
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
 
 ### Modaliser FFI Elimination — Upstream Blockers
 
 #### ObjC interop re-export from runtime module
-- **Status:** not_started
-- **Priority:** high — blocks 9 Modaliser files from eliminating `ffi/unsafe`
+- **Status:** done
+- **Priority:** —
 - **Dependencies:** none
 - **Description:** Consumer apps (e.g. Modaliser) using `tell`, `import-class`,
   `sel_registerName` must currently `(require ffi/unsafe ffi/unsafe/objc)`. To
@@ -166,10 +180,21 @@ Runtime location: generation/targets/racket-oo/runtime/
     `cpointer?`, `ptr-equal?`
   This is a re-export convenience — no new implementation needed.
   Filed 2026-04-16 from Modaliser FFI elimination work.
+- **Results:** Landed 2026-04-17 as `generation/targets/racket-oo/runtime/objc-interop.rkt`.
+  Pure curated re-export module (~30 lines): `(require ffi/unsafe ffi/unsafe/objc)`
+  followed by a named `provide` listing exactly the names from the spec —
+  intentionally NOT `(all-from-out ...)` so the surface stays auditable. Wired
+  into the runtime load harness (`RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS` in
+  `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`). Library-load
+  harness now reports 21/21 checks pass (was 20). Modaliser can now `(require
+  ".../runtime/objc-interop.rkt")` instead of `(require ffi/unsafe
+  ffi/unsafe/objc)` — a grep for `ffi/unsafe` in consumer code now flags only
+  genuine escape-hatch usage. To extend the surface later, add the new name
+  to the `provide` list in `objc-interop.rkt` (no other changes needed).
 
 #### Raw AX attribute getter and array helper in ax-helpers.rkt
-- **Status:** not_started
-- **Priority:** medium — blocks `ffi/accessibility.rkt` full migration
+- **Status:** done
+- **Priority:** —
 - **Dependencies:** none
 - **Description:** `ax-helpers.rkt` provides typed attribute getters
   (`ax-get-attribute/string`, `/boolean`, `/point`, `/size`) but no raw
@@ -183,10 +208,22 @@ Runtime location: generation/targets/racket-oo/runtime/
   Without these, consumer code needs `malloc _pointer` + `ptr-ref _pointer`
   out-param pattern from `ffi/unsafe`.
   Filed 2026-04-16 from Modaliser FFI elimination work.
+- **Results:** Landed 2026-04-17 in `runtime/ax-helpers.rkt`. Both helpers
+  added with the documented contracts:
+  - `ax-get-attribute/raw` reuses the existing private `ax-copy-attribute`
+    internal helper, exposing it publicly with the CFString-attr conversion
+    via `with-cf-value`. Returns +1 owned cpointer (caller `cf-release`s).
+  - `ax-get-attribute/array` calls `ax-copy-attribute` then `cfarray->list`
+    with `_CFRetain` as the convert function — each element is +1 retained
+    (independent of the underlying CFArray's lifetime, which is released
+    before return). Returns `'()` on attribute-missing or non-array results.
+  Added a new `_CFRetain` FFI binding (only `_CFRelease` was bound before).
+  Smoke-tested via `dynamic-require`; full runtime load harness still passes
+  (21/21).
 
 #### CGEvent tap handler: expose raw event type for disabled-by-timeout
-- **Status:** not_started
-- **Priority:** medium — blocks `ffi/cgevent.rkt` full migration
+- **Status:** done
+- **Priority:** —
 - **Dependencies:** none
 - **Description:** `cgevent-helpers.rkt`'s `make-cgevent-tap` handler
   signature is `(keycode modifiers key-down? → 'suppress or 'pass-through)`.
@@ -199,6 +236,31 @@ Runtime location: generation/targets/racket-oo/runtime/
   Without this, Modaliser must keep its own `_cprocedure`/`function-ptr`
   callback in `ffi/cgevent.rkt`.
   Filed 2026-04-16 from Modaliser FFI elimination work.
+- **Results:** Landed 2026-04-17 in `runtime/cgevent-helpers.rkt` via option (b).
+  Picked (b) because it keeps the existing handler signature unchanged (no
+  source-breakage for current consumers) while letting advanced callers opt in.
+  Changes:
+  - New keyword arg `#:on-disabled` on `make-cgevent-tap` (default `#f`).
+    Signature: `(event-type tap → any)`. Caller calls `cgevent-tap-enable!`
+    itself if it wants to keep the tap running.
+  - Default behavior when `#:on-disabled` is omitted: auto-re-enable the tap
+    (Apple's documented remedy for kCGEventTapDisabledByTimeout). Lets simple
+    consumers stay simple.
+  - Trampoline restructured: branches on `type` against the two disabled
+    constants before doing the keycode/modifier extraction. Disabled events
+    are NOT real events, so reading `kCGKeyboardEventKeycode` from them
+    would return junk — the branch avoids that.
+  - Forward-reference plumbing for the tap pointer: `make-cgevent-tap` now
+    creates a `tap-box` BEFORE constructing the trampoline, the trampoline
+    captures the box lexically, and `set-box!` happens after
+    `_CGEventTapCreate` returns. Necessary because the trampoline (which
+    needs the tap pointer to re-enable) is built before the tap exists.
+  - Two new exports: `kCGEventTapDisabledByTimeout`,
+    `kCGEventTapDisabledByUserInput` (decimal forms of the unsigned 0xFFFFFFFE
+    / 0xFFFFFFFF constants, since the trampoline reads `_uint32`). Lets
+    callers branch on the exact disable reason.
+  Smoke-tested + runtime load harness 21/21 passes. Modaliser can now drop
+  its private `_cprocedure` tap callback and use this wrapper directly.
 
 ### Future Work
 
