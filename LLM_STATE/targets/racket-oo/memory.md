@@ -136,6 +136,20 @@ Each class file defines its own predicate (e.g. `(define (nsview? v) (objc-insta
 ### `objc-object?` is a struct predicate, not cpointer
 `(cast ptr _pointer _id)` tags the pointer for FFI but does NOT create an `objc-object` struct — it fails the `objc-object?` contract at class wrapper boundaries. For `make-delegate` with `#:param-types`, `'object`-typed callback args are wrapped automatically via `borrow-objc-object`. For `tell`-based code not using `#:param-types`, use `wrap-objc-object` manually. Do NOT use `tell` as a bypass for non-object parameters (int, bool, SEL) — `tell` rejects them with `id->C: argument is not 'id' pointer`.
 
+### `tell` receiver must be `coerce-arg`'d, not just `borrow-objc-object`'d
+`tell` from `ffi/unsafe/objc` accepts only `_id`-tagged cpointers or imported class refs — it does NOT accept our `objc-object?` struct wrappers. Raw cpointers from ObjC trampolines (e.g. `self`, `event` args in dynamic-subclass IMPs) give `id->C: argument is not 'id' pointer`. Wrapping via `borrow-objc-object` ALSO fails with the same error — the result is still an `objc-object` struct, not an `_id`-tagged pointer.
+Correct fix: `(tell (coerce-arg receiver) selector ...)`. `coerce-arg` does the `(cast ... _pointer _id)` internally for all of {string?, objc-object?, cpointer?, #f}. This matches every generated class-wrapper call site. Example from drawing-canvas.rkt's event→view-point helper:
+`(tell #:type _NSPoint (coerce-arg event) locationInWindow)`.
+
+### Dynamic-subclass delegate callbacks need `#:param-types` when the handler sends messages
+Dynamic-subclass IMPs created via `function-ptr` + `_cprocedure` pass raw cpointers for `id`-typed args. If the Racket handler uses a `sender`/`event` arg only for identity or arity, that's fine. But as soon as the handler sends messages to that arg via a generated class wrapper (e.g. `(nscolorpanel-color sender)`), the contract violation is `objc-object?` self — raw cpointer fails the self predicate. Fix: pass `#:param-types (hash "selector" '(object))` to `make-delegate`. The trampoline then auto-wraps the arg via `borrow-objc-object` and generated wrappers accept it. Symptom looks identical to the `tell`-on-cpointer error but the root cause is different — it's a contract violation at the delegate boundary, not at the `tell` boundary.
+
+### NSColor component accessors require RGB color space
+`nscolor-red-component`, `-green-component`, `-blue-component`, `-alpha-component` raise `NSException` on colors not in an RGB color space (pattern, named, greyscale colors). Before accessing components on a color from NSColorPanel (whose color space is user-selectable), convert via `(nscolor-color-using-color-space c (nscolorspace-device-rgb-color-space))`. The result may be `#f` if the color cannot be converted — always `(when rgb ...)` guard after the conversion.
+
+### `only-in` does NOT skip module expansion
+`(only-in path bind1 bind2)` still fully expands the target module — it's a consumer-side visibility filter, not a module-load filter. If `path` has a module-level error (e.g. generator-produced duplicate `define` forms), even importing one identifier fails. Workaround when blocked on a generator-level module bug: use raw `tell`/`objc_msgSend` for the specific call sites instead of touching the broken module at all.
+
 ### Class-property methods omit `self`
 Class-property getters/setters have no `self` parameter. `build_export_contracts` drops `self` for `prop.class_property`. `emit_property`'s setter branches substitute `class_name` for `(coerce-arg self)` as the target. TestKit has no class-method properties, so arity divergence is only caught by the real-framework canary (`nsmenuitem.rkt` in `LIBRARY_LOAD_CHECKS`).
 

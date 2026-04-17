@@ -1,28 +1,67 @@
-### Session 20 (2026-04-17T06:48:03Z) — CString type, CFSTR emission, Modaliser FFI blockers, class predicates
+### Session 20 (2026-04-17T08:15:01Z) — Drawing Canvas app + generator correctness fixes
 
-- **Attempted:** Three Modaliser FFI upstream blockers (objc-interop re-export, AX raw/array helpers, CGEvent tap disabled-event support), PDFKit collection diagnosis, and a batch of emitter/collection correctness fixes revealed by the type-mapping work.
+- **Attempted:** Land the Drawing Canvas sample app (dynamic NSView subclass, CGContext
+  rendering, NSColorPanel integration) and fix a cluster of generator bugs that surfaced
+  during development.
 
 - **What worked:**
-  - `objc-interop.rkt` landed as a curated named-`provide` re-export of `ffi/unsafe` + `ffi/unsafe/objc` symbols. Wired into runtime load harness; 21/21 checks pass (was 20).
-  - `ax-helpers.rkt` gained `ax-get-attribute/raw` (returns +1 owned CFTypeRef) and `ax-get-attribute/array` (calls `cfarray->list` with `_CFRetain` per element). Added missing `_CFRetain` FFI binding.
-  - `cgevent-helpers.rkt` gained `#:on-disabled` keyword on `make-cgevent-tap`. Default behaviour auto-re-enables the tap. Tap pointer plumbed via a `tap-box` to break the forward-reference cycle. Two new exports: `kCGEventTapDisabledByTimeout`/`kCGEventTapDisabledByUserInput`.
-  - New IR type `TypeRefKind::CString` distinguishes `const char *` (Racket `_string`) from non-const `char *` (output buffer, stays `_pointer`). `macro_value` field added to `ir::Constant` for CFSTR macros.
-  - CFSTR macro constants extracted from `MacroDefinition` entities in `extract_declarations.rs` via token-window pattern (`CFSTR ( "literal" )`). Emit as `(_make-cfstr "...")` using an inline CFStringCreateWithCString helper, not `ffi-obj-ref`.
-  - `is_definition()` guards added for `ObjCProtocolDecl` and `StructDecl` to stop forward declarations from shadowing full definitions in the seen-set.
-  - `Boolean` (Carbon) mapped to `_bool` in `map_typedef`; was `uint8`, breaking boolean-context usage.
-  - Struct typedefs changed from `TypeRefKind::Alias` to `TypeRefKind::Struct` so `is_struct_data_symbol` in `emit_constants.rs` correctly emits `ffi-obj-ref` for struct-typed globals.
-  - `is_generic_type_param` helper replaces the brittle prefix-allowlist (`!name.starts_with("NS") && …`) for detecting ObjC generic type parameters vs framework-prefixed enum aliases. Pattern: single uppercase letter followed by lowercase.
-  - Class/instance property name sets split into two `HashSet`s. Instance properties that share a Racket name with a class method are now suppressed (not the class method). Property deduplication switched from ObjC name to Racket getter name to handle casing divergence between ObjC and Swift extractors.
-  - `objc-instance-of?` added to `objc-base.rkt` with a class-lookup cache. Per-class predicates (`nsview?`, etc.) generated via `collect_return_type_class_names` + `emit_class_predicates` and emitted before `provide/contract`.
-  - `runtime_block_nil_guard` test added to `runtime_load_test.rs`.
-  - PDFKit/Quartz investigation: no fix needed — PDFKit.framework is a top-level SDK framework; the Quartz symlink resolves through libclang to the canonical path. PDFKit Viewer unblocked.
-  - All golden files for AppKit and Foundation regenerated to match new emission.
+  - `apps/drawing-canvas/drawing-canvas.rkt` landed with dynamic `DrawingCanvasView`
+    subclass (4 overrides: `drawRect:`, `mouseDown:`, `mouseDragged:`, `mouseUp:`).
+    Type encodings pulled from NSView's own `method-type-encoding` to avoid ABI drift.
+    Per-stroke CGContext rendering with round caps/joins; single-point strokes handled
+    by a coincident-point segment so round caps paint a dot with no special-case branch.
+    NSColorPanel with continuous target-action and line-width NSSlider also landed.
+    VM-validated via GUIVisionVMDriver: window renders, drag produces stroke, color
+    picker updates stroke color without crash, Clear empties canvas.
+  - Bundle IDs switched project-wide from `com.apianyware.*` to `com.linkuistics.*`
+    as directed.
+  - Generator: class-method vs instance-property collision detection now correctly
+    partitioned by class vs instance level (`PropertyNameSets`), so `+separatorItem`
+    (NSMenuItem) is no longer suppressed by the boolean instance property of the same name.
+  - Generator: property deduplication now keyed on generated Racket name rather than
+    ObjC property name — fixes NSScreen `CGDirectDisplayID`/`cgDirectDisplayID` emitting
+    two identical `define` forms.
+  - Generator: `CString` TypeRefKind added and wired through `ffi_type_mapping.rs`
+    (`_string` FFI type) and contract mapper (`string?` / `(or/c string? #f)` for return).
+  - Generator: `is_generic_type_param()` helper extracted and shared between FFI mapper
+    and contract mapper, replacing duplicated block-listed prefix checks.
+  - Generator: `emit_functions.rs` emits a thread-safety warning comment on any function
+    with a callback (`FunctionPointer` / `Block`) parameter.
+  - Generator: class-specific return-type predicates (`nsview?`, `nscolor?`, etc.) now
+    emitted inline in generated class files, backed by `objc-instance-of?` from
+    `objc-base.rkt`. `map_return_contract` now uses these predicates instead of `any/c`
+    for `TypeRefKind::Class` returns.
+  - Runtime: `objc-instance-of?` added to `objc-base.rkt` (backed by `isKindOfClass:`
+    via `objc_getClass` with a class-name cache).
+  - Collection: `@protocol Foo;` forward declarations and struct forward declarations now
+    skip-guarded with `is_definition()` to prevent forward-decl shadowing of full definitions.
+  - Collection: `MacroDefinition` entities now extracted for CFSTR constants; `macro_value`
+    field added to IR `Constant` struct; `emit_constants.rs` emits `_make-cfstr` preamble
+    and `(_make-cfstr "literal")` calls for macro-valued constants.
+  - Runtime load harness expanded: 7 additional runtime files in `RUNTIME_FILES`,
+    7 additional paths in `LIBRARY_LOAD_CHECKS`.
+  - New runtime load test: `runtime_block_nil_guard` verifies `make-objc-block #f` returns
+    `(values #f #f)` and `free-objc-block #f` is a no-op.
+  - Extensive unit tests added across `emit_class.rs`, `emit_functions.rs`,
+    `emit_constants.rs` covering all the above.
 
-- **What didn't work / wasn't attempted:** No sample app work this session. Emitter changes are substantial; a full pipeline re-run to verify golden files is still pending.
+- **What didn't work / key learnings:**
+  - `tell` from `ffi/unsafe/objc` only accepts `_id`-tagged cpointers or imported class
+    refs — NOT `objc-object?` struct wrappers. Raw cpointers from ObjC trampolines must
+    pass through `coerce-arg` before hitting `tell`; `borrow-objc-object` alone is not
+    enough.
+  - Delegate handlers that send messages back to their `sender` argument MUST declare
+    `#:param-types (hash "selector" '(object))` or the arg arrives as a raw cpointer and
+    every generated wrapper call trips its `objc-object?` self contract.
+  - NSColor component accessors raise NSException on non-RGB colors; must convert via
+    `nscolor-color-using-color-space` with `nscolorspace-device-rgb-color-space` first.
+  - Generator bug discovered: `nsevent.rkt` can't be required because `NSEvent
+    +modifierFlags` and `-modifierFlags` emit as the same Racket identifier. Filed in
+    core backlog. Workaround: raw `tell` for `locationInWindow`.
 
-- **What this suggests trying next:** Run the full pipeline re-run and update golden files. Then pick up one of the sample app tasks (Note Editor, Drawing Canvas, PDFKit Viewer, or SceneKit Viewer). PDFKit Viewer is now unblocked and lowest-risk given verified collection data.
-
-- **Key learnings:**
-  - `git diff` misses untracked new files; the new runtime `.rkt` files (`ax-helpers.rkt`, `cf-bridge.rkt`, `cgevent-helpers.rkt`, `nsview-helpers.rkt`, `objc-interop.rkt`, `spi-helpers.rkt`) are visible only in `git status` — they need to be staged and committed.
-  - The prefix-allowlist for generic type params was fragile and wrong for `AXValueType` (starts with "AX", previously treated as generic). The two-character heuristic (single uppercase + lowercase) is correct for all known Apple SDK generic type params.
-  - Forward declaration shadowing in the seen-set was a real bug: a `@protocol Foo;` forward decl inserted `Foo` into `seen_protocols` before the full `@protocol Foo { ... }` definition could be processed, silently dropping the protocol from the IR.
+- **What to try next:**
+  - Fix class-method / instance-method selector collision (`nsevent.rkt` / `nsevent-modifier-flags`).
+  - Fix `bool`/`BOOL` return types emitting `_uint8` instead of `_bool` (silent truthy bug).
+  - Fix `make-objc-block` to treat `#f` as no-op lambda.
+  - Fix `wkwebview.rkt` referencing unbound `_NSEdgeInsets`.
+  - Proceed to SceneKit Viewer sample app.
