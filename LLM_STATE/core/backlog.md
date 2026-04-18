@@ -63,3 +63,25 @@ tasks should be filed directly against the owning per-target plan.
 - **Symptom:** When SDK headers are compiled with `OS_OBJECT_USE_OBJC=1` (the macOS default), `dispatch_queue_t` and similar GCD handle types are declared as ObjC objects. The IR maps them to an `_id`-equivalent `TypeRef`. Emitters that obtain a GCD queue value via `ffi-obj-ref`/`dlsym`/pointer arithmetic get a raw pointer, not an `_id`-tagged value — an explicit cast is required before passing to any IR-typed `_id` parameter. Currently each emitter target must discover and apply this cast manually.
 - **Scope:** Add an IR-level annotation (e.g. a flag on `TypeRef` or a new `TypeRefKind` variant) marking types that are "ObjC objects via OS_OBJECT macro" rather than "genuine ObjC class declarations". Emitters can then auto-generate the cast for values obtained outside the normal message-send path. Alternatively, document the cast requirement prominently in the emitter contract so future targets don't rediscover it from scratch.
 - **Priority:** Low — only bites when a framework exposes a struct global whose declared type is OS_OBJECT-based (currently only libdispatch). The manual workaround (explicit cast at the call site) is well understood. Promote if a second framework triggers the same pattern.
+
+#### Emit protocol-inherited methods on class bindings
+- **Status:** not_started
+- **Priority:** medium
+- **Dependencies:** none
+- **Surfaced by:** SceneKit Viewer sample app (racket-oo target, 2026-04-17).
+  `SCNNode.runAction:` (via SCNActionable protocol) and `SCNView.setAutoEnablesDefaultLighting:`
+  (via SCNSceneRenderer protocol) are absent from the generated class bindings.
+  This is a distinct axis from superclass-inherited methods — the existing
+  "Emit inherited methods from NSView/NSControl superclasses" entry does not cover
+  protocol conformance. Workaround: module-local typed `objc_msgSend` aliases
+  (app-menu.rkt pattern).
+- **Description:** When an ObjC class conforms to a protocol, methods declared in
+  that protocol are not emitted on the class binding — only methods declared directly
+  on the class or via `@interface` categories appear. Fix: after collecting a class's
+  direct methods, also walk its conforming protocols (depth-first, deduplicating by
+  selector name) and emit their methods if not already emitted as direct methods.
+  The IR already captures protocol conformance via `protocol_names` on `ObjCInterface`;
+  the emitter needs to use it. Snapshot test updates required.
+- **Scope:** `emit_class.rs` in `emit-racket-oo`. Snapshot golden file updates needed
+  for classes with protocol conformance.
+- **Results:** _pending_
