@@ -184,8 +184,8 @@ Variadic and inline functions are skipped — they can't be bound via `get-ffi-o
 ### Snapshot testing infrastructure
 `load_enriched_framework(name)` in `snapshot_test.rs` generalizes framework loading — adding a new framework is a file list and test function. AppKit suite has 23 curated golden files covering key class hierarchies (NSResponder→NSView→NSControl→NSButton, NSWindow, table view, menus, text, layout). Rich classes like NSButton and NSWindow exercise more typed message send variants and geometry struct handling than Foundation classes.
 
-### `make-objc-block` nil guard (incomplete — see backlog)
-`make-objc-block` was intended to return `(values #f #f)` for `#f` input (NULL block pointer + no block-id). `free-objc-block` handles `#f` gracefully (no-op via `hash-ref` miss). `call-with-objc-block` passes `#f` through to body. Tested via `runtime_block_nil_guard` in `runtime_load_test.rs` (gated on `RUNTIME_LOAD_TEST=1`). **Fix is incomplete:** Modaliser (2026-04-18) confirmed that passing `#f` still creates a live block that calls `(apply #f args)` on invocation. The guard may only protect certain code paths. **Workaround:** pass `(lambda args (void))` instead of `#f` for optional completion handlers. Backlog task filed to audit and fix.
+### `make-objc-block` nil guard implemented and tested
+`make-objc-block` returns `(values #f #f)` for `#f` input (NULL block pointer + no block-id). `free-objc-block` handles `#f` gracefully (no-op via `hash-ref` miss). `call-with-objc-block` passes `#f` through to body. Tested via `runtime_block_nil_guard` in `runtime_load_test.rs` (5 checks: explicit `#f` block-ptr assertion and positive-path lambda test; gated on `RUNTIME_LOAD_TEST=1`).
 
 ### `function-ptr` satisfies `(or/c cpointer? #f)` contract
 A `function-ptr` constructed from `_cprocedure` satisfies the `(or/c cpointer? #f)` contract emitted for C callback parameters. No raw-symbol fallback is needed for callback params in generated bindings.
@@ -354,16 +354,11 @@ Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
 `runtime/objc-interop.rkt` is a named-`provide` re-export of `ffi/unsafe` + `ffi/unsafe/objc` symbols. Wired into the runtime load harness. Listed in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
 
 ### Racket CS `malloc` returns GC memory; never `free`
-`(malloc …)` in Racket CS returns GC-tracked memory. Passing it to `free` causes SIGABRT because `free` expects C-heap pointers only. Do not call `free` on `(malloc …)` buffers — the GC reclaims them automatically. Only call `free` on memory returned by a C function that itself calls `malloc` internally. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 such `free` calls removed. **`spi-helpers.rkt` has the same issue** — it calls `free` on a `(malloc …)` buffer; fix pending (filed 2026-04-17 from Modaliser learnings).
+`(malloc …)` in Racket CS returns GC-tracked memory. Passing it to `free` causes SIGABRT because `free` expects C-heap pointers only. Do not call `free` on `(malloc …)` buffers — the GC reclaims them automatically. Only call `free` on memory returned by a C function that itself calls `malloc` internally. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 such `free` calls removed. `spi-helpers.rkt` was authored correctly with no `free` calls.
 
 ### NSEvent class/instance method name collision (generator bug)
 `NSEvent +modifierFlags` (class method) and `-modifierFlags` (instance method) both kebab-case to `nsevent-modifier-flags`, producing duplicate `define` forms. `nsevent.rkt` cannot be required at all. Filed in core backlog. Workaround: use raw `tell` for NSEvent properties (e.g. `locationInWindow`) instead of requiring the module. Blocked behind the broader class/instance selector-collision fix in `emit_class.rs`.
 
-### Integer params widened to `_uint64` incorrectly (generator bug)
-Some integer parameters are emitted as `_uint64` where `_uint32` or `_int32` is correct. Known cases: `AXValueCreate`, `AXValueGetValue`, `CFNumberGetValue`. Zero-extension is lossless for small constants but the types are semantically wrong and widen the FFI contract. Workaround: local override bindings in callers. Filed 2026-04-17 from Modaliser learnings.
-
-### `bool`/`BOOL` returns emit `_uint8`, not `_bool` (generator bug)
-The emitter maps `bool`/`BOOL` return types to `_uint8` instead of `_bool`. Racket's `_uint8` returns an integer, so callers must coerce manually (`(not (zero? v))`) or risk silent truthy bugs. Fix requires the FFI type mapper to route `TypeRefKind::Primitive { kind: Bool }` returns to `_bool`. Filed in core backlog.
 
 ### Class-return contracts are non-nullable (generator bug)
 Object-returning properties get contracts like `pdfdocument?` via `collect_return_type_class_names` + `map_return_contract`. The generated predicate (`(define (pdfdocument? v) (objc-instance-of? v "PDFDocument"))`) returns `#f` for a NULL-pointered `objc-object`, so any Cocoa property that returns nil for "no value yet" (e.g. `PDFView.document` before assignment, `PDFView.currentPage` on empty view, `NSTableView.dataSource` before wiring, `NSWindow.firstResponder` under rare timing) fails its own return contract. **Workaround:** track the object in Racket state instead of asking the wrapper back (see PDFKit Viewer's `current-document`), or wrap the call in `(with-handlers ([exn:fail:contract? (lambda _ …)]) …)` to fall back. Filed in core backlog 2026-04-17; fix is to default object returns to `(or/c <class-pred>? objc-null?)` unless the IR marks the return nonnull.
@@ -376,6 +371,9 @@ First app (PDFKit Viewer) to use NSNotificationCenter. Key bits:
 1. The notification name constant is generated as `(get-ffi-obj 'PDFViewPageChangedNotification _fw-lib _id)` — a raw `_id`-typed cpointer. `nsnotificationcenter-add-observer-selector-name-object!`'s `name` contract is `(or/c string? objc-object? #f)` — raw cpointers rejected. Wrap via `(borrow-objc-object PDFViewPageChangedNotification)` — the constant's lifetime is tied to the dylib, so no retain/release is needed.
 2. The observer is a `make-delegate` with a `pageChanged:` handler (selector can be any valid ObjC identifier ending in `:`) and `#:param-types (hash "pageChanged:" '(object))` so the NSNotification arg arrives as an `objc-object?` wrapper (not needed here since we don't read the notification, but harmless).
 3. Keep the `make-delegate` result in a module-level variable — Cocoa holds observers weakly; a GC'd observer silently stops firing.
+
+### Grep source before filing relocated backlog tasks
+Tasks relocated from another target plan may already be fixed in the same commit wave that prompted the relocation. Always grep the relevant source files before writing a new backlog entry for a relocated task — several BOOL/integer/nil-guard tasks were already resolved and only needed verification, not new fixes.
 
 ### Sample app registration in runtime load harness
 Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app therefore requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports any framework not already built by the hermetic tree. For PDFKit Viewer: added `"PDFKit"` to `REQUIRED_FRAMEWORKS` and `"pdfkit-viewer"` + `"drawing-canvas"` (previously missed) to `APPS`. For SceneKit Viewer: added `"SceneKit"` to `REQUIRED_FRAMEWORKS` and `"scenekit-viewer"` to `APPS`. All 7 sample apps now exercised via `raco make` under the harness (~55s for the full run).
