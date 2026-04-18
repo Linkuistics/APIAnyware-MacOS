@@ -235,7 +235,7 @@ Documents exactly which generated names the consumer uses; prevents `racket/cont
 ### Distributable bundles must exclude `compiled/` subdirectories
 Host-compiled `.zo` files under `compiled/` are machine- and Racket-version-specific
 (linklets bake in host-specific path references). Copying them to a different machine
-causes runtime contract errors at load time (confirmed 2026-04-18: `make-nsmenuitem-init-with-title-action-key-equivalent` arg 2 on Tahoe VM). Strip before packaging:
+causes runtime contract errors at load time (e.g. wrong-arity contract on `make-nsmenuitem-init-with-title-action-key-equivalent`). Strip before packaging:
 `find . -name compiled -type d -exec rm -rf {} +` or `rsync --exclude=compiled`.
 **`bundle-racket-oo` enforces this automatically:** the `.rkt`-only walker skips
 `compiled/` implicitly (no `.rkt` files inside), and `copy_dir_recursive` for `lib/`
