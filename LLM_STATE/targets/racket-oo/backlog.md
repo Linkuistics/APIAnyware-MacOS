@@ -103,7 +103,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 ### Sample Apps
 
 #### Mini Browser — VNC Verification
-- **Status:** not_started
+- **Status:** done
 - **Priority:** high
 - **Dependencies:** Mini Browser app landed and raco make + bundle green (2026-04-18)
 - **Description:** Complete the remaining Mini Browser test-strategy checklist items
@@ -116,7 +116,49 @@ Runtime location: generation/targets/racket-oo/runtime/
   address-bar container (accessibility hierarchy depth). Use `guivision input type`
   or VNC keyboard events instead. Boot the existing Mini Browser VM or reuse
   the `mini-browser-test` Tahoe VM from the 2026-04-18 run.
-- **Results:** _pending_
+- **Results:** All four VNC checks PASS on fresh Tahoe VM
+  (`guivision-00b7b26c`, 2026-04-18). The orphan `mini-browser-test` VM from
+  the prior session was started outside `vm-start.sh` and had no spec file
+  (no recoverable VNC password), so a fresh canonical-path VM was started
+  via `scripts/macos/vm-start.sh --platform macos`, which writes the spec
+  to `$XDG_STATE_HOME/guivision/vms/<id>.json` with VNC host/port/password,
+  agent endpoint, and SSH endpoint. From that point `--vm <id>` routed all
+  CLI calls correctly. Racket was reinstalled on the fresh clone via
+  `nohup /opt/homebrew/bin/brew install minimal-racket` polled for
+  completion (~5 min) — agent `exec` is fine as long as the command is
+  detached, since the client-side Bash timeout tears down the HTTP call but
+  not the VM-side process.
+  - **Check 1 (address-bar typing):** PASS. Triple-click at VNC
+    screen-absolute (564, 99) focuses the NSTextField and selects its
+    contents; `guivision input type "https://www.example.com"` followed by
+    `input key return` replaces the value and navigates. Post-navigation
+    AX snapshot confirms textfield value updated, Back button enabled,
+    example.com rendered ("Example Domain" heading visible).
+  - **Check 2 (link navigation):** PASS. VNC click at (320, 310) on the
+    "Learn more" link loaded `https://www.iana.org/help/example-domains`;
+    window title updated to `Example Domains — Mini Browser` and Back
+    remained enabled.
+  - **Check 3 (error alert):** PASS. Typing `not-a-url` surfaced an NSAlert
+    dialog with text "A server with the specified hostname could not be
+    found." and a focused OK button — the `WKNavigationDelegate` error
+    path works correctly. Dismissed via Return.
+  - **Check 4 (window resize):** PASS. `guivision agent window-resize`
+    from 800x632 → 500x400 reflows the Example Domain text to narrower
+    wrapping; 500x400 → 900x700 expands (actual 900x667 — height clamped
+    below menu bar/dock, as expected). All toolbar controls remain visible
+    and aligned throughout.
+  Three non-obvious findings recorded in memory.md: (a) `--window <name>`
+  on `guivision input click` translates from AX-reported window origin
+  that includes shadow/chrome, producing VNC coords ~40 px below target on
+  Tahoe — use screen-absolute coords derived from a full-screen screenshot
+  instead; (b) triple-click is the reliable way to focus+select an
+  NSTextField hosted in NSStackView when single-click doesn't land first
+  responder; (c) orphan tart VMs started outside `vm-start.sh` have no
+  recoverable VNC password and must be restarted through the script to
+  regain the password for VNC-dependent tests.
+- **Next:** None. All Mini Browser app-level acceptance is complete. Any
+  future cross-target browser apps (Racket functional, Chez, etc.) should
+  reuse this test-strategy script verbatim.
 
 #### Note Editor
 - **Status:** not_started
@@ -136,7 +178,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 ### Harness & Verification
 
 #### Fix `nsscreen.rkt` duplicate definition
-- **Status:** not_started
+- **Status:** done
 - **Priority:** medium
 - **Dependencies:** none
 - **Source:** Reported by Modaliser-Racket (upstream binding-generation bug, 2026-04-18)
@@ -150,7 +192,19 @@ Runtime location: generation/targets/racket-oo/runtime/
   same `PropertyNameSets` partitioning or `class_method_disambig` guard in
   `emit_class.rs`. Regenerate and verify via runtime load harness.
   When fixed, add `nsscreen.rkt` to `LIBRARY_LOAD_CHECKS`.
-- **Results:** _pending_
+- **Results:** Stale backlog entry — fix already landed in commit `1d03ede`
+  (2026-04-18) as part of the NSEvent class-method/class-property
+  disambiguation work; the same commit added `nsscreen.rkt` to
+  `LIBRARY_LOAD_CHECKS`. Verified 2026-04-18: the generated
+  `generation/targets/racket-oo/generated/oo/appkit/nsscreen.rkt` has no
+  duplicate `define` (NSScreen has `+screens`/`+mainScreen`/`+deepestScreen`
+  class methods but only instance properties — the collision pattern never
+  materialises for this class), and `RUNTIME_LOAD_TEST=1 cargo test -p
+  apianyware-macos-emit-racket-oo --test runtime_load_test
+  runtime_load_libraries_via_dynamic_require` reports `OK: 25 library load
+  checks passed` (~21 s). Removed the corresponding stale note from
+  `memory.md`. No code changes.
+- **Next:** No follow-up. The triage pass should not re-open this.
 
 ### Future Work
 
@@ -177,6 +231,36 @@ Runtime location: generation/targets/racket-oo/runtime/
   `inherit`, `super-new`, interfaces for protocols, mixins for categories.
   Identify where the current approach falls short of idiomatic Racket OO and
   propose concrete changes to make better use of the class system.
+- **Results:** _pending_
+
+#### Accessibility set-value fails for NSTextField inside NSStackView
+- **Status:** not_started
+- **Dependencies:** none
+- **Description:** `guivision agent set-value` silently fails for `NSTextField`
+  instances hosted inside `NSStackView` containers (e.g. the URL address bar in
+  Mini Browser). The accessibility hierarchy descent does not traverse into
+  `NSStackView` sub-views when resolving a set-value target by role/label; the
+  agent reports no error but the field value does not change. NSStackView is a
+  common AppKit layout primitive, so this affects a broad class of racket-oo
+  sample apps and any future app that uses NSStackView as a layout container.
+
+  Two candidate fixes (pursue in order):
+  1. **Deepen traversal** in the GUIVisionVMDriver macOS agent: extend the
+     element-resolution walk to descend into `NSStackView` children (and any
+     other container roles that currently act as traversal barriers) when
+     searching for a role/label match for set-value.
+  2. **Focus-and-type action:** if full traversal proves unreliable, expose a
+     `focus-and-type` agent action that combines a VNC click-to-focus at given
+     coordinates with keyboard input. Collapses the manual two-step workaround
+     (VNC click + `guivision input type`) into a single agent command and hides
+     the coordinate computation from racket-oo test authors.
+
+  Confirmed workaround: triple-click via VNC to focus + select, then
+  `guivision input type` (VNC keyboard input). See Mini Browser Check 1
+  (address-bar typing) for the precise pattern. Surfaced 2026-04-18 during
+  Mini Browser VM verification. Originally tracked as Task 8 in
+  GUIVisionVMDriver/LLM_STATE/core/backlog.md; relocated here on 2026-04-18
+  because the consumer (racket-oo apps) is the right surface for this work.
 - **Results:** _pending_
 
 #### Developer Documentation

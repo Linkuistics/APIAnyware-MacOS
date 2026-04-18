@@ -345,14 +345,6 @@ Root cause: `NSEdgeInsets` was missing from `is_known_geometry_struct` in
 require was not emitted. Fixed by adding `NSEdgeInsets` to the allowlist. `wkwebview.rkt`
 now loads cleanly and is in `LIBRARY_LOAD_CHECKS`.
 
-### `nsscreen.rkt` duplicate definition (generator bug)
-`nsscreen.rkt` contains a duplicate `define` form that prevents the file from loading.
-`only-in` does not bypass this — module expansion fails before the filter applies.
-Workaround: use raw `tell` for NSScreen calls rather than importing `nsscreen.rkt`.
-Likely a property/method name collision; fix path mirrors the NSEvent `modifierFlags`
-class/instance collision resolved in commit `1d03ede`. See backlog task "Fix `nsscreen.rkt`
-duplicate definition". When fixed, add `nsscreen.rkt` to `LIBRARY_LOAD_CHECKS`.
-
 ### `make-dynamic-subclass` guards against duplicate registration
 `objc_allocateClassPair` returns NULL for a name already registered — subsequent `class_addMethod` would crash. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. Required for modules that register a subclass at load time and may be required twice in the same Racket VM.
 
@@ -417,4 +409,20 @@ Sign the stub binary before copying `Resources/` (first pass), then re-sign the 
 `plist::to_file_xml` output is not byte-identical to Apple's `PlistBuddy`. `merge_info_plist_overrides` in `bundle-racket-oo` skips the read-modify-write cycle entirely when `info_plist_overrides` is empty to avoid spurious diffs.
 
 ### Accessibility set-value fails for NSStackView-hosted textfields
-The GUIVisionVMDriver accessibility agent's set-value path cannot reach textfields nested inside `NSStackView` containers. VNC keyboard input is the correct path for address-bar interaction tests.
+The GUIVisionVMDriver accessibility agent's set-value path cannot reach textfields nested inside `NSStackView` containers. VNC keyboard input is the correct path for address-bar interaction tests. Concrete symptoms (2026-04-18, Tahoe): `set-value --role textfield --window ...` returns `Multiple elements matched`; retrying with `--index 0` returns `No element found matching query`. Use `input click` (screen-absolute coords, triple-click for select-all) followed by `input type` + `input key return`.
+
+### `guivision input click --window` coord offset on Tahoe
+The `--window <name>` flag on `guivision input click` translates window-relative coords via the AX-reported window origin, which includes the window's drop-shadow inset. On Tahoe this produces VNC click coords roughly 40 px below the intended target (confirmed: a textfield whose AX center is window-rel (567, 97) translated to VNC screen (679, 139) but the visible center in a full-screen VNC screenshot was (564, 99)). Use screen-absolute VNC coords derived from a full-screen screenshot, not `--window`-relative. Measure once per test, reuse for the session.
+
+### Triple-click focuses+selects NSStackView-hosted NSTextField
+A single VNC click at the center of the address-bar NSTextField in Mini Browser does NOT always grant first-responder; the post-click AX snapshot shows `focused: false` on the textfield. Triple-click at the same coords reliably focuses AND selects the field contents (NSTextView's triple-click-selects-paragraph inherits for single-line fields). Subsequent `input type` replaces the selection. Pattern for any URL-bar-style interaction:
+  1. `input click --count 3 <screen-x> <screen-y>`
+  2. `input type "<new value>"`
+  3. `input key return`
+No Cmd+A step needed.
+
+### Orphan tart VMs have no recoverable VNC password
+`tart run --vnc-experimental` generates a random VNC password and prints it once to stdout; if the VM is started outside `scripts/macos/vm-start.sh`, the password is lost when the starting shell closes. `~/.tart/vms/<id>/config.json` does not contain it. The only recovery is to `tart stop <id>` and restart via `bash scripts/macos/vm-start.sh --id <id>` (or a fresh id), which captures the VNC URL into `$XDG_STATE_HOME/guivision/vms/<id>.json`. `vm-start.sh` deletes any existing clone with the same id, so the restart path always re-clones from the golden — any installed tooling (brew, racket) inside the clone is lost and must be reinstalled.
+
+### Detached install pattern under agent exec
+Long-running installs (`brew install minimal-racket`, ~5 min on Tahoe) should be launched via `nohup ... > /tmp/x.log 2>&1 &` through `guivision exec`, then polled for completion. The client-side Bash timeout (default 2 min) tears down the HTTP exec call but not the VM-side process; however, if the command is NOT detached, the spawning shell ends with the HTTP call and the child is killed. Poll via `until $GV exec --vm $ID "test -x /path/to/binary" 2>/dev/null | grep -q DONE; do sleep 15; done` from the host.
