@@ -127,6 +127,7 @@ mod tests {
             script_resource_type: "rkt".to_string(),
             script_resource_dir: "racket-app".to_string(),
             bundle_identifier: "com.example.Counter".to_string(),
+            signing_identity: None,
         }
     }
 

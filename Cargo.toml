@@ -41,6 +41,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clang = { version = "2", features = ["clang_10_0", "runtime"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+plist = "1.7"
 
 # Internal crates
 apianyware-macos-types = { path = "collection/crates/types" }

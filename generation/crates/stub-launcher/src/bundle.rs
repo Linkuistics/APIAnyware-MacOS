@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::codesign::codesign_path;
 use crate::generate::{generate_info_plist, generate_stub_source};
 use crate::{StubConfig, StubError};
 
@@ -69,6 +70,14 @@ pub fn create_app_bundle(config: &StubConfig, output_dir: &Path) -> Result<PathB
     let plist = generate_info_plist(config);
     fs::write(contents_dir.join("Info.plist"), plist)?;
 
+    // Re-sign the binary with a stable identity, if requested. The
+    // signature has to be applied before the caller populates
+    // Resources/, otherwise any subsequent bundle-level sign would need
+    // --deep to cover the binary as well.
+    if let Some(identity) = &config.signing_identity {
+        codesign_path(&binary_path, identity)?;
+    }
+
     tracing::info!(
         app_name = %config.app_name,
         path = %app_dir.display(),
@@ -92,6 +101,7 @@ mod tests {
             script_resource_type: "rkt".to_string(),
             script_resource_dir: "racket-app".to_string(),
             bundle_identifier: "com.test.TestApp".to_string(),
+            signing_identity: None,
         }
     }
 
@@ -174,5 +184,30 @@ mod tests {
                 "bundle executable should be executable"
             );
         }
+    }
+
+    #[test]
+    fn create_app_bundle_applies_signing_identity_when_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = test_config();
+        config.signing_identity = Some("-".to_string());
+
+        let app_path = create_app_bundle(&config, dir.path()).unwrap();
+        let binary_path = app_path.join("Contents/MacOS/TestApp");
+
+        // `codesign -dv` exits 0 when a signature is present, non-zero
+        // otherwise. The default linker-supplied ad-hoc signature does
+        // technically show up, but running our explicit ad-hoc sign via
+        // `--force` exercises the code path the StubConfig field gates.
+        let status = Command::new("codesign")
+            .arg("-dv")
+            .arg(&binary_path)
+            .output()
+            .expect("run codesign");
+        assert!(
+            status.status.success(),
+            "binary must carry a signature after signing_identity=Some(...): {}",
+            String::from_utf8_lossy(&status.stderr)
+        );
     }
 }

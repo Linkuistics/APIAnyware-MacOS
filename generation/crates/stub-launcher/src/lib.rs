@@ -18,15 +18,18 @@
 //!     script_resource_type: "rkt".into(),
 //!     script_resource_dir: "racket-app".into(),
 //!     bundle_identifier: "com.example.Counter".into(),
+//!     signing_identity: None,
 //! };
 //!
 //! let app_path = create_app_bundle(&config, Path::new("/tmp/output")).unwrap();
 //! ```
 
 mod bundle;
+mod codesign;
 mod generate;
 
 pub use bundle::{compile_stub, create_app_bundle};
+pub use codesign::codesign_path;
 pub use generate::{generate_info_plist, generate_stub_source};
 
 /// Configuration for generating a Swift stub launcher.
@@ -57,6 +60,15 @@ pub struct StubConfig {
 
     /// CFBundleIdentifier for Info.plist (e.g., "com.example.Counter").
     pub bundle_identifier: String,
+
+    /// Codesign identity applied to the compiled stub binary. `None`
+    /// leaves the binary with whatever signature macOS attaches
+    /// automatically at link time (ad-hoc on arm64). `Some("-")` re-signs
+    /// with an explicit ad-hoc signature; `Some("Developer ID Application: ...")`
+    /// or the CN of a self-signed certificate re-signs with that identity,
+    /// stabilizing the binary's CDHash for macOS TCC grants across
+    /// rebuilds. See `codesign_path` for the underlying primitive.
+    pub signing_identity: Option<String>,
 }
 
 /// Errors from stub launcher operations.
@@ -76,4 +88,19 @@ pub enum StubError {
     /// An I/O error occurred during file or directory operations.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// The `codesign` binary was not found on the system.
+    #[error("codesign not found: {0}")]
+    CodesignNotFound(#[source] std::io::Error),
+
+    /// `codesign` exited with a non-zero status while signing.
+    #[error("codesign failed for {path}:\n{stderr}")]
+    CodesignFailed {
+        /// Path that failed to sign.
+        path: std::path::PathBuf,
+        /// Signing identity attempted.
+        identity: String,
+        /// `codesign` error output.
+        stderr: String,
+    },
 }

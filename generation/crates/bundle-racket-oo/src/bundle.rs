@@ -1,10 +1,12 @@
 //! Assemble a `.app` bundle for a racket-oo sample app.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use apianyware_macos_stub_launcher::{create_app_bundle, StubConfig, StubError};
+use apianyware_macos_stub_launcher::{codesign_path, create_app_bundle, StubConfig, StubError};
+use plist::Value as PlistValue;
 
 use crate::deps::{absolutize, collect_dependencies};
 
@@ -30,6 +32,20 @@ pub struct AppSpec {
     pub script_name: String,
     /// Absolute path to the racket runtime binary baked into the stub.
     pub runtime_path: String,
+    /// Extra keys to merge into the generated `Info.plist`. Keys here
+    /// override any key of the same name produced by the base template —
+    /// use this to declare `LSUIElement`, `NSAccessibilityUsageDescription`,
+    /// `NSScreenCaptureUsageDescription`, custom `CFBundleURLTypes`, or
+    /// any other plist key an app needs. An empty map (the default) leaves
+    /// the base template untouched.
+    pub info_plist_overrides: HashMap<String, PlistValue>,
+    /// Codesign identity applied to the stub binary (and to the full
+    /// bundle once Resources are populated). `None` keeps the default
+    /// ad-hoc signature the linker attaches automatically, which
+    /// produces a fresh CDHash on every rebuild — use `Some("-")` for
+    /// explicit ad-hoc or `Some("My Self-Signed Cert")` for a stable
+    /// identity that makes macOS TCC grants persist across rebuilds.
+    pub signing_identity: Option<String>,
 }
 
 impl AppSpec {
@@ -38,6 +54,7 @@ impl AppSpec {
     /// `"file-lister"` → display `"File Lister"`, bundle id
     /// `"com.linkuistics.FileLister"`. The runtime path defaults to
     /// [`DEFAULT_RACKET_PATH`] and can be overridden afterwards.
+    /// `info_plist_overrides` defaults to empty.
     pub fn from_script_name(script_name: impl Into<String>) -> Self {
         let script_name = script_name.into();
         let app_name = title_case_kebab(&script_name);
@@ -47,6 +64,8 @@ impl AppSpec {
             bundle_id,
             script_name,
             runtime_path: DEFAULT_RACKET_PATH.to_string(),
+            info_plist_overrides: HashMap::new(),
+            signing_identity: None,
         }
     }
 }
@@ -94,6 +113,12 @@ pub enum BundleError {
 
     #[error("stub-launcher error: {0}")]
     Stub(#[from] StubError),
+
+    #[error("could not merge Info.plist overrides: {0}")]
+    InfoPlistMerge(#[from] plist::Error),
+
+    #[error("Info.plist at {0} is not a top-level dictionary")]
+    InfoPlistRootNotDict(PathBuf),
 }
 
 /// Bundle a sample app at `source_root/apps/<script_name>/<script_name>.rkt`
@@ -198,10 +223,16 @@ pub fn bundle_app_with_entry(
         script_resource_type,
         script_resource_dir,
         bundle_identifier: spec.bundle_id.clone(),
+        signing_identity: spec.signing_identity.clone(),
     };
 
     fs::create_dir_all(output_dir)?;
     let app_path = create_app_bundle(&stub_config, output_dir)?;
+
+    if !spec.info_plist_overrides.is_empty() {
+        let plist_path = app_path.join("Contents").join("Info.plist");
+        merge_info_plist_overrides(&plist_path, &spec.info_plist_overrides)?;
+    }
 
     let racket_app = app_path
         .join("Contents")
@@ -227,6 +258,16 @@ pub fn bundle_app_with_entry(
         let lib_dst = racket_app.join("lib");
         copy_dir_recursive(&lib_src, &lib_dst)?;
         normalize_dylib_install_names(&lib_dst)?;
+    }
+
+    // Re-sign the fully populated bundle so the signature covers
+    // Resources and any bundled dylib, not just the stub binary that
+    // stub-launcher signed earlier. Without this pass, callers who set
+    // a signing_identity end up with an inconsistent bundle: signed
+    // binary, unsigned resources — which makes Gatekeeper reject the
+    // bundle and can confuse notarization tooling.
+    if let Some(identity) = &spec.signing_identity {
+        codesign_path(&app_path, identity)?;
     }
 
     tracing::info!(
@@ -277,6 +318,30 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
             fs::copy(&from, &to)?;
         }
     }
+    Ok(())
+}
+
+/// Read the `Info.plist` at `plist_path`, merge each entry from
+/// `overrides` into its top-level dictionary (overriding any
+/// existing key of the same name), and write the result back as XML.
+///
+/// Assumes the file already exists — callers only invoke this when
+/// `create_app_bundle` has produced the base template. The result is no
+/// longer byte-identical to the base template (the `plist` crate
+/// canonicalizes formatting), so the caller is expected to skip this
+/// step entirely when `overrides` is empty.
+fn merge_info_plist_overrides(
+    plist_path: &Path,
+    overrides: &HashMap<String, PlistValue>,
+) -> Result<(), BundleError> {
+    let mut value = PlistValue::from_file(plist_path)?;
+    let dict = value
+        .as_dictionary_mut()
+        .ok_or_else(|| BundleError::InfoPlistRootNotDict(plist_path.to_path_buf()))?;
+    for (key, override_value) in overrides {
+        dict.insert(key.clone(), override_value.clone());
+    }
+    plist::to_file_xml(plist_path, &value)?;
     Ok(())
 }
 

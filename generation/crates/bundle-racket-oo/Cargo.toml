@@ -7,6 +7,7 @@ description = "Bundle racket-oo sample apps into macOS .app bundles via stub-lau
 
 [dependencies]
 apianyware-macos-stub-launcher.workspace = true
+plist.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

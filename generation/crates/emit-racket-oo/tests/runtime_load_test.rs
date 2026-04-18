@@ -80,6 +80,7 @@ const APPS: &[&str] = &[
     "drawing-canvas",
     "pdfkit-viewer",
     "scenekit-viewer",
+    "mini-browser",
 ];
 
 /// Library files exercised via `dynamic-require`. Each entry is a path
