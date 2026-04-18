@@ -359,15 +359,6 @@ Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
 ### NSEvent class/instance method name collision (generator bug)
 `NSEvent +modifierFlags` (class method) and `-modifierFlags` (instance method) both kebab-case to `nsevent-modifier-flags`, producing duplicate `define` forms. `nsevent.rkt` cannot be required at all. Filed in core backlog. Workaround: use raw `tell` for NSEvent properties (e.g. `locationInWindow`) instead of requiring the module. Blocked behind the broader class/instance selector-collision fix in `emit_class.rs`.
 
-### `nsmenuitem-separator-item` emitted as instance property (generator bug)
-`NSMenuItem.separatorItem` is a class factory method, but the generator emits it as an instance property getter — producing a `(nsmenuitem-separator-item self)` binding that fails at runtime. Workaround: `(tell NSMenuItem separatorItem)` directly. Fix: detect class factory methods in `emit_class.rs` and exclude them from property emission. Filed 2026-04-17 from Modaliser learnings.
-
-### `nsscreen.rkt` has duplicate `define` form (generator bug)
-`nsscreen.rkt` contains a duplicate `define` form that prevents the file from loading at all (`only-in` included). Workaround: use raw `tell` for all NSScreen calls. Filed 2026-04-17 from Modaliser learnings.
-
-### `CFStringGetCStringPtr` return contract too strict (generator bug)
-Generated contract requires `string?` return, but `CFStringGetCStringPtr` legitimately returns NULL when the internal encoding does not match the requested encoding — `_string` maps this to `#f`. The correct contract is `(or/c string? #f)`. Workaround: local override with `_pointer` return + NULL→slow-path fallback in `cfstring->string`. Fix: nullable CString returns should always emit `(or/c string? #f)`. Filed 2026-04-17 from Modaliser learnings.
-
 ### Integer params widened to `_uint64` incorrectly (generator bug)
 Some integer parameters are emitted as `_uint64` where `_uint32` or `_int32` is correct. Known cases: `AXValueCreate`, `AXValueGetValue`, `CFNumberGetValue`. Zero-extension is lossless for small constants but the types are semantically wrong and widen the FFI contract. Workaround: local override bindings in callers. Filed 2026-04-17 from Modaliser learnings.
 
@@ -387,4 +378,4 @@ First app (PDFKit Viewer) to use NSNotificationCenter. Key bits:
 3. Keep the `make-delegate` result in a module-level variable — Cocoa holds observers weakly; a GC'd observer silently stops firing.
 
 ### Sample app registration in runtime load harness
-Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app therefore requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports any framework not already built by the hermetic tree. For PDFKit Viewer: added `"PDFKit"` to `REQUIRED_FRAMEWORKS` and `"pdfkit-viewer"` + `"drawing-canvas"` (previously missed) to `APPS`. All 6 sample apps now exercised via `raco make` under the harness (~55s for the full run).
+Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app therefore requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports any framework not already built by the hermetic tree. For PDFKit Viewer: added `"PDFKit"` to `REQUIRED_FRAMEWORKS` and `"pdfkit-viewer"` + `"drawing-canvas"` (previously missed) to `APPS`. For SceneKit Viewer: added `"SceneKit"` to `REQUIRED_FRAMEWORKS` and `"scenekit-viewer"` to `APPS`. All 7 sample apps now exercised via `raco make` under the harness (~55s for the full run).
