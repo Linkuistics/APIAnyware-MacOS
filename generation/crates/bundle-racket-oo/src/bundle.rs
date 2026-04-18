@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use apianyware_macos_stub_launcher::{create_app_bundle, StubConfig, StubError};
 
@@ -130,7 +131,20 @@ pub fn bundle_app(
 /// `bindings/` → `APIAnyware-MacOS/generation/targets/racket-oo/`) lands
 /// as a real copy under `bindings/` in the bundle rather than an
 /// absolute symlink. The `lib/` directory at `source_root` (if any) is
-/// copied verbatim to `Resources/racket-app/lib/`.
+/// copied to `Resources/racket-app/lib/`, with two distributability
+/// passes applied:
+///
+/// - `compiled/` subdirectories are skipped. Racket's `.zo` linklets
+///   bake host-specific absolute paths into their bytecode and corrupt
+///   the bundle on another machine.
+/// - Each `.dylib`'s `LC_ID_DYLIB` is rewritten via `install_name_tool`
+///   to `@executable_path/../Resources/racket-app/lib/<name>`, so the
+///   bundled dylib's self-reported identity resolves within the bundle
+///   rather than through an external `LC_RPATH`. Racket's `ffi-lib`
+///   loads by explicit path and is indifferent; the rewrite is for
+///   any native consumer (direct-link tools, dyld introspection). A
+///   missing `install_name_tool` is logged as a warning and does not
+///   fail the bundle.
 ///
 /// The Swift stub is generated and compiled by `stub-launcher`. Its
 /// `script_resource_dir`, `script_resource_name`, and
@@ -212,6 +226,7 @@ pub fn bundle_app_with_entry(
     if lib_src.is_dir() {
         let lib_dst = racket_app.join("lib");
         copy_dir_recursive(&lib_src, &lib_dst)?;
+        normalize_dylib_install_names(&lib_dst)?;
     }
 
     tracing::info!(
@@ -251,9 +266,70 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         let to = dst.join(entry.file_name());
         let ftype = entry.file_type()?;
         if ftype.is_dir() {
+            // Skip Racket's bytecode cache — `.zo` linklets bake in
+            // host-specific absolute paths and corrupt the bundle on
+            // another machine (confirmed 2026-04-18 on a Tahoe VM).
+            if entry.file_name() == "compiled" {
+                continue;
+            }
             copy_dir_recursive(&from, &to)?;
         } else {
             fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// Rewrite each `.dylib`'s LC_ID_DYLIB to `@executable_path/<rel>` where
+/// `<rel>` is the dylib's location relative to the stub binary at
+/// `Contents/MacOS/<App Name>`. That is `../Resources/racket-app/lib/<name>`
+/// given our bundle layout. Without this, the dylib still carries its
+/// build-time `@rpath/...` identity, which relies on an externally-set
+/// LC_RPATH and therefore breaks the "self-contained" invariant — the
+/// bundle can no longer tell a native consumer where to find its own
+/// dylib.
+///
+/// Racket's own `ffi-lib` uses an explicit filesystem path and is
+/// indifferent to this identity. The rewrite is for introspection and
+/// any future direct-link consumer of the dylib.
+///
+/// Non-fatal: if `install_name_tool` isn't on PATH, emit a warning and
+/// leave the dylib as-is. Failing the bundle here would make
+/// `bundle_app` unusable on stripped-down systems that otherwise have a
+/// working `swiftc`.
+fn normalize_dylib_install_names(lib_dst: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(lib_dst)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().map(|e| e == "dylib").unwrap_or(false) {
+            let file_name = path
+                .file_name()
+                .expect("dylib path has file name")
+                .to_string_lossy()
+                .into_owned();
+            let new_id = format!("@executable_path/../Resources/racket-app/lib/{file_name}");
+            match Command::new("install_name_tool")
+                .arg("-id")
+                .arg(&new_id)
+                .arg(&path)
+                .output()
+            {
+                Ok(out) if out.status.success() => {}
+                Ok(out) => {
+                    tracing::warn!(
+                        dylib = %path.display(),
+                        stderr = %String::from_utf8_lossy(&out.stderr),
+                        "install_name_tool -id failed; leaving dylib with original install name"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        dylib = %path.display(),
+                        error = %e,
+                        "install_name_tool not available; leaving dylib with original install name"
+                    );
+                }
+            }
         }
     }
     Ok(())

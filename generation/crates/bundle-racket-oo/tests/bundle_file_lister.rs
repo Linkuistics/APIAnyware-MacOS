@@ -257,6 +257,155 @@ fn bundles_root_level_entry_with_symlinked_bindings_subdir() {
     // entry rather than the `apps/<name>/` sample-app layout.
 }
 
+/// A real-world source tree will often have `compiled/` directories
+/// scattered throughout — Racket caches bytecode there. Those directories
+/// bake host-specific absolute paths into the `.zo` linklets (confirmed
+/// 2026-04-18 on Tahoe VM), so they MUST NOT leak into a distributable
+/// bundle. The walker already ignores `compiled/` implicitly because it
+/// only follows `.rkt` requires, but the `lib/` directory is copied
+/// recursively and needs an explicit exclusion.
+#[test]
+fn bundle_lib_copy_excludes_compiled_subdirectory() {
+    if !swiftc_available() {
+        eprintln!("SKIPPED: swiftc not available");
+        return;
+    }
+    let real_racket_oo = racket_oo_root();
+    if !real_racket_oo.join("runtime").join("objc-base.rkt").is_file() {
+        eprintln!("SKIPPED: racket-oo source tree not present");
+        return;
+    }
+
+    let project = tempfile::tempdir().expect("project tempdir");
+    let project_root = project.path();
+
+    // Minimal project: a root-level entry pulling in a single runtime
+    // file, plus a `lib/` dir with both a real dylib stand-in and a
+    // poisoned `compiled/` subdirectory whose presence would break a
+    // distributable bundle.
+    std::os::unix::fs::symlink(&real_racket_oo, project_root.join("bindings"))
+        .expect("symlink bindings/");
+    fs::write(
+        project_root.join("main.rkt"),
+        "#lang racket/base\n(require \"bindings/runtime/objc-base.rkt\")\n",
+    )
+    .expect("write main.rkt");
+
+    let lib = project_root.join("lib");
+    fs::create_dir_all(lib.join("compiled")).expect("create lib/compiled");
+    fs::write(lib.join("compiled").join("poison.zo"), b"host-specific").expect("write zo");
+    fs::write(lib.join("keep.txt"), b"kept").expect("write real lib file");
+
+    let out = tempfile::tempdir().expect("out tempdir");
+    let mut spec = AppSpec::from_script_name("main");
+    spec.app_name = "Compiled Exclude".to_string();
+    spec.bundle_id = "com.linkuistics.CompiledExclude".to_string();
+
+    let app_path =
+        bundle_app_with_entry(&spec, &project_root.join("main.rkt"), project_root, out.path())
+            .expect("bundle");
+
+    let racket_app = app_path.join("Contents").join("Resources").join("racket-app");
+    let bundle_lib = racket_app.join("lib");
+
+    assert!(
+        bundle_lib.join("keep.txt").is_file(),
+        "legitimate lib file was dropped"
+    );
+    assert!(
+        !bundle_lib.join("compiled").exists(),
+        "compiled/ subdirectory leaked into bundle — will carry host-specific linklet paths"
+    );
+}
+
+/// Verify no `compiled/` directories exist anywhere in the bundle tree
+/// for real sample apps. Structural invariant, cheap to check.
+#[test]
+fn bundle_has_no_compiled_directories_anywhere() {
+    if !swiftc_available() {
+        eprintln!("SKIPPED: swiftc not available");
+        return;
+    }
+    if !entry_script_present() {
+        eprintln!("SKIPPED: file-lister source not present");
+        return;
+    }
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let spec = AppSpec::from_script_name(SCRIPT_NAME);
+    let app_path = bundle_app(&spec, &racket_oo_root(), temp.path()).expect("bundle");
+
+    let mut stack: Vec<PathBuf> = vec![app_path.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("read_dir") {
+            let entry = entry.expect("dir entry");
+            let path = entry.path();
+            if path.is_dir() {
+                assert_ne!(
+                    path.file_name().map(|n| n.to_string_lossy().into_owned()),
+                    Some("compiled".to_string()),
+                    "compiled/ directory found at {path:?} — bundle is not distributable"
+                );
+                stack.push(path);
+            }
+        }
+    }
+}
+
+/// The bundled dylib must carry an install name that resolves within
+/// the bundle (not `@rpath/...`), so any native consumer — a future
+/// direct-link tool, a dyld introspection tool, or a second-stage
+/// loader — can find it without relying on an external rpath setting.
+/// Racket's own `ffi-lib` uses an explicit path and doesn't care, but
+/// a normalized install name is the defining property of a
+/// self-contained bundle.
+#[test]
+fn bundle_dylib_install_name_is_bundle_relative() {
+    if !swiftc_available() {
+        eprintln!("SKIPPED: swiftc not available");
+        return;
+    }
+    if !entry_script_present() {
+        eprintln!("SKIPPED: file-lister source not present");
+        return;
+    }
+    let dylib_source = racket_oo_root()
+        .join("lib")
+        .join("libAPIAnywareRacket.dylib");
+    if !dylib_source.exists() {
+        eprintln!("SKIPPED: libAPIAnywareRacket.dylib not built");
+        return;
+    }
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let spec = AppSpec::from_script_name(SCRIPT_NAME);
+    let app_path = bundle_app(&spec, &racket_oo_root(), temp.path()).expect("bundle");
+
+    let dylib = app_path
+        .join("Contents")
+        .join("Resources")
+        .join("racket-app")
+        .join("lib")
+        .join("libAPIAnywareRacket.dylib");
+    assert!(dylib.is_file(), "dylib missing in bundle");
+
+    let output = Command::new("otool")
+        .arg("-D")
+        .arg(&dylib)
+        .output()
+        .expect("run otool");
+    let text = String::from_utf8_lossy(&output.stdout);
+    let install_name = text
+        .lines()
+        .last()
+        .expect("otool output has last line")
+        .trim();
+    assert!(
+        install_name.starts_with("@executable_path/"),
+        "dylib install name must be bundle-relative, got {install_name:?}"
+    );
+}
+
 /// Bundle every sample app under `apps/` and assert the structural
 /// invariants each `.app` must satisfy. This is the safety net for the
 /// "ensure all sample apps are bundleable" requirement — adding a new
