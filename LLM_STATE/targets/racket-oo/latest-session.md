@@ -1,38 +1,42 @@
-### Session 20 (2026-04-18T12:07:20Z) — Note Editor app + deps.rs comment-skip fix
+### Session 20 (2026-04-18T13:24:39Z) — Synthesize default constructor for init-less ObjC classes
 
-- **Attempted:** Build and VM-verify the Note Editor sample app (9th app): NSSplitView
-  editor/preview layout, NSTextView, WKWebView markdown preview via `loadHTMLString:baseURL:`,
-  NSSavePanel completion block, NSNotificationCenter text-change observer, NSUndoManager,
-  NSAlert via `objc-interop.rkt` escape hatch.
+- **Attempted:** Implement `NSAlert Synthesized Constructor` task — detect ObjC classes
+  whose IR has no explicit init (or only bare `init`) and synthesize a `make-<class>`
+  default constructor so callers no longer need the `objc-interop.rkt` escape hatch.
 
 - **What worked:**
-  - App source landed at `generation/targets/racket-oo/apps/note-editor/note-editor.rkt`;
-    spec at `knowledge/apps/note-editor/spec.md`.
-  - `note-editor` registered as 9th entry in `APPS` in `runtime_load_test.rs`; `raco make`
-    passes for all 9 apps (~90s harness).
-  - VM-verified end-to-end on Tahoe via GUIVisionVMDriver: split view rendered; typing
-    `# Hello World` triggered `NSTextDidChangeNotification` which set window dirty state,
-    updated title, and re-rendered WKWebView preview showing H1 heading; NSSavePanel opened
-    as attached sheet, completion block received `NSModalResponseOK`, wrote file to disk,
-    cleared dirty indicator, updated title; Undo reverted text and re-fired observer.
-  - Three first-time patterns validated: NSSavePanel completion block (Racket procedure
-    wrapped as ObjC block via `make-objc-block` with `(Int64 -> Void)` signature),
-    NSTextDidChangeNotification observer (handler in module-level var, `borrow-objc-object`
-    wrapping), NSAlert via `objc-interop.rkt` (`tell (tell NSAlert alloc) init` +
-    `wrap-objc-object #:retained #t`).
-  - **Bug surfaced and fixed:** `scan_rkt_string_literals` in `bundle-racket-oo/src/deps.rs`
-    did not skip `;`-to-EOL comments, so the doc-comment in `runtime/objc-interop.rkt`
-    containing `".../runtime/objc-interop.rkt"` was treated as a broken require target.
-    Fixed by adding comment-skip to the state machine. Two new tests added.
+  - Audit revealed the problem is system-wide: 54% of 5,304 generated classes have no
+    init in IR at all; a further 19% have only bare `init`; together 73% had no usable
+    constructor before this fix.
+  - Two new helpers in `emit_class.rs`: `has_explicit_constructor` (mirrors the existing
+    emit-time skip on `m.selector == "init"`) and `emit_default_constructor` (emits the
+    `alloc/init/wrap-objc-object` trio).
+  - `build_export_contracts` adds `[make-<class> (c-> any/c)]` under the same condition.
+  - Suppression verified: NSWindow retains only its explicit init constructor.
+  - 3 new unit tests (no-init, bare-init-only, explicit-init) + updated
+    `test_empty_class_provide`; 122 unit tests pass; full workspace `cargo test` green.
+  - 11 golden files regenerated (nsobject, nsdata, nsdateformatter, nsfilemanager,
+    nslock, nsnotificationcenter in Foundation; nsstatusbar in AppKit; tkbutton,
+    tkhelper, tkmanager, tkobject, tkview in TestKit).
+  - Runtime load harness green: library checks (21.3s), all 9 sample apps `raco make`
+    (87.7s).
+  - Note Editor refactored: `make-nsalert` replaces the
+    `(tell (tell NSAlert alloc) init) + wrap-objc-object #:retained #t` hack;
+    `objc-interop.rkt` import dropped from Note Editor.
+  - Core backlog updated: CF struct globals from CoreFoundation absent from IR filed as
+    a new `[collection] [low]` gap item.
+  - `memory.md` updated: obsolete "NSAlert has no generated alloc+init wrapper" entry
+    replaced with authoritative note on the system-wide default constructor synthesis.
 
-- **What didn't work / follow-ups:**
-  - NSAlert has no generated `make-nsalert-*` constructor — every consumer must use
-    `objc-interop.rkt`. Worth investigating whether the emitter should synthesise an
-    alloc+init wrapper for classes that expose no explicit `init`.
-  - GUIVision agent `ls` on `/Users/admin/Documents/` triggered a TCC dialog on Tahoe
-    (unrelated to app functionality; TCC scope changed for the default `guivision-agent`
-    binary recently).
+- **What didn't work:** Nothing blocked — the implementation landed cleanly in one pass.
 
-- **Next:** Backlog now has only Future Work items (Framework Coverage Deepening,
-  Racket Class System Analysis, Developer Documentation, NSStackView set-value
-  accessibility fix). Triage should pick the highest-value next task.
+- **What to try next:** Triage phase will re-examine remaining backlog. Likely candidates:
+  Racket Class System Analysis (now unblocked), Framework Coverage Deepening, or
+  Developer Documentation. CF struct globals gap is low-priority collection-side work.
+
+- **Key learnings:**
+  - The `make_constructor_name` function already existed in `naming.rs` but was only
+    used in tests — the synthesis simply wired it into the production emit path.
+  - The 73% coverage gap had been silently forcing every simple-construction call site
+    through the `objc-interop.rkt` escape hatch; the fix is a pure emitter improvement
+    with no runtime changes.

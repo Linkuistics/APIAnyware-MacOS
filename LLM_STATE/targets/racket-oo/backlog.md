@@ -145,7 +145,7 @@ _(none currently)_
 - **Results:** _pending_
 
 #### NSAlert Synthesized Constructor
-- **Status:** not_started
+- **Status:** done
 - **Priority:** low
 - **Dependencies:** none
 - **Description:** `NSAlert` exposes no explicit `-init` override, so the emitter
@@ -158,49 +158,47 @@ _(none currently)_
   confirmed case; audit for others. If this pattern is common, the escaped
   `objc-interop.rkt` path should remain documented but the emitter should remove
   the need for it in simple alloc+init cases.
-- **Results:** _pending_
+- **Results:** Audit confirmed the pattern is **system-wide, not NSAlert-specific**.
+  Of 5,304 generated classes, 2,872 (54%) have no init in IR and a further 983
+  (19%) have only bare `init` — together 73% of all classes. Every one of those
+  classes previously required the `objc-interop.rkt` escape hatch to construct
+  an instance.
 
-#### CF Struct Globals from CoreFoundation
-- **Status:** not_started
-- **Priority:** low
-- **Dependencies:** none
-- **Description:** `kCFTypeDictionaryKeyCallBacks` and `kCFTypeDictionaryValueCallBacks`
-  (and similar CF struct globals) are absent from the collected IR — they are not
-  emitted to `constants.rkt`. Current workaround: raw `get-ffi-obj` call in app
-  code. Investigate why the extractor misses these and add them to the IR so
-  `constants.rkt` emits them as `ffi-obj-ref` forms (struct globals pattern). The
-  broader `TypeRefKind::Struct` emit path exists and works for geometry constants;
-  the gap is collection-side.
-- **Results:** _pending_
+  Implementation in `emit_class.rs`:
+  - New `has_explicit_constructor` helper: true when at least one supportable,
+    non-bare-init init is present in the IR (mirrors the existing emit-time skip
+    on `m.selector == "init"` so the synthesis condition stays in sync).
+  - New `emit_default_constructor` helper: emits
+    `(define (make-<class>) (wrap-objc-object (tell (tell <Class> alloc) init) #:retained #t))`.
+  - `generate_class_file` calls the synthesizer when `!has_explicit_constructor`,
+    and `build_export_contracts` adds `[make-<class> (c-> any/c)]` to the
+    `provide/contract` form under the same condition.
+  - Naming uses the existing `make_constructor_name` (already in `naming.rs` but
+    previously unused outside tests) — `make-<class>` form matches what
+    `make-<class>-<selector>` already implies as the "no-suffix" default.
 
-#### Accessibility set-value fails for NSTextField inside NSStackView
-- **Status:** not_started
-- **Priority:** low
-- **Dependencies:** none
-- **Description:** `guivision agent set-value` silently fails for `NSTextField`
-  instances hosted inside `NSStackView` containers (e.g. the URL address bar in
-  Mini Browser). The accessibility hierarchy descent does not traverse into
-  `NSStackView` sub-views when resolving a set-value target by role/label; the
-  agent reports no error but the field value does not change. NSStackView is a
-  common AppKit layout primitive, so this affects a broad class of racket-oo
-  sample apps and any future app that uses NSStackView as a layout container.
+  Suppressed correctly when explicit init exists (verified: NSWindow keeps
+  `make-nswindow-init-with-content-rect-...` and NO `make-nswindow`).
 
-  Two candidate fixes (pursue in order):
-  1. **Deepen traversal** in the GUIVisionVMDriver macOS agent: extend the
-     element-resolution walk to descend into `NSStackView` children (and any
-     other container roles that currently act as traversal barriers) when
-     searching for a role/label match for set-value.
-  2. **Focus-and-type action:** if full traversal proves unreliable, expose a
-     `focus-and-type` agent action that combines a VNC click-to-focus at given
-     coordinates with keyboard input. Collapses the manual two-step workaround
-     (VNC click + `guivision input type`) into a single agent command and hides
-     the coordinate computation from racket-oo test authors.
+  Verification:
+  - Three new unit tests (no-init, bare-init only, explicit-init) plus updated
+    `test_empty_class_provide` to reflect that empty classes also gain the
+    default constructor — all green (122 unit tests pass).
+  - Full workspace `cargo test` green.
+  - Snapshot goldens regenerated (11 files: 5 Foundation, 1 AppKit, 5 TestKit).
+  - Runtime load harness green: library checks (21.3s), all 9 sample apps
+    `raco make` (87.7s).
+  - Note Editor refactored: `make-nsalert` replaces the
+    `(tell (tell NSAlert alloc) init) + wrap-objc-object #:retained #t` hack;
+    `objc-interop.rkt` import dropped — Note Editor now back to zero
+    `ffi/unsafe`-style imports for the alert path.
 
-  Confirmed workaround: triple-click via VNC to focus + select, then
-  `guivision input type` (VNC keyboard input). See Mini Browser Check 1
-  (address-bar typing) for the precise pattern. Surfaced 2026-04-18 during
-  Mini Browser VM verification. Fix requires changes in GUIVisionVMDriver.
-- **Results:** _pending_
+  Suggests next: most non-NSAlert classes that previously required the escape
+  hatch (NSColorPanel, NSStackView, NSSavePanel, NSOpenPanel, NSFileManager,
+  ...) now have direct constructors. The `objc-interop.rkt` escape hatch
+  remains valid for NSCoder-like cases but shouldn't be needed for default
+  construction. Memory entry "NSAlert has no generated alloc+init wrapper"
+  is now obsolete and has been updated.
 
 #### Developer Documentation
 - **Status:** not_started
