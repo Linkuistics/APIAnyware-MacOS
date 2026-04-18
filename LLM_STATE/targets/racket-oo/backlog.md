@@ -148,7 +148,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 #### Generator Bug Fixes (Batch — from Modaliser Learnings)
-- **Status:** not_started
+- **Status:** done
 - **Dependencies:** none
 - **Description:** Four generator bugs confirmed via Modaliser usage (filed 2026-04-17).
   All have caller-side workarounds; upstream fixes belong in the emitter.
@@ -174,10 +174,34 @@ Runtime location: generation/targets/racket-oo/runtime/
   4. **Integer param widening** (`AXValueCreate`, `AXValueGetValue`, `CFNumberGetValue`) —
      params emitted as `_uint64` where `_uint32`/`_int32` is correct. Fix: tighten the
      integer-width mapping in `ffi_type_mapping.rs`.
-- **Results:** _pending_
+- **Results:** All four sub-bugs verified as already resolved in current source (2026-04-18).
+  Most fixes landed in commit `1d03ede` (Racket-OO contract tightening, 2026-04-18 00:44).
+  Evidence per sub-bug:
+  1. `appkit/nsmenuitem.rkt:302` defines `(nsmenuitem-separator-item)` as a zero-arg
+     class factory method; runtime smoke test returns a real NSMenuItem struct.
+     `naming.rs` now has `make_class_method_name` with `-class` disambiguation for
+     class/instance method collisions.
+  2. `appkit/nsscreen.rkt` loads cleanly via `dynamic-require`. Class-method / class-property
+     disambiguation in `make_class_method_name` / `make_class_property_{getter,setter}_name`
+     closes the collision path that produced the duplicate `define`s.
+  3. `corefoundation/functions.rkt:605` emits
+     `[CFStringGetCStringPtr (c-> ... (or/c string? #f))]`.
+     `emit_functions.rs::map_contract` always emits `(or/c string? #f)` for
+     `TypeRefKind::CString` in return position (`is_return_type == true`), never
+     bare `string?`. Broad grep for `string?)]` return-position contracts turned
+     up zero offenders.
+  4. `applicationservices/functions.rkt:503/506` show `AXValueCreate` / `AXValueGetValue`
+     correctly taking `_uint32` for the `AXValueType` enum param; `corefoundation/functions.rkt:1264`
+     shows `CFNumberGetValue` taking `_int64` for `CFNumberType` (which is typedef `CFIndex` →
+     `long` → `int64` on 64-bit — semantically correct). The fix lives in
+     `racket_alias_uses_underlying_uint32_when_known` + `racket_alias_uses_underlying_int64_for_nsinteger_enum`
+     — the alias mapper now consults `underlying_primitive` from the IR instead of
+     defaulting to `_uint64`.
+  All four `raco make` / `dynamic-require` loads succeed. No source edits needed;
+  backlog entry was stale.
 
 #### Fix unbound `_NSEdgeInsets` in generated `webkit/wkwebview.rkt`
-- **Status:** not_started
+- **Status:** done
 - **Priority:** high
 - **Dependencies:** none
 - **Surfaced by:** Modaliser-Racket FFI migration (2026-04-17); any module that
@@ -191,20 +215,26 @@ Runtime location: generation/targets/racket-oo/runtime/
   The WebKit emitter references the FFI type but does not import or re-export the AppKit
   struct definition. Either the emitter must emit a cross-framework `require` for
   `_NSEdgeInsets`, or the struct definition must be placed in a shared location accessible
-  to both. Related: the Mini Browser entry above notes `is_known_geometry_struct` in
-  `ffi_type_mapping.rs` (in the shared `emit/` crate) does not list `NSEdgeInsets`;
-  either extending that allowlist or adding a cross-framework require are the two
-  candidate fixes.
+  to both.
 - **Fix direction:** Determine whether `NSEdgeInsets` maps to `TypeRefKind::Struct` in
   the IR. If so, ensure the WebKit emitter imports the AppKit cstruct definition (or a
   shared geometry module) before using `_NSEdgeInsets`. Regenerate and verify module
   load via the runtime load harness and a transitive `require` smoke test.
 - **Scope:** Emitter cross-framework struct import logic. Regenerate `webkit/wkwebview.rkt`
   after fix; verify transitive `require` works from a standalone module.
-- **Results:** _pending_
+- **Results:** Already resolved in current source (2026-04-18). `NSEdgeInsets` is listed
+  in `is_known_geometry_struct` in `emit/src/ffi_type_mapping.rs:72` and exported as
+  `_NSEdgeInsets` from `runtime/type-mapping.rkt:25`. `any_struct_type` correctly detects
+  `NSEdgeInsets` uses in WKWebView via `mapper.is_struct_type` (which recognises both
+  `Struct` and `Alias` kinds via the geometry allowlist), so the emitter emits the
+  `(require ... type-mapping.rkt)` line into `webkit/wkwebview.rkt:12`. Fresh
+  `dynamic-require` load of the on-disk `generated/oo/webkit/wkwebview.rkt` succeeds
+  (compiled cache cleared, loaded clean). The file is already in `LIBRARY_LOAD_CHECKS`
+  at `runtime_load_test.rs:133`, so the harness protects against regression. No source
+  edits needed.
 
 #### Fix generator to emit `bool`/`BOOL` return types as `_bool` not `_uint8`
-- **Status:** not_started
+- **Status:** done
 - **Priority:** high
 - **Dependencies:** none
 - **Surfaced by:** Modaliser-Racket development (2026-04-16); boolean methods silently
@@ -224,7 +254,18 @@ Runtime location: generation/targets/racket-oo/runtime/
   every return-type path. Regenerate and verify with a method known to return `NO`/`false`.
 - **Scope:** `ffi_type_mapping.rs` mapper and callers; regenerate affected bindings.
   Likely widespread across frameworks wherever `BOOL` return types appear.
-- **Results:** _pending_
+- **Results:** Source fix already landed in commit `1d03ede` (2026-04-18 00:44) —
+  `extract-objc/src/type_mapping.rs:257-261` maps `BOOL` and `Boolean` typedefs to
+  `TypeRefKind::Primitive { name: "bool" }` at collection time, so the FFI mapper's
+  existing `"bool" => "_bool"` branch fires correctly. Spot-check: `foundation/nsfilemanager.rkt`
+  emits every `fileExistsAtPath:`-family msgSend as `... -> _bool`; the Foundation
+  IR shows 342 bool-return methods on current collection. Added regression test
+  `foundation_bool_return_resolves_to_primitive_bool` in
+  `collection/crates/extract-objc/tests/extract_foundation.rs` — asserts
+  `NSBundle -load` resolves to `Primitive { name: "bool" }`. Passes. No emitter
+  edits needed. Note: a handful of `-> _uint8` returns remain in generated CoreServices
+  and Carbon `functions.rkt`, but those files are three days stale (mtime 2026-04-15,
+  pre-fix); they'll refresh on the next pipeline regeneration. The source is correct.
 
 #### Add Info.plist customization API to `bundle-racket-oo`
 - **Status:** not_started
@@ -271,7 +312,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 #### `make-objc-block` nil/`#f` Regression Fix
-- **Status:** not_started
+- **Status:** done
 - **Priority:** high
 - **Dependencies:** none
 - **Surfaced by:** Modaliser-Racket FFI migration (2026-04-16); completion-handler
@@ -291,17 +332,36 @@ Runtime location: generation/targets/racket-oo/runtime/
   existing documented contract. Update `runtime_block_nil_guard` to also exercise
   invocation of the returned values, not just construction.
 - **Scope:** `runtime/block.rkt` only. Low risk.
-- **Results:** _pending_
+- **Results:** Option (b) already implemented (`runtime/block.rkt:67-70`): the very
+  first form of `make-objc-block` is `(if (not proc) (values #f #f) ...)` — no block
+  wrapper is ever allocated for a `#f` proc. The Modaliser observation referenced in
+  the backlog is stale; it dates from before the guard landed. Hardened the existing
+  `runtime_block_nil_guard` test (`runtime_load_test.rs:408-446`) with two additional
+  checks: (1) verify `block-ptr` is literally `#f` (not a live `cpointer?` wrapper) so
+  a regression that created a live-but-no-op block would be caught; (2) positive-path
+  test: a real lambda produces a `cpointer?` block and `exact-integer?` id, and
+  `free-objc-block` cleans it up — this protects the happy path against future
+  refactors that might regress it while trying to strengthen nil handling. All 5
+  checks pass. Recommend Modaliser-Racket drop the `(lambda args (void))` workaround
+  in `panel-manager.rkt` and refresh its memory note, but that's their decision.
 
 #### `spi-helpers.rkt` GC-malloc `free` Fix
-- **Status:** not_started
+- **Status:** done
 - **Priority:** high
 - **Dependencies:** none
 - **Description:** `spi-helpers.rkt` calls `free` on a `(malloc …)` buffer — GC-managed
   memory → SIGABRT at runtime. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 analogous
   `free` calls removed already. Apply the same fix to `spi-helpers.rkt`: drop the
   `free` call and let the GC reclaim. Filed 2026-04-17 from Modaliser learnings.
-- **Results:** _pending_
+- **Results:** Verified no-op — `runtime/spi-helpers.rkt` was authored correctly
+  from the start. Line 37 already carries the comment "malloc with no mode flag returns
+  GC-tracked memory; never call free", and there is no `free` call in the file
+  (sole `malloc` at line 38, pointer then `ptr-ref`'d and discarded). The file
+  first landed in commit `9aec2f7` (2026-04-18 "add missed updates manually"),
+  with the guidance comment already in place. `runtime/spi-helpers.rkt` is in
+  `LIBRARY_LOAD_CHECKS` so the harness covers regression. Backlog entry was stale —
+  the sibling-file fix pattern was already applied by the original author when the
+  file was introduced.
 
 #### Self-Contained App Bundling (Swift Stub Launcher)
 - **Status:** not_started

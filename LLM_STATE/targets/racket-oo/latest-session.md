@@ -1,52 +1,10 @@
-### Session 20 (2026-04-17T14:06:14Z) — Generator bug fixes batch + triage
+### Session 20 (2026-04-18T07:08:15Z) — triage: verify and close backlog items relocated from core
 
-- **What was attempted:** Fix the four generator bugs filed in the previous triage session
-  (NSMenuItem separatorItem collision, NSScreen duplicate define, CFStringGetCStringPtr nullable
-  return contract, integer param widening). Also: backlog triage reflecting SceneKit Viewer done,
-  plus filing new backlog tasks (spi-helpers free fix, self-contained bundling, developer docs).
-
-- **What worked:**
-  - Bug #1 (NSMenuItem separatorItem): Fixed by splitting the property-name collision set into
-    class vs. instance partitions (`PropertyNameSets`). Instance properties whose getter name
-    collides with a class method are now suppressed; the class method wins. Four unit tests
-    added covering both the class-method-wins and class-property-wins cases.
-  - Bug #2 (NSScreen duplicate define): Fixed by deduplicating `effective_properties` by
-    generated Racket getter name rather than ObjC property name. ObjC `CGDirectDisplayID` and
-    Swift `cgDirectDisplayID` both map to `nsscreen-cg-direct-display-id`; only the first
-    survives. Two unit tests added.
-  - Bug #3 (CFStringGetCStringPtr nullable return): Fixed end-to-end. New `TypeRefKind::CString`
-    variant added to the IR; `const char *` (only const-qualified) maps to `CString → _string`;
-    return contracts emit `(or/c string? #f)`, param contracts emit `string?`. Several tests added.
-  - CFSTR macro constants: `macro_value` field added to `ir::Constant`; ObjC extractor now
-    tokenises `MacroDefinition` entities and extracts `CFSTR("literal")` patterns; emitter
-    generates `_make-cfstr` helper and `(define kFoo (_make-cfstr "..."))` forms. Tests cover
-    mixed CFSTR/regular constants, contract, preamble presence/absence.
-  - Class-specific return predicates: `collect_return_type_class_names` + `emit_class_predicates`
-    added; `TypeRefKind::Class { name }` returns now emit `nsview?`-style contracts backed by
-    `objc-instance-of?` instead of `any/c`.
-  - `Boolean` typedef mapped to `_bool` (was silently `uint8`, breaking boolean-context usage).
-  - Struct typedef `TypeKind::Record` changed from `Alias` to `Struct` in `type_mapping.rs` —
-    fixes `is_struct_data_symbol` so CF struct globals (kCFTypeDictionaryKeyCallBacks etc.) use
-    `ffi-obj-ref` with `cpointer?` contract.
-  - Forward declaration shadowing fix: `StructDecl` and `ObjCProtocolDecl` now gated on
-    `is_definition()` so forward decls don't shadow the full definition in `seen_` sets.
-  - `is_generic_type_param()` extracted from inline prefix allowlists in both
-    `ffi_type_mapping.rs` and `emit_functions.rs`; now uses character-based detection
-    (single uppercase + lowercase = generic; 2+ uppercase = framework-prefixed).
-  - Foreign-thread safety warnings added to `emit_functions.rs`: functions with callback
-    (FunctionPointer/Block) params now emit a `; WARNING:` comment about SIGILL on foreign threads.
-  - Runtime load harness expanded: 7 runtime files added to `LIBRARY_LOAD_CHECKS`,
-    PDFKit/SceneKit to `REQUIRED_FRAMEWORKS`, drawing-canvas/pdfkit-viewer/scenekit-viewer to
-    `APPS`, new `runtime_block_nil_guard` test.
-  - Backlog updated: SceneKit Viewer marked done; Generator Bug Fixes batch, spi-helpers free fix,
-    self-contained bundling, developer docs filed as new tasks.
-
-- **What didn't work / not attempted:**
-  - Bug #4 (integer param widening for AXValueCreate/AXValueGetValue/CFNumberGetValue) was
-    not addressed in this session.
-
-- **What this suggests trying next:**
-  - Run the full pipeline regeneration to propagate the CString, Struct typedef, CFSTR, and
-    class-predicate changes through all 284 frameworks; update snapshot golden files.
-  - Fix the spi-helpers.rkt GC-malloc free bug (simple one-line removal).
-  - Begin Note Editor or Mini Browser sample app.
+- Worked through five backlog tasks relocated from core to racket-oo during the prior triage session. All five turned out to be already resolved or never broken; the triage session's job was verification and closure.
+- **Generator Bug Fixes (Batch):** Confirmed all four sub-bugs (separatorItem, nsscreen duplicate define, CFStringGetCStringPtr contract, integer param widening) resolved in commit `1d03ede` (2026-04-18 00:44). No source edits required.
+- **Fix unbound `_NSEdgeInsets`:** Confirmed `NSEdgeInsets` in `is_known_geometry_struct` and exported from `runtime/type-mapping.rkt`; `wkwebview.rkt` loads cleanly. No source edits required.
+- **Fix BOOL return type → `_bool`:** Fix already in `extract-objc/src/type_mapping.rs:257-261` mapping `BOOL`/`Boolean` → `Primitive { name: "bool" }`. Added regression test `foundation_bool_return_resolves_to_primitive_bool` in `collection/crates/extract-objc/tests/extract_foundation.rs` to guard against regression.
+- **`make-objc-block` nil guard:** Guard already implemented at `runtime/block.rkt:67-70`. Hardened `runtime_block_nil_guard` test in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs` from 3 to 5 checks: added explicit `#f` block-ptr assertion and a positive-path lambda test.
+- **`spi-helpers.rkt` GC-malloc free:** File was authored correctly from the start with guidance comment; no `free` call present. Backlog entry was stale.
+- Key learning: triage sessions that relocate tasks from core to racket-oo should grep the source before writing the backlog entry — several of these were already fixed in the same commit wave (1d03ede) that prompted the relocation.
+- Next: Mini Browser app (WKWebView workaround pattern confirmed viable) or Note Editor (completion block territory).
