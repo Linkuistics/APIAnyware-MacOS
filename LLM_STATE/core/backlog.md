@@ -16,49 +16,18 @@ entry triaged during a prior cycle. Provenance is recorded per-task in the
 pending cluster is `high → medium → low`; within a priority band, the
 listing order is a suggested work order, not a hard constraint.
 
-### Fix `make-objc-block` to treat `#f` as a no-op lambda `[runtime]` `[high]`
-- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-16); completion-handler arguments set to `#f` caused `(apply #f ...)` crash on block invocation
-- **Symptom:** `make-objc-block` in `runtime/block.rkt` stores its `proc` argument directly. Passing `#f` (the idiomatic "no completion handler" value in Racket ObjC code) causes `(apply #f args)` on the first invocation — a Racket error. Callers currently must pass an explicit `(lambda args (void))` as a workaround.
-- **Fix direction:** At the top of `make-objc-block`, normalise `#f` → `(lambda args (void))` before storing `proc`. One-line fix with no impact on callers that already pass a real procedure.
-- **Scope:** `runtime/block.rkt` only. Low risk.
-
-### Fix duplicate definition in generated `appkit/nsscreen.rkt` `[generation]` `[high]`
-- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-17); `(require … nsscreen)` failed at module load
-- **Symptom:** `generated/oo/appkit/nsscreen.rkt` contains a duplicate `define` that prevents the module from loading at all. Any code that `require`s NSScreen bindings must use raw `tell` as a workaround.
-- **Fix direction:** Regenerate after identifying and fixing the duplicate in the emitter. Likely a method or property declared both directly on the class and via a category, not deduplicated before emission. Check `emit_class.rs` deduplication logic.
-- **Scope:** Regenerate `appkit/nsscreen.rkt` after emitter fix; verify module loads cleanly.
-
-### Fix unbound `_NSEdgeInsets` in generated `webkit/wkwebview.rkt` `[generation]` `[high]`
-- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-17); any module that transitively `require`s WKWebView bindings fails to load
-- **Symptom:** `generated/oo/webkit/wkwebview.rkt` references `_NSEdgeInsets`, which is not bound in the generated WebKit FFI layer. The module fails at load time, blocking any application that imports WKWebView — including mini-browser and similar apps that rely on a full app-load path.
-- **Suspected root cause:** `NSEdgeInsets` is a struct typedef in AppKit, not WebKit. The WebKit emitter references the FFI type but does not import or re-export the AppKit struct definition. Either the emitter must emit a cross-framework `require` for `_NSEdgeInsets`, or the struct definition must be placed in a shared location accessible to both.
-- **Fix direction:** Determine whether `NSEdgeInsets` maps to `TypeRefKind::Struct` in the IR. If so, ensure the WebKit emitter imports the AppKit cstruct definition (or a shared geometry module) before using `_NSEdgeInsets`. Regenerate and verify module load.
-- **Scope:** Emitter cross-framework struct import logic. Regenerate `webkit/wkwebview.rkt` after fix; verify transitive `require` works from a standalone module.
-
-### Fix generator to emit `bool`/`BOOL` return types as `_bool` not `_uint8` `[generation]` `[high]`
-- **Surfaced by:** Modaliser-Racket development (2026-04-16); boolean methods silently misidentified as true when returning false
-- **Symptom:** The racket-oo emitter maps C `bool`/`BOOL` return types to `_uint8`. In Racket, `_uint8` decodes to an integer, and all integers (including `0`) are truthy — only `#f` is falsy. A method returning `false`/`0` is therefore silently misidentified as true in any boolean context. The correct FFI type is `_bool`, which decodes `0` → `#f` and non-zero → `#t`. Until fixed, callers must wrap boolean returns with `(positive? ...)` or `(not (zero? ...))`.
-- **Fix direction:** Audit the FFI type mapper for `bool`/`BOOL` primitive names and emit `_bool` instead of `_uint8`. Regenerate and verify with a method known to return `NO`/`false`.
-- **Scope:** `ffi_type_mapping.rs` mapper; regenerate affected bindings. Likely widespread across frameworks wherever `BOOL` return types appear.
-
-### Fix generated `CFStringGetCStringPtr` return contract to allow `#f` `[generation]` `[medium]`
-- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-17); contract violation when `CFStringGetCStringPtr` legitimately returned NULL
-- **Symptom:** The generated contract for `CFStringGetCStringPtr` in `generated/oo/corefoundation/functions.rkt` (or equivalent) declares a `string?` return contract. `CFStringGetCStringPtr` legitimately returns NULL when the string's internal encoding does not match the requested encoding — a documented, common case. The contract fires a violation on every NULL return. Callers must currently override with a local `_pointer` binding and NULL-safe fallback.
-- **Root cause:** The memory entry "const char * maps to TypeRefKind::CString" states the correct return contract is `(or/c string? #f)`, but the emitter may be generating `string?` alone without the `#f` branch for some code paths.
-- **Fix direction:** Audit `map_return_contract` in the emitter for `TypeRefKind::CString` — ensure it always emits `(or/c string? #f)`, not `string?` alone. Regenerate affected functions.rkt files.
-- **Scope:** Emitter contract mapper only. Verify `CFStringGetCStringPtr` and any other `const char *`-returning function in the generated bindings.
-
-### Add Info.plist customization API to `bundle-racket-oo` `[generation]` `[medium]`
-- **Promoted from:** "Add Racket `.app` bundler for distributable builds" follow-up (2026-04-18)
-- **Symptom:** The new `bundle_app_with_entry` API assembles a self-contained `.app` bundle but has no mechanism for callers to inject custom Info.plist keys. Apps requiring Accessibility or Screen Recording entitlements need `LSUIElement`, `NSAccessibilityUsageDescription`, `NSScreenCaptureUsageDescription`, and `AppIcon.icns`. Modaliser-Racket currently cannot migrate from `bundle/build.sh` to the new API because of this gap.
-- **Fix direction:** Extend `BundleSpec` (or add a new parameter type) with an `info_plist_overrides: HashMap<String, plist::Value>` field. Merge caller-supplied keys into the generated Info.plist after the base template is written. Add tests for key injection and override precedence.
-- **Scope:** `bundle-racket-oo/src/bundle.rs` only. No emitter changes required.
-
-### Implement stable signing identity for distributable `.app` bundles `[generation]` `[medium]`
-- **Promoted from:** "Add Racket `.app` bundler for distributable builds" follow-up (2026-04-18)
-- **Symptom:** Ad-hoc codesigning (`-`) produces a new CDHash on every rebuild, invalidating TCC grants for Accessibility/Screen Recording. Users must re-grant permissions after every build. This is the root cause of the `bundle-rebuild-invalidates-tcc` issue in Modaliser-Racket.
-- **Fix direction:** Extend `stub-launcher`'s `create_app_bundle` / `compile_stub` workflow to accept an optional signing identity (Developer ID or self-signed cert with a stable key). When a stable identity is provided, `codesign` with it instead of ad-hoc. Document the self-signed-cert setup path as the recommended local-dev workflow (no Apple Developer account required).
-- **Scope:** `generation/crates/stub-launcher/`. Requires `Security.framework` or shell-out to `security` and `codesign`. Does not affect bundle layout or Racket file copying.
+**Scope boundary (2026-04-18):** "Core" is the *shared pipeline* —
+collection, analysis, enrichment. Per-language generation (the `emit-*`
+crates, language runtimes, bundlers) belongs in the matching per-target
+plan under `LLM_STATE/targets/<target>/backlog.md`. A batch of seven tasks
+that had accumulated here (runtime fixes, racket-oo emitter bugs,
+`bundle-racket-oo` API extensions, stub-launcher signing) was relocated
+to `LLM_STATE/targets/racket-oo/backlog.md` on 2026-04-18 because they
+never touched collection/analysis/enrichment. Two further low-priority
+generation tasks ("Emit inherited methods…", "Strengthen generated
+binding contracts…") remain listed below pending a deliberate move — flag
+during next triage. Future generation-layer tasks should be filed
+directly against the owning per-target plan.
 
 ### Emit inherited methods from NSView/NSControl superclasses in subclass bindings `[generation]` `[low]`
 - **Surfaced by:** racket-oo development (2026-04-16); WKWebView missing `setAutoresizingMask:` inherited from NSView
