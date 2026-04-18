@@ -72,7 +72,13 @@ and `ax-get-attribute/array` in `ax-helpers.rkt`, `make-cgevent-tap` `#:on-disab
 keyword with forward-reference tap-box plumbing. PDFKit Viewer landed 2026-04-17 —
 first app exercising PDFKit bindings and NSNotificationCenter observer pattern;
 SceneKit Viewer landed 2026-04-17 — first app using SceneKit; 7 apps now in `APPS`
-in the runtime load harness (~55s).
+in the runtime load harness (~55s). Generator bug fixes landed 2026-04-18 (commit
+1d03ede): NSEvent class/instance method name collision fixed (`nsevent-modifier-flags-class`
+suffix); class-return contracts nullable (`or/c <pred> objc-nil?`);
+`list->nsarray`/`hash->nsdictionary` wrap results in `type-mapping.rkt`. Self-contained
+app bundling complete (2026-04-18): `copy_dir_recursive` skips `compiled/`, dylib
+install_name normalized to `@executable_path/../Resources/racket-app/lib/<name>`.
+`_NSEdgeInsets` fix landed 2026-04-18 — `wkwebview.rkt` loads cleanly.
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -114,85 +120,20 @@ Runtime location: generation/targets/racket-oo/runtime/
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
 
-### Generator Bug Fixes
+### Harness & Verification
 
-#### Fix NSEvent class/instance method name collision
-- **Status:** done
+#### Add `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS`
+- **Status:** not_started
 - **Priority:** high
-- **Dependencies:** none
-- **Surfaced by:** Memory entry "NSEvent class/instance method name collision
-  (generator bug)" — `nsevent.rkt` is unloadable; any code using NSEvent API
-  must use raw `tell`.
-- **Description:** `NSEvent +modifierFlags` (class method) and `-modifierFlags`
-  (instance method) both kebab-case to `nsevent-modifier-flags`, producing
-  duplicate `define` forms in `appkit/nsevent.rkt`. The module cannot be
-  required at all (`only-in` does not skip module expansion). Workaround: use
-  raw `tell` for NSEvent properties (e.g., `locationInWindow`). Fix: extend the
-  class/instance disambiguation logic in `emit_class.rs` (analogous to
-  `make_class_method_name` / `make_class_property_{getter,setter}_name` already
-  in place for class-level collisions) to also disambiguate instance methods
-  whose kebab name collides with a class method. Regenerate `appkit/nsevent.rkt`
-  after fix; verify load via `dynamic-require`; add to `LIBRARY_LOAD_CHECKS`.
-- **Scope:** `emit_class.rs` naming/deduplication logic. Regenerate AppKit.
-- **Results:** Already landed in commit 1d03ede (2026-04-18 00:44). Verified:
-  `emit_class.rs:95-125` builds `instance_bindings` (method names ∪ property
-  getter names) and flags class methods whose selector collides via
-  `class_method_disambig`; `make_class_method_name(..., true)` appends
-  `-class`. Generated output: `nsevent-modifier-flags-class` (line 57, class
-  method) vs `nsevent-modifier-flags` (line 98, instance). `nsevent.rkt` is in
-  `LIBRARY_LOAD_CHECKS` and loads cleanly (`dynamic-require` + `require` both
-  succeed). Backlog entry was stale; memory entry superseded by this verification.
-
-#### Fix class-return contracts to allow nil
-- **Status:** done
-- **Priority:** medium
-- **Dependencies:** none
-- **Surfaced by:** PDFKit Viewer development (2026-04-17); memory entry
-  "Class-return contracts are non-nullable (generator bug)".
-- **Description:** `map_return_contract` in `emit_class.rs` emits `<class>?`
-  predicates (e.g., `pdfdocument?`) for `TypeRefKind::Class { name }` returns.
-  The generated predicate returns `#f` for a nil-pointing `objc-object`, so any
-  Cocoa property that legitimately returns nil (e.g., `PDFView.document` before
-  assignment, `PDFView.currentPage` on empty view, `NSTableView.dataSource`
-  before wiring, `NSWindow.firstResponder` under timing races) fails its own
-  return contract. Workaround: track object in Racket-side state rather than
-  querying the wrapper, or catch via `(with-handlers ([exn:fail:contract? ...])
-  ...)`. Fix: change `map_return_contract` to emit `(or/c <class>? #f)` for all
-  typed class returns, unless the IR carries an explicit `_Nonnull` / non-null
-  annotation. Regenerate all affected class wrappers.
-- **Scope:** `emit_class.rs::map_return_contract`. Widespread — affects all class
-  wrappers with typed object-return properties.
-- **Results:** Already landed in commit 1d03ede (2026-04-18 00:44). Verified:
-  `emit_class.rs:354-363` emits `(or/c {pred} objc-nil?)` for every
-  `TypeRefKind::Class { name }` return. `objc-nil?` lives in
-  `runtime/objc-base.rkt:161`. Spot-check `pdfkit/pdfview.rkt`: every typed
-  object-return getter carries `(or/c <class-pred>? objc-nil?)` — e.g.
-  `pdfview-current-page` → `(or/c pdfpage? objc-nil?)`. All 119 emitter tests
-  and the runtime load harness pass.
-
-#### Fix `list->nsarray`/`hash->nsdictionary` to return wrapped objects
-- **Status:** done
-- **Priority:** medium
-- **Dependencies:** none
-- **Surfaced by:** Memory entry "`list->nsarray` / `hash->nsdictionary` return
-  raw cpointers (contract gap)" — 2026-04-17.
-- **Description:** Both helpers return the raw `(tell (tell NSMutableArray alloc)
-  init)` cpointer. Class-wrapper param contracts `(or/c string? objc-object? #f)`
-  (which exclude `cpointer?` per the 2026-04-16 tightening) reject this at the
-  call boundary. Workaround: `(wrap-objc-object (list->nsarray …) #:retained #t)`
-  at every call site. Fix: wrap the result inside each helper with
-  `(wrap-objc-object result #:retained #t)` so callers receive an `objc-object?`
-  directly. `alloc+init` is +1 retained, so `#:retained #t` is correct. Add a
-  smoke test in the runtime load harness (construct a list, pass to a class
-  wrapper boundary, verify no contract violation).
-- **Scope:** Runtime helper file hosting `list->nsarray` / `hash->nsdictionary`
-  (likely `runtime/cf-bridge.rkt`). Low risk.
-- **Results:** Already landed in commit 1d03ede (2026-04-18 00:44). Helpers
-  live in `runtime/type-mapping.rkt` (not `cf-bridge.rkt` as the backlog
-  guessed). Verified `type-mapping.rkt:92-96`: `list->nsarray` wraps via
-  `(wrap-objc-object arr #:retained #t)`. Lines 111-117 do the same for
-  `hash->nsdictionary`. Reader helpers (`nsarray->list`, `nsdictionary->hash`)
-  tolerate both raw cpointers and wrappers via `unwrap-objc-object`.
+- **Dependencies:** none (`_NSEdgeInsets` fix landed 2026-04-18 — `wkwebview.rkt`
+  loads cleanly per Mini Browser task verification)
+- **Description:** Memory notes "when fixed, add `wkwebview.rkt` to
+  `LIBRARY_LOAD_CHECKS`". The `_NSEdgeInsets` generator fix is now in place.
+  Add `"webkit/wkwebview.rkt"` to the `LIBRARY_LOAD_CHECKS` list in
+  `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`. Verify the
+  harness passes with `RUNTIME_LOAD_TEST=1`. One-line harness edit; no emitter
+  or runtime changes needed.
+- **Results:** _pending_
 
 ### Future Work
 
@@ -265,45 +206,6 @@ Runtime location: generation/targets/racket-oo/runtime/
   file copying. If a second language target begins bundling, extract the shared
   signing logic upward at that time rather than pre-emptively.
 - **Results:** _pending_
-
-#### Self-Contained App Bundling (Swift Stub Launcher)
-- **Status:** done
-- **Dependencies:** none
-- **Description:** Current `.app` bundles produced by `bundle-racket-oo` use absolute
-  symlinks into `generation/targets/racket-oo/`, making them machine-specific and
-  non-distributable. A distributable bundle needs: (1) bindings and runtime copied
-  verbatim (no symlinks), (2) dylib `@rpath` rewritten to `@executable_path/../Frameworks`
-  or equivalent, (3) a Swift stub launcher — ~15-line Swift file compiled with
-  `swiftc -O` that `execv`s into `/opt/homebrew/bin/racket` — so the bundle has its
-  own CDHash and independent macOS TCC permissions (camera, accessibility, etc.
-  prompt under the app's identity, not racket's). Implement in `bundle-racket-oo`
-  crate. Filed 2026-04-17 from Modaliser bundling observations.
-- **Results:** (1) Copy-not-symlink was already covered by `fs::copy` of walker
-  deps + `copy_dir_recursive` on `lib/` (symlinks are dereferenced by `fs::copy`).
-  (2) Added `normalize_dylib_install_names` in `bundle.rs`: runs
-  `install_name_tool -id @executable_path/../Resources/racket-app/lib/<name>` on
-  each `.dylib` in the bundled `lib/` dir. Verified via `otool -D`:
-  `libAPIAnywareRacket.dylib` now carries
-  `@executable_path/../Resources/racket-app/lib/libAPIAnywareRacket.dylib`. Racket
-  `ffi-lib` still loads by absolute path; the rewrite is for introspection
-  and any future direct-link consumer — the defining property of a
-  self-contained bundle.
-  (3) Swift stub launcher was already in place via the language-agnostic
-  `stub-launcher` crate.
-  Plus: `copy_dir_recursive` now skips `compiled/` subdirectories — host-compiled
-  `.zo` linklets bake in absolute paths and corrupt bundles on other machines
-  (confirmed 2026-04-18 on Tahoe VM per memory).
-  Tests: three new integration tests in
-  `generation/crates/bundle-racket-oo/tests/bundle_file_lister.rs` —
-  `bundle_lib_copy_excludes_compiled_subdirectory`,
-  `bundle_has_no_compiled_directories_anywhere`,
-  `bundle_dylib_install_name_is_bundle_relative`. All 34
-  `bundle-racket-oo` tests pass; full workspace (548 tests) and the
-  runtime-load harness (libraries + `raco make` of all 7 apps, ~73s) both green.
-  **Out of scope (separate backlog tasks):** Info.plist customization (task
-  "Add Info.plist customization API"), stable signing identity (task
-  "Implement stable signing identity"), bundling the Racket runtime itself
-  (not required — stub `execv`s into `/opt/homebrew/bin/racket`).
 
 #### Developer Documentation
 - **Status:** not_started
