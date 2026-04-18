@@ -118,7 +118,7 @@ The harness uses `(dynamic-require \`(file ,p) #f)`, not `(dynamic-require p #f)
 
 ### Contract-based API boundaries
 Every FFI boundary uses `provide/contract`. Three contract mappers:
-- `map_contract` in `emit_functions.rs` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, CString return → `(or/c string? #f)` (`_string` converts NULL → `#f`), CString param → `string?`, geometry structs → `any/c`, void → `void?`. Reused by functions, constants, and class wrappers. `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
+- `map_contract` in `emit_functions.rs` (value/function): primitives → `real?`/`exact-integer?`/`exact-nonnegative-integer?`/`boolean?`, objects → `cpointer?` or `(or/c cpointer? #f)` for nullable, CString return → `(or/c string? #f)` (`_string` converts NULL → `#f`), CString param → `string?`, geometry structs → `any/c`, void → `void?`. `exact-nonneg-integer?` is not a Racket predicate — fails only at load time.
 - `map_param_contract` in `emit_class.rs` (class wrapper params): `Id`/`Class`/`Instancetype` → `(or/c string? objc-object? #f)` for all object params (always includes `#f`; `cpointer?` excluded), SEL → `string?`, `(or/c procedure? #f)` for blocks, delegates to `map_contract` for primitives.
 - `map_return_contract` in `emit_class.rs` (class wrapper returns): `<class>?` predicate for `TypeRefKind::Class { name }` (see "Class return predicates: per-file inline factory"), `any/c` for `Id`/`Instancetype`, delegates to `map_contract` for void/primitives.
 Protocol files use fixed contracts (see "Protocol file contract shape is fixed").
@@ -136,13 +136,13 @@ Each class file defines its own predicate (e.g. `(define (nsview? v) (objc-insta
 ### `objc-object?` is a struct predicate, not cpointer
 `(cast ptr _pointer _id)` tags the pointer for FFI but does NOT create an `objc-object` struct — it fails the `objc-object?` contract at class wrapper boundaries. For `make-delegate` with `#:param-types`, `'object`-typed callback args are wrapped automatically via `borrow-objc-object`. For `tell`-based code not using `#:param-types`, use `wrap-objc-object` manually. Do NOT use `tell` as a bypass for non-object parameters (int, bool, SEL) — `tell` rejects them with `id->C: argument is not 'id' pointer`.
 
-### `tell` receiver must be `coerce-arg`'d, not just `borrow-objc-object`'d
-`tell` from `ffi/unsafe/objc` accepts only `_id`-tagged cpointers or imported class refs — it does NOT accept our `objc-object?` struct wrappers. Raw cpointers from ObjC trampolines (e.g. `self`, `event` args in dynamic-subclass IMPs) give `id->C: argument is not 'id' pointer`. Wrapping via `borrow-objc-object` ALSO fails with the same error — the result is still an `objc-object` struct, not an `_id`-tagged pointer.
-Correct fix: `(tell (coerce-arg receiver) selector ...)`. `coerce-arg` does the `(cast ... _pointer _id)` internally for all of {string?, objc-object?, cpointer?, #f}. This matches every generated class-wrapper call site. Example from drawing-canvas.rkt's event→view-point helper:
+### `tell` receiver must be `coerce-arg`'d
+`tell` from `ffi/unsafe/objc` accepts only `_id`-tagged cpointers or imported class refs — it does NOT accept `objc-object?` struct wrappers. Raw cpointers from ObjC trampolines (e.g. `self`, `event` args in dynamic-subclass IMPs) give `id->C: argument is not 'id' pointer`. `borrow-objc-object` ALSO fails — the result is still an `objc-object` struct, not an `_id`-tagged pointer.
+Correct fix: `(tell (coerce-arg receiver) selector ...)`. `coerce-arg` does the `(cast ... _pointer _id)` internally for all of {string?, objc-object?, cpointer?, #f}:
 `(tell #:type _NSPoint (coerce-arg event) locationInWindow)`.
 
-### Dynamic-subclass delegate callbacks need `#:param-types` when the handler sends messages
-Dynamic-subclass IMPs created via `function-ptr` + `_cprocedure` pass raw cpointers for `id`-typed args. If the Racket handler uses a `sender`/`event` arg only for identity or arity, that's fine. But as soon as the handler sends messages to that arg via a generated class wrapper (e.g. `(nscolorpanel-color sender)`), the contract violation is `objc-object?` self — raw cpointer fails the self predicate. Fix: pass `#:param-types (hash "selector" '(object))` to `make-delegate`. The trampoline then auto-wraps the arg via `borrow-objc-object` and generated wrappers accept it. Symptom looks identical to the `tell`-on-cpointer error but the root cause is different — it's a contract violation at the delegate boundary, not at the `tell` boundary.
+### Dynamic-subclass delegate callbacks need `#:param-types`
+Dynamic-subclass IMPs created via `function-ptr` + `_cprocedure` pass raw cpointers for `id`-typed args. If the handler sends messages to that arg via a generated class wrapper (e.g. `(nscolorpanel-color sender)`), the contract violation is `objc-object?` self — raw cpointer fails the self predicate. Fix: pass `#:param-types (hash "selector" '(object))` to `make-delegate`. The trampoline then auto-wraps the arg via `borrow-objc-object`. Symptom looks identical to the `tell`-on-cpointer error but the root cause is a contract violation at the delegate boundary, not the `tell` boundary.
 
 ### NSColor component accessors require RGB color space
 `nscolor-red-component`, `-green-component`, `-blue-component`, `-alpha-component` raise `NSException` on colors not in an RGB color space (pattern, named, greyscale colors). Before accessing components on a color from NSColorPanel (whose color space is user-selectable), convert via `(nscolor-color-using-color-space c (nscolorspace-device-rgb-color-space))`. The result may be `#f` if the color cannot be converted — always `(when rgb ...)` guard after the conversion.
@@ -179,13 +179,13 @@ Variadic and inline functions are skipped — they can't be bound via `get-ffi-o
 - VirtioFS shared filesystem can serve stale files — use base64 transfer or restart VM
 - Always `pkill -9 -f racket` before relaunching apps
 - Racket module compilation very slow on first run (~5+ min); cached in `compiled/`
-- GUIVisionVMDriver agent `exec` is reliable for long-running commands (wedge fixed 2026-04-17, re-confirmed 2026-04-17 against `brew install minimal-racket`). The `timedOut: true` response field signals a deadline-expired run — distinct from a non-zero exit code; the underlying command keeps running in the VM, so poll for completion rather than switching tools. **Do not use SSH** — `exec` is the right tool; SSH is not a supported fallback.
+- GUIVisionVMDriver agent `exec` is reliable for long-running commands (wedge fixed 2026-04-17). The `timedOut: true` response field signals a deadline-expired run — distinct from a non-zero exit code; the underlying command keeps running in the VM, so poll for completion rather than switching tools. **Do not use SSH** — `exec` is the right tool.
 
 ### Snapshot testing infrastructure
 `load_enriched_framework(name)` in `snapshot_test.rs` generalizes framework loading — adding a new framework is a file list and test function. AppKit suite has 23 curated golden files covering key class hierarchies (NSResponder→NSView→NSControl→NSButton, NSWindow, table view, menus, text, layout). Rich classes like NSButton and NSWindow exercise more typed message send variants and geometry struct handling than Foundation classes.
 
-### `make-objc-block` nil guard implemented and tested
-`make-objc-block` returns `(values #f #f)` for `#f` input (NULL block pointer + no block-id). `free-objc-block` handles `#f` gracefully (no-op via `hash-ref` miss). `call-with-objc-block` passes `#f` through to body. Tested via `runtime_block_nil_guard` in `runtime_load_test.rs` (5 checks: explicit `#f` block-ptr assertion and positive-path lambda test; gated on `RUNTIME_LOAD_TEST=1`).
+### `make-objc-block` nil guard
+`make-objc-block` returns `(values #f #f)` for `#f` input (NULL block pointer + no block-id). `free-objc-block` handles `#f` gracefully (no-op via `hash-ref` miss). `call-with-objc-block` passes `#f` through to body. Tested via `runtime_block_nil_guard` in `runtime_load_test.rs` (gated on `RUNTIME_LOAD_TEST=1`).
 
 ### `function-ptr` satisfies `(or/c cpointer? #f)` contract
 A `function-ptr` constructed from `_cprocedure` satisfies the `(or/c cpointer? #f)` contract emitted for C callback parameters. No raw-symbol fallback is needed for callback params in generated bindings.
@@ -205,7 +205,7 @@ The platform-availability filter operates at classes, protocols, methods, and pr
 Serde annotations on core IR structs define the JSON wire format. Field name/alias/removal changes update Rust source across all crates but do not automatically update golden files — those require `UPDATE_GOLDEN=1`. Design-doc examples and tests asserting on `serde_json::to_string` output are tightly coupled to serde annotations.
 
 ### `_cprocedure` callbacks unsafe from foreign OS threads
-Racket CS SIGILLs (exit 132) when a `_cprocedure` callback is invoked from an OS thread not registered with the Racket VM (e.g., GCD worker pool threads from libdispatch). `#:async-apply` converts the crash to a deadlock under `nsapplication-run` because the async-apply queue drains on the main Racket thread, which is stuck in the Cocoa run loop. The CGEvent tap callback is NOT a counterexample — it fires on the main OS thread via `CFRunLoopGetMain`, not on a foreign thread. Any binding exposing a C callback type should warn against installing the callback on a non-main GCD queue or libdispatch worker.
+Racket CS SIGILLs (exit 132) when a `_cprocedure` callback is invoked from an OS thread not registered with the Racket VM (e.g., GCD worker pool threads from libdispatch). `#:async-apply` converts the crash to a deadlock under `nsapplication-run` because the async-apply queue drains on the main Racket thread, which is stuck in the Cocoa run loop. The CGEvent tap callback fires on `CFRunLoopGetMain` (main OS thread), not a foreign thread — it is safe without `#:async-apply`. Any binding exposing a C callback type should warn against installing it on a non-main GCD queue or libdispatch worker.
 
 ### Emitter auto-warns on `FunctionPointer`/`Block` params
 `generate_functions_file()` emits a 3-line `; WARNING:` comment before any `define` with `FunctionPointer` or `Block` param types, citing `_cprocedure`, SIGILL risk, and `#:async-apply`/deadlock. See "`_cprocedure` callbacks unsafe from foreign OS threads".
@@ -243,7 +243,7 @@ explicitly skips any `compiled/` subdirectory. Tests
 `bundle_lib_copy_excludes_compiled_subdirectory` and
 `bundle_has_no_compiled_directories_anywhere` guard this invariant.
 
-### `bundle-racket-oo` normalizes dylib install_name to `@executable_path/...`
+### `bundle-racket-oo` normalizes dylib install_name
 After copying `lib/` into the bundle, `normalize_dylib_install_names` shells out to
 `install_name_tool -id @executable_path/../Resources/racket-app/lib/<name>` on each
 `.dylib`. Racket's `ffi-lib` uses an explicit filesystem path and is indifferent to
@@ -272,16 +272,10 @@ Create `apps/<name>/<name>.rkt` and `knowledge/apps/<name>/spec.md` with `# <Dis
 `guivision agent snapshot --window "Menu Bar"` only surfaces the top-level menu items (Apple, app-name). The submenu is not in the accessibility tree until the menu opens. To verify the full menu content, click the menu title via VNC (`guivision input click --connect spec.json X Y`) then `screenshot` the region. The agent's `press --role menu-item --label "Counter"` query returns `No element found matching query` because accessibility doesn't treat menu bar items as directly-pressable in the default snapshot mode.
 
 ### GUIVisionVMDriver uses per-VM connection spec
-`vm-start.sh` writes a per-VM spec to
-`$XDG_STATE_HOME/guivision/vms/<id>.json` (default:
-`~/.local/state/guivision/vms/<id>.json`), so multiple VMs can run
-concurrently with distinct ids. The old single `~/.guivision/connect.json`
-is gone.
-
-The VM id is auto-generated (`guivision-<hex>`) unless `--id <name>` is
-passed. `vm-start.sh` prints the id on stdout (so `ID=$(vm-start.sh ...)`
-captures it cleanly) and also logs instructions like
-`export GUIVISION_VM_ID=$ID`.
+`vm-start.sh` writes a per-VM spec to `$XDG_STATE_HOME/guivision/vms/<id>.json`
+(default: `~/.local/state/guivision/vms/<id>.json`), enabling multiple concurrent VMs
+with distinct ids. `vm-start.sh` prints the VM id on stdout (so `ID=$(vm-start.sh ...)`
+captures it). Auto-generated id is `guivision-<hex>` unless `--id <name>` is passed.
 
 CLI resolution order (highest priority first):
   1. `--connect <path>` — explicit spec file
@@ -290,9 +284,8 @@ CLI resolution order (highest priority first):
   4. `GUIVISION_VM_ID` env var
   5. `GUIVISION_VNC`/`GUIVISION_VNC_PASSWORD`/`GUIVISION_AGENT` env vars
 
-Pick one of `--vm <id>` or `GUIVISION_VM_ID=<id>` and thread it through
-`Bash` calls — no manual `/tmp/gv_*` file-copying. `vm-stop.sh <id>`
-tears down a specific VM.
+Use `--vm <id>` or `GUIVISION_VM_ID=<id>` and thread it through `Bash` calls — no
+manual `/tmp/gv_*` file-copying. `vm-stop.sh <id>` tears down a specific VM.
 
 ### Auto-terminating Cocoa-loop test pattern
 Tests entering `nsapplication-run` need a structured exit to avoid hanging the test runner:
@@ -336,14 +329,10 @@ When overriding superclass methods, pull the type encoding string via `(method-t
 `dispatch_queue_t`, `dispatch_group_t`, etc. resolve to `id` in the IR (under `OS_OBJECT_USE_OBJC=1`), but no wrapper classes exist in the generated bindings. The emitter maps `_id` → `_pointer` in libdispatch's `functions.rkt` so consumers can pass raw cpointers without a `(cast ... _pointer _id)` ceremony. The ABI is identical. This override is scoped to `framework == "libdispatch"` in `generate_functions_file`. If future frameworks gain the same OS-object pattern (e.g. `xpc_object_t`), extend the same override.
 
 ### Struct-typed global constants use `ffi-obj-ref`
-Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dispatch_source_type_*`, geometry zero-constants) are emitted as `(define sym (ffi-obj-ref 'sym lib))` — returning the symbol's address. Non-struct constants keep `(get-ffi-obj 'sym lib type)` — dereferencing the symbol. The distinction is in `generate_constants_file` via `is_struct_data_symbol()`. Contract for struct globals is `cpointer?`. `constants.rkt` does not require `type-mapping.rkt` — struct globals use `ffi-obj-ref`, not a typed getter needing a cstruct. **Known gap (generator bug):** CF struct globals from CoreFoundation (`kCFTypeDictionaryKeyCallBacks`, `kCFTypeDictionaryValueCallBacks`) are NOT currently emitted — they are absent from the collected IR. Workaround: `(get-ffi-obj 'kCFTypeDictionaryKeyCallBacks (ffi-lib "CoreFoundation") _pointer)`. Core backlog task filed 2026-04-16.
+Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dispatch_source_type_*`, geometry zero-constants) are emitted as `(define sym (ffi-obj-ref 'sym lib))` — returning the symbol's address. Non-struct constants keep `(get-ffi-obj 'sym lib type)` — dereferencing the symbol. The distinction is in `generate_constants_file` via `is_struct_data_symbol()`. Contract for struct globals is `cpointer?`. `constants.rkt` does not require `type-mapping.rkt` — struct globals use `ffi-obj-ref`, not a typed getter needing a cstruct. **Known gap:** CF struct globals from CoreFoundation (`kCFTypeDictionaryKeyCallBacks`, `kCFTypeDictionaryValueCallBacks`) are NOT currently emitted — absent from collected IR. Workaround: `(get-ffi-obj 'kCFTypeDictionaryKeyCallBacks (ffi-lib "CoreFoundation") _pointer)`.
 
-### `wkwebview.rkt` `_NSEdgeInsets` fix
-`wkwebview.rkt` referenced `_NSEdgeInsets` without requiring `runtime/type-mapping.rkt`.
-Root cause: `NSEdgeInsets` was missing from `is_known_geometry_struct` in
-`ffi_type_mapping.rs`, so `any_struct_type` did not detect it and the conditional
-require was not emitted. Fixed by adding `NSEdgeInsets` to the allowlist. `wkwebview.rkt`
-now loads cleanly and is in `LIBRARY_LOAD_CHECKS`.
+### `NSEdgeInsets` absent from geometry struct allowlist causes missing require
+`NSEdgeInsets` was missing from `is_known_geometry_struct` in `ffi_type_mapping.rs`, causing `any_struct_type` to miss it and the conditional `type-mapping.rkt` require to be omitted from `wkwebview.rkt`. Fixed by adding `NSEdgeInsets` to the allowlist. `wkwebview.rkt` is in `LIBRARY_LOAD_CHECKS`.
 
 ### `make-dynamic-subclass` guards against duplicate registration
 `objc_allocateClassPair` returns NULL for a name already registered — subsequent `class_addMethod` would crash. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. Required for modules that register a subclass at load time and may be required twice in the same Racket VM.
@@ -379,28 +368,28 @@ Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
 `runtime/objc-interop.rkt` is a named-`provide` re-export of `ffi/unsafe` + `ffi/unsafe/objc` symbols. Wired into the runtime load harness. Listed in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
 
 ### Racket CS `malloc` returns GC memory; never `free`
-`(malloc …)` in Racket CS returns GC-tracked memory. Passing it to `free` causes SIGABRT because `free` expects C-heap pointers only. Do not call `free` on `(malloc …)` buffers — the GC reclaims them automatically. Only call `free` on memory returned by a C function that itself calls `malloc` internally. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 such `free` calls removed. `spi-helpers.rkt` was authored correctly with no `free` calls.
+`(malloc …)` in Racket CS returns GC-tracked memory. Passing it to `free` causes SIGABRT because `free` expects C-heap pointers only. Do not call `free` on `(malloc …)` buffers — the GC reclaims them automatically. Only call `free` on memory returned by a C function that itself calls `malloc` internally.
 
-### Class/instance selector disambiguation already handles `+`/`-` collisions
-`emit_class.rs` builds `instance_bindings` = instance method names ∪ instance property getter names, then `class_method_disambig` flags class methods whose selector collides. `make_class_method_name(..., true)` emits the `-class` suffix. NSEvent's `+modifierFlags`/`-modifierFlags` split correctly into `nsevent-modifier-flags-class` and `nsevent-modifier-flags`. `nsevent.rkt` is in `LIBRARY_LOAD_CHECKS` and loads cleanly. Landed commit `1d03ede` (2026-04-18).
+### Class/instance selector disambiguation handles `+`/`-` collisions
+`emit_class.rs` builds `instance_bindings` = instance method names ∪ instance property getter names, then `class_method_disambig` flags class methods whose selector collides. `make_class_method_name(..., true)` emits the `-class` suffix. NSEvent's `+modifierFlags`/`-modifierFlags` split correctly into `nsevent-modifier-flags-class` and `nsevent-modifier-flags`. `nsevent.rkt` is in `LIBRARY_LOAD_CHECKS` and loads cleanly.
 
 ### Typed class returns are nullable via `(or/c <pred>? objc-nil?)`
-`map_return_contract` in `emit_class.rs` emits `(or/c {pred} objc-nil?)` for every `TypeRefKind::Class { name }` return. `objc-nil?` lives in `runtime/objc-base.rkt`. Legitimately-nil Cocoa properties (`PDFView.document` before assignment, `NSTableView.dataSource` before wiring, `NSWindow.firstResponder` under timing races) no longer fail their own contracts. Landed commit `1d03ede` (2026-04-18).
+`map_return_contract` in `emit_class.rs` emits `(or/c {pred} objc-nil?)` for every `TypeRefKind::Class { name }` return. `objc-nil?` lives in `runtime/objc-base.rkt`. Legitimately-nil Cocoa properties (`PDFView.document` before assignment, `NSTableView.dataSource` before wiring, `NSWindow.firstResponder` under timing races) no longer fail their own contracts.
 
-### `list->nsarray`/`hash->nsdictionary` live in `type-mapping.rkt` and wrap results
-Both helpers in `runtime/type-mapping.rkt` wrap the `(tell (tell NSMutableArray alloc) init)` result via `(wrap-objc-object arr #:retained #t)` — `alloc+init` is +1 retained so the finalizer balances. Callers pass the result directly into class-wrapper param contracts without manual wrapping. `nsarray->list` / `nsdictionary->hash` accept both raw cpointers and wrappers via `unwrap-objc-object`. Landed commit `1d03ede` (2026-04-18).
+### `list->nsarray`/`hash->nsdictionary` live in `type-mapping.rkt`
+Both helpers in `runtime/type-mapping.rkt` wrap the `(tell (tell NSMutableArray alloc) init)` result via `(wrap-objc-object arr #:retained #t)` — `alloc+init` is +1 retained so the finalizer balances. Callers pass the result directly into class-wrapper param contracts without manual wrapping. `nsarray->list` / `nsdictionary->hash` accept both raw cpointers and wrappers via `unwrap-objc-object`.
 
 ### `PDFViewPageChangedNotification` observer pattern
-First app (PDFKit Viewer) to use NSNotificationCenter. Key bits:
-1. The notification name constant is generated as `(get-ffi-obj 'PDFViewPageChangedNotification _fw-lib _id)` — a raw `_id`-typed cpointer. `nsnotificationcenter-add-observer-selector-name-object!`'s `name` contract is `(or/c string? objc-object? #f)` — raw cpointers rejected. Wrap via `(borrow-objc-object PDFViewPageChangedNotification)` — the constant's lifetime is tied to the dylib, so no retain/release is needed.
-2. The observer is a `make-delegate` with a `pageChanged:` handler (selector can be any valid ObjC identifier ending in `:`) and `#:param-types (hash "pageChanged:" '(object))` so the NSNotification arg arrives as an `objc-object?` wrapper (not needed here since we don't read the notification, but harmless).
+NSNotificationCenter observer setup:
+1. `PDFViewPageChangedNotification` is generated as `(get-ffi-obj 'PDFViewPageChangedNotification _fw-lib _id)` — a raw `_id`-typed cpointer. The `name` contract is `(or/c string? objc-object? #f)` — raw cpointers rejected. Wrap via `(borrow-objc-object PDFViewPageChangedNotification)` — the constant's lifetime is tied to the dylib, so no retain/release is needed.
+2. The observer is a `make-delegate` with a handler (selector can be any valid ObjC identifier ending in `:`) and `#:param-types (hash "pageChanged:" '(object))` so the NSNotification arg arrives as an `objc-object?` wrapper.
 3. Keep the `make-delegate` result in a module-level variable — Cocoa holds observers weakly; a GC'd observer silently stops firing.
 
 ### Grep source before filing relocated backlog tasks
-Tasks relocated from another target plan may already be fixed in the same commit wave that prompted the relocation. Always grep the relevant source files before writing a new backlog entry for a relocated task — several BOOL/integer/nil-guard tasks were already resolved and only needed verification, not new fixes.
+Tasks relocated from another target plan may already be fixed in the same commit wave that prompted the relocation. Always grep the relevant source files before writing a new backlog entry for a relocated task.
 
 ### Sample app registration in runtime load harness
-Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app therefore requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports any framework not already built by the hermetic tree. For PDFKit Viewer: added `"PDFKit"` to `REQUIRED_FRAMEWORKS` and `"pdfkit-viewer"` + `"drawing-canvas"` (previously missed) to `APPS`. For SceneKit Viewer: added `"SceneKit"` to `REQUIRED_FRAMEWORKS` and `"scenekit-viewer"` to `APPS`. For Mini Browser: `"mini-browser"` appended to `APPS`. All 8 sample apps now exercised via `raco make` under the harness (~72s for the full run).
+Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports a framework not already in the hermetic tree. All 8 sample apps are exercised via `raco make` under the harness (~72s for the full run).
 
 ### Two-stage signing required for app bundles
 Sign the stub binary before copying `Resources/` (first pass), then re-sign the full bundle after `Resources/` is populated (second pass). A single post-copy sign produces an inconsistent bundle that Gatekeeper rejects. `stub-launcher`'s `codesign.rs` implements both passes via `codesign --force --sign`.
@@ -412,17 +401,17 @@ Sign the stub binary before copying `Resources/` (first pass), then re-sign the 
 The GUIVisionVMDriver accessibility agent's set-value path cannot reach textfields nested inside `NSStackView` containers. VNC keyboard input is the correct path for address-bar interaction tests. Concrete symptoms on Tahoe: `set-value --role textfield --window ...` returns `Multiple elements matched`; retrying with `--index 0` returns `No element found matching query`. Use `input click` (screen-absolute coords, triple-click for select-all) followed by `input type` + `input key return`.
 
 ### `guivision input click --window` coord offset on Tahoe
-The `--window <name>` flag on `guivision input click` translates window-relative coords via the AX-reported window origin, which includes the window's drop-shadow inset. On Tahoe this produces VNC click coords roughly 40 px below the intended target (confirmed: a textfield whose AX center is window-rel (567, 97) translated to VNC screen (679, 139) but the visible center in a full-screen VNC screenshot was (564, 99)). Use screen-absolute VNC coords derived from a full-screen screenshot, not `--window`-relative. Measure once per test, reuse for the session.
+The `--window <name>` flag on `guivision input click` translates window-relative coords via the AX-reported window origin, which includes the window's drop-shadow inset. On Tahoe this produces VNC click coords roughly 40 px below the intended target. Use screen-absolute VNC coords derived from a full-screen screenshot, not `--window`-relative.
 
-### Triple-click focuses+selects NSStackView-hosted NSTextField
-A single VNC click at the center of the address-bar NSTextField in Mini Browser does NOT always grant first-responder; the post-click AX snapshot shows `focused: false` on the textfield. Triple-click at the same coords reliably focuses AND selects the field contents (NSTextView's triple-click-selects-paragraph inherits for single-line fields). Subsequent `input type` replaces the selection. Pattern for any URL-bar-style interaction:
+### Triple-click focuses and selects NSStackView-hosted NSTextField
+A single VNC click at the center of an NSStackView-hosted NSTextField does NOT always grant first-responder. Triple-click at the same coords reliably focuses AND selects the field contents. Subsequent `input type` replaces the selection. Pattern for URL-bar-style interaction:
   1. `input click --count 3 <screen-x> <screen-y>`
   2. `input type "<new value>"`
   3. `input key return`
 No Cmd+A step needed.
 
 ### Orphan tart VMs have no recoverable VNC password
-`tart run --vnc-experimental` generates a random VNC password and prints it once to stdout; if the VM is started outside `scripts/macos/vm-start.sh`, the password is lost when the starting shell closes. `~/.tart/vms/<id>/config.json` does not contain it. The only recovery is to `tart stop <id>` and restart via `bash scripts/macos/vm-start.sh --id <id>` (or a fresh id), which captures the VNC URL into `$XDG_STATE_HOME/guivision/vms/<id>.json`. `vm-start.sh` deletes any existing clone with the same id, so the restart path always re-clones from the golden — any installed tooling (brew, racket) inside the clone is lost and must be reinstalled.
+`tart run --vnc-experimental` generates a random VNC password printed once to stdout. If the VM was started outside `scripts/macos/vm-start.sh`, the password is lost when the starting shell closes — it is not in `~/.tart/vms/<id>/config.json`. Recovery: `tart stop <id>` and restart via `bash scripts/macos/vm-start.sh --id <id>`, which re-clones from the golden image (any installed tooling inside the clone is lost and must be reinstalled).
 
 ### Detached install pattern under agent exec
-Long-running installs (`brew install minimal-racket`, ~5 min on Tahoe) should be launched via `nohup ... > /tmp/x.log 2>&1 &` through `guivision exec`, then polled for completion. The client-side Bash timeout (default 2 min) tears down the HTTP exec call but not the VM-side process; however, if the command is NOT detached, the spawning shell ends with the HTTP call and the child is killed. Poll via `until $GV exec --vm $ID "test -x /path/to/binary" 2>/dev/null | grep -q DONE; do sleep 15; done` from the host.
+Long-running installs (`brew install minimal-racket`, ~5 min on Tahoe) should be launched via `nohup ... > /tmp/x.log 2>&1 &` through `guivision exec`, then polled for completion. If the command is NOT detached, the spawning shell ends with the HTTP call and the child is killed. Poll via `until $GV exec --vm $ID "test -x /path/to/binary" 2>/dev/null | grep -q DONE; do sleep 15; done` from the host.
