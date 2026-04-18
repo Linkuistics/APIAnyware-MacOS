@@ -442,6 +442,7 @@ fn build_tk_transform_point() -> Function {
                 kind: TypeRefKind::Alias {
                     name: "NSPoint".to_string(),
                     framework: None,
+                    underlying_primitive: None,
                 },
             },
         )],
@@ -450,6 +451,7 @@ fn build_tk_transform_point() -> Function {
             kind: TypeRefKind::Alias {
                 name: "NSPoint".to_string(),
                 framework: None,
+                underlying_primitive: None,
             },
         },
         inline: false,

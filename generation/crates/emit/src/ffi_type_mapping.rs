@@ -112,33 +112,46 @@ pub fn is_generic_type_param(name: &str) -> bool {
 /// Maps IR types to Racket FFI type expressions (`_id`, `_uint64`, `_NSRect`, etc.).
 pub struct RacketFfiTypeMapper;
 
+/// Translate a canonical primitive name (as produced by the ObjC
+/// extractor's `map_primitive_name`) into the Racket FFI type. Returns
+/// `None` for names we don't have a fixed-width mapping for — callers
+/// decide the appropriate fallback (`_pointer` for primitive slots,
+/// `_uint64` for enum-alias slots).
+fn racket_ffi_type_for_primitive(name: Option<&String>) -> Option<&'static str> {
+    match name?.as_str() {
+        "bool" => Some("_bool"),
+        "int8" => Some("_int8"),
+        "uint8" => Some("_uint8"),
+        "int16" => Some("_int16"),
+        "uint16" => Some("_uint16"),
+        "int32" => Some("_int32"),
+        "uint32" => Some("_uint32"),
+        "int64" => Some("_int64"),
+        "uint64" => Some("_uint64"),
+        "float" => Some("_float"),
+        "double" => Some("_double"),
+        _ => None,
+    }
+}
+
 impl FfiTypeMapper for RacketFfiTypeMapper {
     fn map_type(&self, type_ref: &TypeRef, is_return_type: bool) -> String {
         match &type_ref.kind {
             TypeRefKind::Primitive { name } => {
                 let normalized = normalize_primitive_name(name);
-                match normalized.as_str() {
-                    "void" => {
-                        if is_return_type {
-                            "_void".to_string()
-                        } else {
-                            "_pointer".to_string()
-                        }
-                    }
-                    "bool" => "_bool".to_string(),
-                    "int8" => "_int8".to_string(),
-                    "uint8" => "_uint8".to_string(),
-                    "int16" => "_int16".to_string(),
-                    "uint16" => "_uint16".to_string(),
-                    "int32" => "_int32".to_string(),
-                    "uint32" => "_uint32".to_string(),
-                    "int64" => "_int64".to_string(),
-                    "uint64" => "_uint64".to_string(),
-                    "float" => "_float".to_string(),
-                    "double" => "_double".to_string(),
-                    "pointer" => "_pointer".to_string(),
-                    _ => "_pointer".to_string(),
+                if normalized == "void" {
+                    return if is_return_type {
+                        "_void".into()
+                    } else {
+                        "_pointer".into()
+                    };
                 }
+                if normalized == "pointer" {
+                    return "_pointer".into();
+                }
+                racket_ffi_type_for_primitive(Some(&normalized))
+                    .map(str::to_string)
+                    .unwrap_or_else(|| "_pointer".to_string())
             }
             TypeRefKind::Class { .. } | TypeRefKind::Id | TypeRefKind::Instancetype => {
                 "_id".to_string()
@@ -152,7 +165,11 @@ impl FfiTypeMapper for RacketFfiTypeMapper {
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "_pointer".to_string()),
             TypeRefKind::FunctionPointer { .. } => "_pointer".to_string(),
-            TypeRefKind::Alias { name, .. } => {
+            TypeRefKind::Alias {
+                name,
+                underlying_primitive,
+                ..
+            } => {
                 // Geometry struct typedefs (NSRect, CGPoint, etc.) → cstruct types
                 if let Some(ffi_type) = map_geometry_struct_alias(name) {
                     return ffi_type.to_string();
@@ -162,10 +179,15 @@ impl FfiTypeMapper for RacketFfiTypeMapper {
                 // Framework-prefixed aliases (NSStringEncoding, AXValueType,
                 // CGColorRenderingIntent) start with 2+ uppercase letters.
                 if name.ends_with("Type") && is_generic_type_param(name) {
-                    "_id".to_string()
-                } else {
-                    "_uint64".to_string()
+                    return "_id".to_string();
                 }
+                // Prefer the enum's extracted underlying width — maps
+                // CF_ENUM(uint32_t, AXValueType) to _uint32 instead of the
+                // historical _uint64 default, and NS_ENUM(NSInteger, …) to
+                // _int64 (signed) instead of _uint64 (unsigned).
+                racket_ffi_type_for_primitive(underlying_primitive.as_ref())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| "_uint64".to_string())
             }
         }
     }
@@ -331,6 +353,61 @@ mod tests {
     }
 
     #[test]
+    fn racket_alias_uses_underlying_uint32_when_known() {
+        // CF_ENUM(uint32_t, AXValueType) → extraction resolves underlying
+        // to "uint32" → FFI picks _uint32, not the _uint64 default.
+        let m = RacketFfiTypeMapper;
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "AXValueType".into(),
+                    framework: None,
+                    underlying_primitive: Some("uint32".into()),
+                }),
+                false,
+            ),
+            "_uint32"
+        );
+    }
+
+    #[test]
+    fn racket_alias_uses_underlying_int64_for_nsinteger_enum() {
+        // NS_ENUM(NSInteger, SomeEnum) → underlying_primitive = "int64" on
+        // macOS arm64. The old code returned _uint64 — silently wrong for
+        // negative enum values. The fix flips to signed.
+        let m = RacketFfiTypeMapper;
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "NSWindowLevel".into(),
+                    framework: None,
+                    underlying_primitive: Some("int64".into()),
+                }),
+                false,
+            ),
+            "_int64"
+        );
+    }
+
+    #[test]
+    fn racket_alias_falls_back_to_uint64_when_underlying_unknown() {
+        // Preserves the historical default for aliases whose underlying
+        // type wasn't resolved at extraction (older IR, non-enum aliases).
+        let m = RacketFfiTypeMapper;
+        assert_eq!(
+            m.map_type(
+                &make_type(TypeRefKind::Alias {
+                    name: "SomeLegacyAlias".into(),
+                    framework: None,
+                    underlying_primitive: None,
+                }),
+                false,
+            ),
+            "_uint64"
+        );
+    }
+
+    #[test]
     fn test_racket_alias_types() {
         let m = RacketFfiTypeMapper;
         // Generic type param → _id
@@ -339,6 +416,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "ObjectType".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -350,6 +428,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "NSStringEncoding".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -366,6 +445,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "NSRect".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -377,6 +457,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "CGRect".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -388,6 +469,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "NSPoint".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -399,6 +481,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "NSSize".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -410,6 +493,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "NSRange".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -421,6 +505,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "NSEdgeInsets".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -432,6 +517,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "NSAffineTransformStruct".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -443,6 +529,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "CGAffineTransform".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -454,6 +541,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "CGVector".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -465,6 +553,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "NSDirectionalEdgeInsets".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false,
             ),
@@ -585,30 +674,37 @@ mod tests {
         assert!(m.is_struct_type(&make_type(TypeRefKind::Alias {
             name: "NSRect".into(),
             framework: None,
+            underlying_primitive: None,
         })));
         assert!(m.is_struct_type(&make_type(TypeRefKind::Alias {
             name: "CGPoint".into(),
             framework: None,
+            underlying_primitive: None,
         })));
         assert!(m.is_struct_type(&make_type(TypeRefKind::Alias {
             name: "NSEdgeInsets".into(),
             framework: None,
+            underlying_primitive: None,
         })));
         assert!(m.is_struct_type(&make_type(TypeRefKind::Alias {
             name: "CGAffineTransform".into(),
             framework: None,
+            underlying_primitive: None,
         })));
         assert!(m.is_struct_type(&make_type(TypeRefKind::Alias {
             name: "CGVector".into(),
             framework: None,
+            underlying_primitive: None,
         })));
         assert!(m.is_struct_type(&make_type(TypeRefKind::Alias {
             name: "NSDirectionalEdgeInsets".into(),
             framework: None,
+            underlying_primitive: None,
         })));
         assert!(!m.is_struct_type(&make_type(TypeRefKind::Alias {
             name: "NSStringEncoding".into(),
             framework: None,
+            underlying_primitive: None,
         })));
     }
 
@@ -640,6 +736,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "AXValueType".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false
             ),
@@ -651,6 +748,7 @@ mod tests {
                 &make_type(TypeRefKind::Alias {
                     name: "ObjectType".into(),
                     framework: None,
+                    underlying_primitive: None,
                 }),
                 false
             ),

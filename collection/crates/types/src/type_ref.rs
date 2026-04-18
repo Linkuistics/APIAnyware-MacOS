@@ -24,11 +24,22 @@ pub struct TypeRef {
 #[serde(tag = "kind")]
 pub enum TypeRefKind {
     /// Type alias (typedef). Example: `NSStringEncoding`.
+    ///
+    /// `underlying_primitive` carries the resolved width/signedness for
+    /// enum-typedef aliases (e.g. `CF_ENUM(uint32_t, AXValueType)` →
+    /// `Some("uint32")`, `NS_ENUM(NSInteger, …)` → `Some("int64")` on
+    /// macOS arm64). Populated at extraction via
+    /// `Entity::get_enum_underlying_type`; `None` for non-enum aliases
+    /// and when the underlying type is unavailable. FFI mappers consult
+    /// this to pick the right fixed-width type instead of defaulting
+    /// every enum alias to `_uint64`.
     #[serde(rename = "alias")]
     Alias {
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         framework: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        underlying_primitive: Option<String>,
     },
 
     /// ObjC block type with parameter types and a return type.

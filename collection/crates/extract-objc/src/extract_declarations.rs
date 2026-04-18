@@ -962,7 +962,7 @@ fn extract_availability(entity: &Entity<'_>) -> Option<Availability> {
 
 /// Extract documentation references from a declaration.
 fn extract_doc_refs(entity: &Entity<'_>) -> DocRefs {
-    let header_comment = entity.get_comment_brief();
+    let header_comment = safe_get_comment_brief(entity);
     let usr = entity.get_usr().map(|u| u.0);
     let apple_doc_url = usr.as_ref().and_then(|u| construct_apple_doc_url(u));
 
@@ -971,6 +971,43 @@ fn extract_doc_refs(entity: &Entity<'_>) -> DocRefs {
         apple_doc_url,
         usr,
     }
+}
+
+/// `Entity::get_comment_brief` in clang-2.0.0 calls
+/// `CStr::to_str().expect("invalid Rust string")` on whatever libclang
+/// hands back for the brief comment. Some Quartz-subframework cursors
+/// produce a ~22-byte prefix plus a non-UTF-8 tail byte (a stray byte
+/// from a miscoded character in a doc comment) and abort the whole
+/// walker, because the normal unwinding panic crosses an `extern "C"`
+/// boundary one frame above and converts to a process abort. Catching
+/// the panic here keeps the unwind inside Rust territory so the visitor
+/// can continue with the next entity; the only loss is the doc comment
+/// for the offending declaration, which is advisory rather than
+/// load-bearing. Rejecting whole entities would be worse — we'd silently
+/// drop API surface we are allowed to extract.
+fn safe_get_comment_brief(entity: &Entity<'_>) -> Option<String> {
+    let result = catch_clang_utf8_panic(|| entity.get_comment_brief());
+    if result.is_none() {
+        tracing::debug!(
+            entity_kind = ?entity.get_kind(),
+            name = ?entity.get_name(),
+            "dropping doc comment: clang returned non-UTF-8 CXString from clang_Cursor_getBriefCommentText"
+        );
+    }
+    result.flatten()
+}
+
+/// Run `f` with a catch for the `invalid Rust string` panic that
+/// clang-2.0.0 raises on non-UTF-8 `CXString` values. Returns `None` if
+/// the closure panicked. The outer `Option` distinguishes "panicked"
+/// (`None`) from "returned None" (`Some(None)`); `safe_get_comment_brief`
+/// flattens the nested option because both mean "no comment available".
+///
+/// Must be used inside the visitor callback. Any panic that reaches
+/// clang_sys's `extern "C" fn visit` is converted to a process abort —
+/// catching earlier keeps traversal alive.
+fn catch_clang_utf8_panic<T, F: FnOnce() -> T>(f: F) -> Option<T> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).ok()
 }
 
 /// Construct an Apple developer documentation URL from a USR.
@@ -1049,13 +1086,44 @@ fn is_from_framework(entity: &Entity<'_>, framework_name: &str, sdk_path: &Path)
     // Synthetic pseudo-framework: libdispatch matches headers under
     // {SDK}/usr/include/dispatch/ and the pthread_*_np symbols under
     // {SDK}/usr/include/pthread.h and /pthread/*.h.
-    if framework_name == "libdispatch" {
-        if path_str.starts_with("usr/include/dispatch/")
+    if framework_name == "libdispatch"
+        && (path_str.starts_with("usr/include/dispatch/")
             || path_str == "usr/include/pthread.h"
-            || path_str.starts_with("usr/include/pthread/")
-        {
-            return true;
-        }
+            || path_str.starts_with("usr/include/pthread/"))
+    {
+        return true;
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catch_clang_utf8_panic_returns_none_when_closure_panics() {
+        // Shape of the real panic: clang-2.0.0's `CStr::to_str().expect
+        // ("invalid Rust string")` on a non-UTF-8 byte sequence. The
+        // closure shape mirrors `safe_get_comment_brief`'s use — no
+        // inputs, returns T, panics are converted to None by the helper.
+        let got: Option<&str> = catch_clang_utf8_panic(|| {
+            panic!("invalid Rust string");
+        });
+        assert!(got.is_none());
+    }
+
+    #[test]
+    fn catch_clang_utf8_panic_passes_through_successful_return() {
+        let got = catch_clang_utf8_panic(|| 42);
+        assert_eq!(got, Some(42));
+    }
+
+    #[test]
+    fn catch_clang_utf8_panic_preserves_option_returns() {
+        let none_case: Option<Option<&str>> = catch_clang_utf8_panic(|| None);
+        assert_eq!(none_case, Some(None));
+
+        let some_case: Option<Option<&str>> = catch_clang_utf8_panic(|| Some("hi"));
+        assert_eq!(some_case, Some(Some("hi")));
+    }
 }

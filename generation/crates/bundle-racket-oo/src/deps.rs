@@ -12,40 +12,56 @@
 //! parser would be over-engineering. Strings that contain `.rkt` for
 //! reasons other than file imports would be a false positive — the
 //! racket-oo emitter doesn't produce any.
+//!
+//! ## Symlinks and logical paths
+//!
+//! The walker works in **logical** path space — absolutize the entry, then
+//! resolve `.`/`..` components without following symlinks. Bundle layout
+//! is driven by the logical tree: a symlinked subdirectory appears in the
+//! output bundle at its symlinked (logical) location, populated with real
+//! copies of the symlink targets' content. This is what makes bundles
+//! self-contained even when the source tree stitches in external
+//! resources via symlinks (Modaliser-Racket's `bindings/` →
+//! `APIAnyware-MacOS/generation/targets/racket-oo/` is the motivating
+//! case). Reading file content still transparently follows symlinks,
+//! because `fs::read_to_string` and `fs::copy` do.
 
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::bundle::BundleError;
 
-/// Transitive set of `.rkt` files reachable from `entry`, all resolved as
-/// canonical absolute paths under `source_root`.
+/// Transitive set of `.rkt` files reachable from `entry`, returned as
+/// absolute **logical** paths under `source_root`.
 ///
 /// `source_root` is the directory the generated bundle's `racket-app/`
-/// will mirror — for racket-oo that's `generation/targets/racket-oo/`.
-/// Any discovered file that escapes that root is rejected as a
-/// bundle-layout error.
+/// will mirror — e.g. `generation/targets/racket-oo/` for the APIAnyware
+/// sample apps, or the project root for a Modaliser-style layout whose
+/// entry lives at `main.rkt`. Any discovered file whose logical path
+/// escapes `source_root` is rejected as a bundle-layout error.
 pub fn collect_dependencies(
     entry: &Path,
     source_root: &Path,
 ) -> Result<HashSet<PathBuf>, BundleError> {
-    let canonical_root = source_root
-        .canonicalize()
+    let abs_root = absolutize(source_root)
         .map_err(|e| BundleError::ResolveSourceRoot(source_root.to_path_buf(), e))?;
-    let canonical_entry = entry
-        .canonicalize()
+    let abs_entry = absolutize(entry)
         .map_err(|e| BundleError::ResolveEntry(entry.to_path_buf(), e))?;
 
-    if !canonical_entry.starts_with(&canonical_root) {
+    if !abs_entry.starts_with(&abs_root) {
         return Err(BundleError::EntryOutsideRoot {
-            entry: canonical_entry,
-            root: canonical_root,
+            entry: abs_entry,
+            root: abs_root,
         });
     }
 
+    if !abs_entry.exists() {
+        return Err(BundleError::EntryMissing { entry: abs_entry });
+    }
+
     let mut visited: HashSet<PathBuf> = HashSet::new();
-    let mut queue: Vec<PathBuf> = vec![canonical_entry];
+    let mut queue: Vec<PathBuf> = vec![abs_entry];
 
     while let Some(file) = queue.pop() {
         if !visited.insert(file.clone()) {
@@ -57,28 +73,64 @@ pub fn collect_dependencies(
         let parent = file.parent().expect("source file has parent");
 
         for raw in scan_rkt_string_literals(&content) {
-            let candidate = parent.join(raw);
-            let resolved = candidate
-                .canonicalize()
-                .map_err(|e| BundleError::ResolveRequire {
-                    referrer: file.clone(),
-                    target: raw.to_string(),
-                    source: e,
-                })?;
+            let logical = logical_normalize(&parent.join(raw));
 
-            if !resolved.starts_with(&canonical_root) {
+            if !logical.starts_with(&abs_root) {
                 return Err(BundleError::RequireOutsideRoot {
                     referrer: file.clone(),
-                    target: resolved,
-                    root: canonical_root.clone(),
+                    target: logical,
+                    root: abs_root.clone(),
                 });
             }
 
-            queue.push(resolved);
+            if !logical.exists() {
+                return Err(BundleError::ResolveRequire {
+                    referrer: file.clone(),
+                    target: raw.to_string(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("{} does not exist", logical.display()),
+                    ),
+                });
+            }
+
+            queue.push(logical);
         }
     }
 
     Ok(visited)
+}
+
+/// Return an absolute, `.`/`..`-normalized form of `path` without
+/// following symlinks.
+///
+/// This is the key difference from `Path::canonicalize`, which resolves
+/// every symlink and can drag a path out of `source_root` when an
+/// in-tree directory symlinks to an external target.
+pub(crate) fn absolutize(path: &Path) -> std::io::Result<PathBuf> {
+    Ok(logical_normalize(&std::path::absolute(path)?))
+}
+
+/// Collapse `.` / `..` components without touching the filesystem.
+///
+/// `..` pops the last `Normal` component. Against a root or prefix it
+/// is preserved verbatim (so `/..` stays `/..` rather than silently
+/// lying about what the path refers to).
+fn logical_normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                _ => out.push(comp),
+            },
+            _ => out.push(comp),
+        }
+    }
+    out
 }
 
 /// Find every double-quoted string literal in `content` ending in `.rkt`.
@@ -183,6 +235,21 @@ mod tests {
         assert_eq!(lits, vec![r#"weird\"name.rkt"#, "normal.rkt"]);
     }
 
+    fn rel_names(deps: &HashSet<PathBuf>, root: &Path) -> Vec<String> {
+        let abs_root = absolutize(root).unwrap();
+        let mut names: Vec<String> = deps
+            .iter()
+            .map(|p| {
+                p.strip_prefix(&abs_root)
+                    .unwrap_or_else(|_| panic!("{p:?} not under {abs_root:?}"))
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
     #[test]
     fn collect_walks_transitively() {
         let dir = TempDir::new().unwrap();
@@ -197,22 +264,9 @@ mod tests {
         write(root, "runtime/b.rkt", "");
         write(root, "generated/c.rkt", "");
 
-        let entry = root.join("apps/my/my.rkt");
-        let deps = collect_dependencies(&entry, root).unwrap();
-        let canonical_root = root.canonicalize().unwrap();
-
-        let mut names: Vec<String> = deps
-            .iter()
-            .map(|p| {
-                p.strip_prefix(&canonical_root)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned()
-            })
-            .collect();
-        names.sort();
+        let deps = collect_dependencies(&root.join("apps/my/my.rkt"), root).unwrap();
         assert_eq!(
-            names,
+            rel_names(&deps, root),
             vec![
                 "apps/my/my.rkt".to_string(),
                 "generated/c.rkt".to_string(),
@@ -250,5 +304,93 @@ mod tests {
             BundleError::RequireOutsideRoot { .. } => {}
             other => panic!("expected RequireOutsideRoot, got {other:?}"),
         }
+    }
+
+    /// Modaliser-Racket's layout: an in-tree directory (`bindings/`) is a
+    /// symlink pointing outside the project root to APIAnyware-MacOS's
+    /// generated bindings. The walker must accept this and preserve the
+    /// logical (in-tree) path in its returned set, so the copy step
+    /// produces a self-contained bundle without leaking the external
+    /// target path into the result.
+    #[test]
+    fn collect_walks_through_symlinked_subdir_pointing_outside_root() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path().join("project");
+        let external = dir.path().join("external");
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(&external).unwrap();
+
+        write(&project, "entry.rkt", r#"(require "bindings/runtime/a.rkt")"#);
+        write(&external, "runtime/a.rkt", r#"(require "b.rkt")"#);
+        write(&external, "runtime/b.rkt", "");
+
+        std::os::unix::fs::symlink(&external, project.join("bindings")).unwrap();
+
+        let deps = collect_dependencies(&project.join("entry.rkt"), &project).unwrap();
+
+        assert_eq!(
+            rel_names(&deps, &project),
+            vec![
+                "bindings/runtime/a.rkt".to_string(),
+                "bindings/runtime/b.rkt".to_string(),
+                "entry.rkt".to_string(),
+            ]
+        );
+
+        for p in &deps {
+            assert!(
+                !p.starts_with(&external),
+                "leaked external path into deps set: {p:?}"
+            );
+        }
+    }
+
+    /// Requires that traverse **upward** across a symlink boundary must
+    /// resolve to the logical location in the project, not to the
+    /// external target's siblings. Example: `bindings/runtime/x.rkt`
+    /// requires `"../other/y.rkt"` → logical = `bindings/other/y.rkt`,
+    /// which is under the project root even though the underlying file
+    /// lives at `$external/other/y.rkt`.
+    #[test]
+    fn collect_preserves_logical_path_on_parent_traversal_through_symlink() {
+        let dir = TempDir::new().unwrap();
+        let project = dir.path().join("project");
+        let external = dir.path().join("external");
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(&external).unwrap();
+
+        write(
+            &project,
+            "entry.rkt",
+            r#"(require "bindings/runtime/x.rkt")"#,
+        );
+        write(&external, "runtime/x.rkt", r#"(require "../other/y.rkt")"#);
+        write(&external, "other/y.rkt", "");
+
+        std::os::unix::fs::symlink(&external, project.join("bindings")).unwrap();
+
+        let deps = collect_dependencies(&project.join("entry.rkt"), &project).unwrap();
+
+        assert_eq!(
+            rel_names(&deps, &project),
+            vec![
+                "bindings/other/y.rkt".to_string(),
+                "bindings/runtime/x.rkt".to_string(),
+                "entry.rkt".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn logical_normalize_resolves_dot_and_dotdot() {
+        assert_eq!(
+            logical_normalize(Path::new("/a/b/./c/../d")),
+            PathBuf::from("/a/b/d"),
+        );
+    }
+
+    #[test]
+    fn logical_normalize_preserves_dotdot_at_root() {
+        assert_eq!(logical_normalize(Path::new("/..")), PathBuf::from("/.."));
     }
 }

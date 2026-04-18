@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use apianyware_macos_stub_launcher::{create_app_bundle, StubConfig, StubError};
 
-use crate::deps::collect_dependencies;
+use crate::deps::{absolutize, collect_dependencies};
 
 /// Default Racket runtime path baked into stub binaries. Matches the
 /// homebrew install location used everywhere else in the project (sample
@@ -82,6 +82,12 @@ pub enum BundleError {
     #[error("entry script {entry} not found")]
     EntryMissing { entry: PathBuf },
 
+    #[error("entry script {0} has no file stem — stub launcher needs a base name")]
+    EntryHasNoStem(PathBuf),
+
+    #[error("entry script {0} has no file extension — stub launcher needs a resource type")]
+    EntryHasNoExtension(PathBuf),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -92,16 +98,10 @@ pub enum BundleError {
 /// Bundle a sample app at `source_root/apps/<script_name>/<script_name>.rkt`
 /// into `output_dir/<App Name>.app`. Returns the path to the new bundle.
 ///
-/// Resource layout: every `.rkt` file the entry script transitively
-/// requires gets copied to `Resources/racket-app/<rel>` where `<rel>` is
-/// the file's path relative to `source_root`. The `lib/` dylib directory
-/// (if present in `source_root`) is copied verbatim to
-/// `Resources/racket-app/lib/`.
-///
-/// The Swift stub is generated and compiled by `stub-launcher`. Its
-/// `script_resource_dir` is set to `racket-app/apps/<script_name>` so
-/// `Bundle.main.path(forResource:ofType:inDirectory:)` finds the entry
-/// script inside the bundle at runtime.
+/// Convenience wrapper over [`bundle_app_with_entry`] for the APIAnyware
+/// sample-app layout. For a project whose entry isn't at
+/// `apps/<name>/<name>.rkt` (e.g. a root-level `main.rkt`), use
+/// [`bundle_app_with_entry`] directly.
 pub fn bundle_app(
     spec: &AppSpec,
     source_root: &Path,
@@ -116,21 +116,73 @@ pub fn bundle_app(
         return Err(BundleError::EntryMissing { entry });
     }
 
-    let canonical_root = source_root
-        .canonicalize()
-        .map_err(|e| BundleError::ResolveSourceRoot(source_root.to_path_buf(), e))?;
+    bundle_app_with_entry(spec, &entry, source_root, output_dir)
+}
 
-    // Discover everything the entry transitively requires, before we
+/// Bundle an arbitrary Racket entry script into a `.app` at
+/// `output_dir/<App Name>.app`.
+///
+/// Resource layout: every `.rkt` file the entry script transitively
+/// requires gets copied to `Resources/racket-app/<rel>` where `<rel>` is
+/// the file's **logical** path relative to `source_root`. Symlinks inside
+/// the source tree are preserved in the bundle layout but resolved at
+/// read time, so a directory symlink (e.g. Modaliser-Racket's
+/// `bindings/` → `APIAnyware-MacOS/generation/targets/racket-oo/`) lands
+/// as a real copy under `bindings/` in the bundle rather than an
+/// absolute symlink. The `lib/` directory at `source_root` (if any) is
+/// copied verbatim to `Resources/racket-app/lib/`.
+///
+/// The Swift stub is generated and compiled by `stub-launcher`. Its
+/// `script_resource_dir`, `script_resource_name`, and
+/// `script_resource_type` are derived from `entry` relative to
+/// `source_root`, so `Bundle.main.path(forResource:ofType:inDirectory:)`
+/// finds the entry script inside the bundle at runtime.
+pub fn bundle_app_with_entry(
+    spec: &AppSpec,
+    entry: &Path,
+    source_root: &Path,
+    output_dir: &Path,
+) -> Result<PathBuf, BundleError> {
+    let abs_root = absolutize(source_root)
+        .map_err(|e| BundleError::ResolveSourceRoot(source_root.to_path_buf(), e))?;
+    let abs_entry = absolutize(entry)
+        .map_err(|e| BundleError::ResolveEntry(entry.to_path_buf(), e))?;
+
+    if !abs_entry.starts_with(&abs_root) {
+        return Err(BundleError::EntryOutsideRoot {
+            entry: abs_entry,
+            root: abs_root,
+        });
+    }
+
+    if !abs_entry.exists() {
+        return Err(BundleError::EntryMissing { entry: abs_entry });
+    }
+
+    let script_resource_name = abs_entry
+        .file_stem()
+        .ok_or_else(|| BundleError::EntryHasNoStem(abs_entry.clone()))?
+        .to_string_lossy()
+        .into_owned();
+    let script_resource_type = abs_entry
+        .extension()
+        .ok_or_else(|| BundleError::EntryHasNoExtension(abs_entry.clone()))?
+        .to_string_lossy()
+        .into_owned();
+
+    let script_resource_dir = derive_script_resource_dir(&abs_entry, &abs_root);
+
+    // Discover everything the entry transitively requires before we
     // touch the output directory — fail fast if a require is broken.
-    let dependencies = collect_dependencies(&entry, &canonical_root)?;
+    let dependencies = collect_dependencies(&abs_entry, &abs_root)?;
 
     let stub_config = StubConfig {
         app_name: spec.app_name.clone(),
         runtime_path: spec.runtime_path.clone(),
         runtime_args: vec![],
-        script_resource_name: spec.script_name.clone(),
-        script_resource_type: "rkt".to_string(),
-        script_resource_dir: format!("racket-app/apps/{}", spec.script_name),
+        script_resource_name,
+        script_resource_type,
+        script_resource_dir,
         bundle_identifier: spec.bundle_id.clone(),
     };
 
@@ -144,7 +196,7 @@ pub fn bundle_app(
 
     for src in &dependencies {
         let rel = src
-            .strip_prefix(&canonical_root)
+            .strip_prefix(&abs_root)
             .expect("dependency was validated to be under source root");
         let dst = racket_app.join(rel);
         fs::create_dir_all(dst.parent().expect("dst has parent"))?;
@@ -156,7 +208,7 @@ pub fn bundle_app(
     // Copy the lib/ directory if it exists in the source tree; the
     // runtime's exn:fail handler in swift-helpers.rkt makes the bundle
     // work in either mode.
-    let lib_src = canonical_root.join("lib");
+    let lib_src = abs_root.join("lib");
     if lib_src.is_dir() {
         let lib_dst = racket_app.join("lib");
         copy_dir_recursive(&lib_src, &lib_dst)?;
@@ -170,6 +222,25 @@ pub fn bundle_app(
     );
 
     Ok(app_path)
+}
+
+/// `racket-app/` is always the top of the bundle's Racket tree. Append
+/// the entry's parent dir relative to `abs_root` so the stub's
+/// `Bundle.main.path(forResource:ofType:inDirectory:)` lookup finds the
+/// script at its logical location.
+///
+/// - `$root/main.rkt` → `"racket-app"`
+/// - `$root/apps/foo/foo.rkt` → `"racket-app/apps/foo"`
+fn derive_script_resource_dir(abs_entry: &Path, abs_root: &Path) -> String {
+    let parent_rel = abs_entry
+        .parent()
+        .and_then(|p| p.strip_prefix(abs_root).ok())
+        .unwrap_or_else(|| Path::new(""));
+    if parent_rel.as_os_str().is_empty() {
+        "racket-app".to_string()
+    } else {
+        format!("racket-app/{}", parent_rel.to_string_lossy())
+    }
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -240,5 +311,29 @@ mod tests {
         let spec = AppSpec::from_script_name("counter");
         assert_eq!(spec.app_name, "Counter");
         assert_eq!(spec.bundle_id, "com.linkuistics.Counter");
+    }
+
+    #[test]
+    fn script_resource_dir_root_level_entry_is_racket_app() {
+        let dir = derive_script_resource_dir(Path::new("/root/main.rkt"), Path::new("/root"));
+        assert_eq!(dir, "racket-app");
+    }
+
+    #[test]
+    fn script_resource_dir_apps_sample_layout_appends_path() {
+        let dir = derive_script_resource_dir(
+            Path::new("/root/apps/file-lister/file-lister.rkt"),
+            Path::new("/root"),
+        );
+        assert_eq!(dir, "racket-app/apps/file-lister");
+    }
+
+    #[test]
+    fn script_resource_dir_nested_subdir() {
+        let dir = derive_script_resource_dir(
+            Path::new("/root/src/cli/tool.rkt"),
+            Path::new("/root"),
+        );
+        assert_eq!(dir, "racket-app/src/cli");
     }
 }

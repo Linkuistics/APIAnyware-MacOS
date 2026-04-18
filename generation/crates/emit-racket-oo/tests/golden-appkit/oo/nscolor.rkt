@@ -214,17 +214,19 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _id _pointer -> _id)))
 (define _msg-14  ; (_fun _pointer _pointer _id _pointer _int64 -> _id)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _id _pointer _int64 -> _id)))
-(define _msg-15  ; (_fun _pointer _pointer _pointer -> _id)
+(define _msg-15  ; (_fun _pointer _pointer _int64 -> _id)
+  (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _int64 -> _id)))
+(define _msg-16  ; (_fun _pointer _pointer _pointer -> _id)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer -> _id)))
-(define _msg-16  ; (_fun _pointer _pointer _pointer -> _void)
+(define _msg-17  ; (_fun _pointer _pointer _pointer -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer -> _void)))
-(define _msg-17  ; (_fun _pointer _pointer _pointer _pointer -> _void)
+(define _msg-18  ; (_fun _pointer _pointer _pointer _pointer -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer _pointer -> _void)))
-(define _msg-18  ; (_fun _pointer _pointer _pointer _pointer _pointer _pointer -> _void)
+(define _msg-19  ; (_fun _pointer _pointer _pointer _pointer _pointer _pointer -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer _pointer _pointer _pointer -> _void)))
-(define _msg-19  ; (_fun _pointer _pointer _pointer _pointer _pointer _pointer _pointer -> _void)
+(define _msg-20  ; (_fun _pointer _pointer _pointer _pointer _pointer _pointer _pointer -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer _pointer _pointer _pointer _pointer -> _void)))
-(define _msg-20  ; (_fun _pointer _pointer _uint64 -> _id)
+(define _msg-21  ; (_fun _pointer _pointer _uint64 -> _id)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _uint64 -> _id)))
 
 ;; --- Constructors ---
@@ -518,7 +520,7 @@
   (wrap-objc-object
    (tell NSColor transferRepresentation)))
 (define (nscolor-type self)
-  (tell #:type _uint64 (coerce-arg self) type))
+  (tell #:type _int64 (coerce-arg self) type))
 (define (nscolor-under-page-background-color)
   (wrap-objc-object
    (tell NSColor underPageBackgroundColor)))
@@ -565,7 +567,7 @@
    (tell (coerce-arg self) colorUsingColorSpace: (coerce-arg space))))
 (define (nscolor-color-using-type self type)
   (wrap-objc-object
-   (_msg-20 (coerce-arg self) (sel_registerName "colorUsingType:") type)
+   (_msg-15 (coerce-arg self) (sel_registerName "colorUsingType:") type)
    ))
 (define (nscolor-color-with-alpha-component self alpha)
   (wrap-objc-object
@@ -573,20 +575,20 @@
    ))
 (define (nscolor-color-with-system-effect self system-effect)
   (wrap-objc-object
-   (_msg-20 (coerce-arg self) (sel_registerName "colorWithSystemEffect:") system-effect)
+   (_msg-15 (coerce-arg self) (sel_registerName "colorWithSystemEffect:") system-effect)
    ))
 (define (nscolor-draw-swatch-in-rect self rect)
   (_msg-5 (coerce-arg self) (sel_registerName "drawSwatchInRect:") rect))
 (define (nscolor-get-components self components)
-  (_msg-16 (coerce-arg self) (sel_registerName "getComponents:") components))
+  (_msg-17 (coerce-arg self) (sel_registerName "getComponents:") components))
 (define (nscolor-get-cyan-magenta-yellow-black-alpha self cyan magenta yellow black alpha)
-  (_msg-19 (coerce-arg self) (sel_registerName "getCyan:magenta:yellow:black:alpha:") cyan magenta yellow black alpha))
+  (_msg-20 (coerce-arg self) (sel_registerName "getCyan:magenta:yellow:black:alpha:") cyan magenta yellow black alpha))
 (define (nscolor-get-hue-saturation-brightness-alpha self hue saturation brightness alpha)
-  (_msg-18 (coerce-arg self) (sel_registerName "getHue:saturation:brightness:alpha:") hue saturation brightness alpha))
+  (_msg-19 (coerce-arg self) (sel_registerName "getHue:saturation:brightness:alpha:") hue saturation brightness alpha))
 (define (nscolor-get-red-green-blue-alpha self red green blue alpha)
-  (_msg-18 (coerce-arg self) (sel_registerName "getRed:green:blue:alpha:") red green blue alpha))
+  (_msg-19 (coerce-arg self) (sel_registerName "getRed:green:blue:alpha:") red green blue alpha))
 (define (nscolor-get-white-alpha self white alpha)
-  (_msg-17 (coerce-arg self) (sel_registerName "getWhite:alpha:") white alpha))
+  (_msg-18 (coerce-arg self) (sel_registerName "getWhite:alpha:") white alpha))
 (define (nscolor-highlight-with-level self val)
   (wrap-objc-object
    (_msg-7 (coerce-arg self) (sel_registerName "highlightWithLevel:") val)
@@ -607,7 +609,7 @@
 ;; --- Class methods ---
 (define (nscolor-color-for-control-tint control-tint)
   (wrap-objc-object
-   (_msg-20 NSColor (sel_registerName "colorForControlTint:") control-tint)
+   (_msg-21 NSColor (sel_registerName "colorForControlTint:") control-tint)
    ))
 (define (nscolor-color-from-pasteboard paste-board)
   (wrap-objc-object
@@ -620,7 +622,7 @@
    (tell NSColor colorNamed: (coerce-arg name) bundle: (coerce-arg bundle))))
 (define (nscolor-color-with-cg-color cg-color)
   (wrap-objc-object
-   (_msg-15 NSColor (sel_registerName "colorWithCGColor:") cg-color)
+   (_msg-16 NSColor (sel_registerName "colorWithCGColor:") cg-color)
    ))
 (define (nscolor-color-with-calibrated-hue-saturation-brightness-alpha hue saturation brightness alpha)
   (wrap-objc-object

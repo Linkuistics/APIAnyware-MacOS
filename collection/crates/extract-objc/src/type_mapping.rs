@@ -104,6 +104,7 @@ fn map_type_kind(clang_type: &Type<'_>) -> TypeRefKind {
             TypeRefKind::Alias {
                 name,
                 framework: None,
+                underlying_primitive: enum_underlying_primitive(clang_type),
             }
         }
 
@@ -311,10 +312,14 @@ fn map_typedef(clang_type: &Type<'_>) -> TypeRefKind {
         TypeKind::Record => TypeRefKind::Struct { name },
 
         // Enum typedefs (NSBezelStyle, etc.) → keep as Alias so emitters can
-        // use _uint64 for bitmask/enum values
+        // translate to their target language's enum-like type, but carry
+        // the underlying primitive so FFI mappers pick the right fixed
+        // width (e.g. CF_ENUM(uint32_t, AXValueType) → _uint32, not the
+        // historical _uint64 default).
         TypeKind::Enum => TypeRefKind::Alias {
             name,
             framework: None,
+            underlying_primitive: enum_underlying_primitive(&canonical),
         },
 
         // Integer/float typedefs not caught by the well-known check above
@@ -342,8 +347,27 @@ fn map_typedef(clang_type: &Type<'_>) -> TypeRefKind {
         _ => TypeRefKind::Alias {
             name,
             framework: None,
+            underlying_primitive: None,
         },
     }
+}
+
+/// Resolve an enum's underlying integer type to a canonical primitive
+/// name (e.g. `"uint32"`, `"int64"`, `"bool"`). Returns `None` if the
+/// type has no declaration or no underlying type (should not happen for
+/// well-formed enum typedefs in Apple SDK headers).
+///
+/// Canonicalizes through typedef wrappers: `CF_ENUM(UInt32, ...)`
+/// reports `UInt32` as the underlying type, which is itself a typedef
+/// for `unsigned int`. Without `get_canonical_type()` we get `"UInt32"`
+/// (the typedef name) rather than `"uint32"`; downstream FFI mappers
+/// only understand the canonical primitive names.
+fn enum_underlying_primitive(enum_type: &Type<'_>) -> Option<String> {
+    let underlying = enum_type
+        .get_declaration()?
+        .get_enum_underlying_type()?
+        .get_canonical_type();
+    Some(map_primitive_name(&underlying))
 }
 
 /// Map a `FunctionPrototype` clang type to a `FunctionPointer` TypeRefKind.

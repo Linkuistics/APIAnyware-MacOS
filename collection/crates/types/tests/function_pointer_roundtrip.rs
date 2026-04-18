@@ -14,6 +14,7 @@ fn function_pointer_with_name_roundtrip() {
                     kind: TypeRefKind::Alias {
                         name: "CGEventTapProxy".to_string(),
                         framework: None,
+                        underlying_primitive: None,
                     },
                 },
                 TypeRef {
@@ -28,6 +29,7 @@ fn function_pointer_with_name_roundtrip() {
                 kind: TypeRefKind::Alias {
                     name: "CGEventRef".to_string(),
                     framework: None,
+                    underlying_primitive: None,
                 },
             }),
         },

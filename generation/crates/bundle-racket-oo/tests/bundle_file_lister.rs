@@ -9,7 +9,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use apianyware_macos_bundle_racket_oo::{bundle_app, read_display_name_from_spec, AppSpec};
+use apianyware_macos_bundle_racket_oo::{
+    bundle_app, bundle_app_with_entry, read_display_name_from_spec, AppSpec,
+};
 
 const SCRIPT_NAME: &str = "file-lister";
 
@@ -172,6 +174,87 @@ fn rejects_missing_app() {
         ),
         "expected EntryMissing, got {err:?}"
     );
+}
+
+/// Exercise [`bundle_app_with_entry`] on a Modaliser-style layout:
+/// the entry is a root-level `main.rkt`, and the `bindings/` directory
+/// is a symlink into another tree (in this test, the APIAnyware-MacOS
+/// racket-oo root, which is what Modaliser-Racket actually does).
+///
+/// The result must be a self-contained bundle — no absolute symlinks
+/// leaking into the `.app`, all bindings copied as real files at their
+/// logical in-tree locations.
+#[test]
+fn bundles_root_level_entry_with_symlinked_bindings_subdir() {
+    if !swiftc_available() {
+        eprintln!("SKIPPED: swiftc not available");
+        return;
+    }
+    let real_racket_oo = racket_oo_root();
+    let required = real_racket_oo.join("runtime").join("objc-base.rkt");
+    if !required.is_file() {
+        eprintln!("SKIPPED: racket-oo source tree not present");
+        return;
+    }
+
+    let project = tempfile::tempdir().expect("project tempdir");
+    let project_root = project.path();
+
+    // `bindings/` is a symlink to the real racket-oo tree, matching
+    // Modaliser-Racket's current layout exactly.
+    std::os::unix::fs::symlink(&real_racket_oo, project_root.join("bindings"))
+        .expect("symlink bindings/ into racket-oo root");
+
+    // Minimal root-level entry requiring through the symlink — mirrors
+    // the initial require lines at the top of Modaliser's main.rkt.
+    fs::write(
+        project_root.join("main.rkt"),
+        concat!(
+            "#lang racket/base\n",
+            "(require \"bindings/runtime/objc-base.rkt\"\n",
+            "         \"bindings/runtime/coerce.rkt\")\n",
+        ),
+    )
+    .expect("write main.rkt");
+
+    let out = tempfile::tempdir().expect("out tempdir");
+    let mut spec = AppSpec::from_script_name("main");
+    spec.app_name = "Root Entry Demo".to_string();
+    spec.bundle_id = "com.linkuistics.RootEntryDemo".to_string();
+
+    let app_path =
+        bundle_app_with_entry(&spec, &project_root.join("main.rkt"), project_root, out.path())
+            .expect("bundle with root-level entry");
+
+    // Bundle skeleton — binary named after the display app_name.
+    let contents = app_path.join("Contents");
+    assert!(contents.join("Info.plist").is_file());
+    assert!(contents.join("MacOS").join("Root Entry Demo").is_file());
+
+    // Entry is at the top of racket-app/ — no apps/<name>/ prefix.
+    let racket_app = contents.join("Resources").join("racket-app");
+    assert!(
+        racket_app.join("main.rkt").is_file(),
+        "entry not at racket-app/main.rkt"
+    );
+
+    // Bindings landed at the logical in-tree location as real copies,
+    // not as a symlink to APIAnyware-MacOS.
+    let bindings = racket_app.join("bindings");
+    assert!(
+        !bindings.is_symlink(),
+        "bindings/ must be a real directory, not a symlink — bundle is not distributable otherwise"
+    );
+    let objc_base = bindings.join("runtime").join("objc-base.rkt");
+    assert!(
+        objc_base.is_file() && !objc_base.is_symlink(),
+        "bindings/runtime/objc-base.rkt must be a regular file"
+    );
+
+    // The derived script_resource_dir is unit-tested in src/bundle.rs —
+    // seeing `main.rkt` at the top of `racket-app/` (above) is the
+    // behavioral evidence that the stub was configured for a root-level
+    // entry rather than the `apps/<name>/` sample-app layout.
 }
 
 /// Bundle every sample app under `apps/` and assert the structural

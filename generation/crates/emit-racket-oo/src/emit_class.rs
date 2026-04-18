@@ -1794,6 +1794,7 @@ mod tests {
                         kind: TypeRefKind::Alias {
                             name: "NSRect".into(),
                             framework: None,
+                            underlying_primitive: None,
                         },
                     },
                 }],

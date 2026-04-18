@@ -390,6 +390,7 @@ mod tests {
             kind: TypeRefKind::Alias {
                 name: "NSPoint".into(),
                 framework: None,
+                underlying_primitive: None,
             },
         };
         assert_eq!(map_contract(&point, false), "any/c");
@@ -399,6 +400,7 @@ mod tests {
             kind: TypeRefKind::Alias {
                 name: "CGRect".into(),
                 framework: None,
+                underlying_primitive: None,
             },
         };
         assert_eq!(map_contract(&rect, false), "any/c");
@@ -411,6 +413,7 @@ mod tests {
             kind: TypeRefKind::Alias {
                 name: "NSStringEncoding".into(),
                 framework: None,
+                underlying_primitive: None,
             },
         };
         assert_eq!(map_contract(&alias, false), "exact-nonnegative-integer?");
@@ -508,11 +511,13 @@ mod tests {
                 TypeRefKind::Alias {
                     name: "NSPoint".into(),
                     framework: None,
+                    underlying_primitive: None,
                 },
             )],
             TypeRefKind::Alias {
                 name: "NSPoint".into(),
                 framework: None,
+                underlying_primitive: None,
             },
             false,
             false,
@@ -715,11 +720,13 @@ mod tests {
                 TypeRefKind::Alias {
                     name: "CGAffineTransform".into(),
                     framework: None,
+                    underlying_primitive: None,
                 },
             )],
             TypeRefKind::Alias {
                 name: "CGAffineTransform".into(),
                 framework: None,
+                underlying_primitive: None,
             },
             false,
             false,
@@ -789,6 +796,7 @@ mod tests {
             TypeRefKind::Alias {
                 name: "NSPoint".into(),
                 framework: None,
+                underlying_primitive: None,
             },
             false,
             false,
@@ -837,6 +845,7 @@ mod tests {
                 TypeRefKind::Alias {
                     name: "CGRect".into(),
                     framework: None,
+                    underlying_primitive: None,
                 },
             )],
             TypeRefKind::Primitive {

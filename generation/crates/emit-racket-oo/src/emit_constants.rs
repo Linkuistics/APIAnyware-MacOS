@@ -218,6 +218,7 @@ mod tests {
             TypeRefKind::Alias {
                 name: "NSPointerFunctionsOptions".into(),
                 framework: None,
+                underlying_primitive: None,
             },
         )];
         let output = generate_constants_file(&constants, "TestKit");
@@ -232,6 +233,7 @@ mod tests {
             TypeRefKind::Alias {
                 name: "NSPointerFunctionsOptions".into(),
                 framework: None,
+                underlying_primitive: None,
             },
         )];
         let output = generate_constants_file(&constants, "TestKit");
@@ -331,6 +333,7 @@ mod tests {
             TypeRefKind::Alias {
                 name: "NSPoint".into(),
                 framework: None,
+                underlying_primitive: None,
             },
         )];
         let output = generate_constants_file(&constants, "Foundation");
