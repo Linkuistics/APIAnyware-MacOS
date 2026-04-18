@@ -135,22 +135,26 @@ fn logical_normalize(path: &Path) -> PathBuf {
 
 /// Find every double-quoted string literal in `content` ending in `.rkt`.
 ///
-/// State machine over chars: tracks whether we're inside a `";`...`"` and
-/// whether the previous char was `\` (escape). Returns the inner contents
-/// of every literal whose tail is `.rkt`. Handles `\"` and `\\` escapes;
-/// leaves the rest alone since Racket string literals don't carry
-/// language-meaningful escapes inside file paths.
+/// State machine over chars: skips `;`-to-EOL comments (so doc-comment
+/// examples like `(require "../runtime/foo.rkt")` don't become fake
+/// require targets), then scans for `"..."` literals and yields the ones
+/// whose tail is `.rkt`. Handles `\"` and `\\` escapes inside strings.
+/// Block comments (`#|...|#`) and datum comments (`#;`) are uncommon in
+/// generated or hand-written racket-oo files and are not parsed; if they
+/// ever start carrying `.rkt`-tailed string literals, extend here.
 fn scan_rkt_string_literals(content: &str) -> Vec<&str> {
     let bytes = content.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
     let n = bytes.len();
     while i < n {
+        if bytes[i] == b';' {
+            while i < n && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
         if bytes[i] == b'"' {
-            // Skip a comment-like ; line OR a #; literal — for our use the
-            // commented lines won't trip us because they'd be syntactically
-            // invalid Racket if they contained an unterminated string. Keep
-            // it simple and start the literal scan immediately.
             let start = i + 1;
             let mut j = start;
             let mut escaped = false;
@@ -225,6 +229,25 @@ mod tests {
                (require "b.rkt" "c.rkt")"#,
         );
         assert_eq!(lits, vec!["a.rkt", "b.rkt", "c.rkt"]);
+    }
+
+    #[test]
+    fn skips_rkt_literals_inside_line_comments() {
+        // A doc-comment example like the one in runtime/objc-interop.rkt
+        // must not be treated as a require target.
+        let lits = scan_rkt_string_literals(
+            r#";; Consumers write `(require "../runtime/objc-interop.rkt")` instead.
+(require "../runtime/real-dep.rkt")"#,
+        );
+        assert_eq!(lits, vec!["../runtime/real-dep.rkt"]);
+    }
+
+    #[test]
+    fn semicolon_inside_string_stays_in_string() {
+        // A `;` inside a string literal must not enter comment mode —
+        // the string literal scanner takes precedence.
+        let lits = scan_rkt_string_literals(r#"(require "path;foo.rkt" "good.rkt")"#);
+        assert_eq!(lits, vec!["path;foo.rkt", "good.rkt"]);
     }
 
     #[test]

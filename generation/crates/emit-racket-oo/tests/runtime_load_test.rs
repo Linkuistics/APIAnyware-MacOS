@@ -81,6 +81,7 @@ const APPS: &[&str] = &[
     "pdfkit-viewer",
     "scenekit-viewer",
     "mini-browser",
+    "note-editor",
 ];
 
 /// Library files exercised via `dynamic-require`. Each entry is a path
