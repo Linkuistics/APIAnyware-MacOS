@@ -19,34 +19,8 @@ listing order is a suggested work order, not a hard constraint.
 **Scope boundary (2026-04-18):** "Core" is the *shared pipeline* —
 collection, analysis, enrichment. Per-language generation (the `emit-*`
 crates, language runtimes, bundlers) belongs in the matching per-target
-plan under `LLM_STATE/targets/<target>/backlog.md`. A batch of seven tasks
-that had accumulated here (runtime fixes, racket-oo emitter bugs,
-`bundle-racket-oo` API extensions, stub-launcher signing) was relocated
-to `LLM_STATE/targets/racket-oo/backlog.md` on 2026-04-18 because they
-never touched collection/analysis/enrichment. Two further low-priority
-generation tasks ("Emit inherited methods…", "Strengthen generated
-binding contracts…") remain listed below pending a deliberate move — flag
-during next triage. Future generation-layer tasks should be filed
-directly against the owning per-target plan.
-
-### Emit inherited methods from NSView/NSControl superclasses in subclass bindings `[generation]` `[low]`
-- **Surfaced by:** racket-oo development (2026-04-16); WKWebView missing `setAutoresizingMask:` inherited from NSView
-- **Symptom:** Generated bindings only emit methods declared directly on a class, not methods inherited from superclasses. Callers must fall back to raw `tell` for any inherited method not re-declared on the subclass — defeating the purpose of generated typed bindings.
-- **Two fix options:**
-  - **(a) Emit inherited methods via IR inheritance chain:** Walk `superclass_name` in `emit_class.rs`, look up ancestor classes in the IR, and include their methods in the subclass binding. Complete coverage but potentially large generated-file size increase and risks emitting methods the dylib does not export for that subclass.
-  - **(b) Expose a generic `set-autoresizing-mask!` (and similar) on a shared NSView base:** Add a small set of universally-needed NSView methods to the runtime or a shared `nsview-base.rkt` that any NSView subclass binding can use. Lower risk, lower coverage.
-- **Recommended approach:** Start with option (b) for the highest-frequency NSView/NSControl methods (`setFrame:`, `setAutoresizingMask:`, `setBounds:`, `setHidden:`, `setNeedsDisplay`). Escalate to option (a) if the coverage gap repeatedly blocks target development.
-- **Scope:** Either option is confined to the generation layer. Regenerate affected subclass bindings and verify the previously-missing methods are callable without raw `tell`.
-
-### Strengthen generated binding contracts beyond `any/c` `[generation]` `[low]`
-- **Surfaced by:** Modaliser-Racket development (2026-04-16); contract violations (wrong receiver type, unwrapped `objc-object` vs `_id`, missing `coerce-arg`, PAC-trapping `char*` passed where NSString expected) were not caught at the binding boundary
-- **Symptom:** Generated `provide/contract` forms use `any/c` for all parameters and return types. This means: passing the wrong receiver class, passing an unwrapped `objc-object` where `_id` is expected, omitting `coerce-arg`, or passing a raw Racket string where an NSString pointer is required all fail silently or produce late crashes rather than immediate contract violations. The contracts provide no safety net during development.
-- **Possible improvements (in ascending implementation cost):**
-  - **(a) Receiver-class predicate:** Add a `(is-a? v <ClassName>%)` check on `self` parameter contracts. Catches wrong-class receivers immediately.
-  - **(b) Selector arity contract:** Emit a contract verifying the number of positional arguments matches the selector.
-  - **(c) Typed parameter contracts:** Map IR type information to Racket predicates (e.g., `_id`-typed params require `objc-object?`, string params require `string?` or `NSString?`).
-- **Fix direction:** Start with (a) as the highest-value, lowest-risk improvement. Assess impact on generated file size before committing to (b) or (c).
-- **Scope:** Generator change in `emit_class.rs` / `emit_protocol.rs`. Contracts affect generated files only — no runtime changes required for (a) or (b).
+plan under `LLM_STATE/targets/<target>/backlog.md`. Future generation-layer
+tasks should be filed directly against the owning per-target plan.
 
 ### Investigate and filter bare `c:@<name>` macro USRs (leak class A) `[collection]` `[low]`
 - **Surfaced by:** racket-oo Task #7 (migration of `ffi/*.rkt` to generated bindings)
