@@ -90,6 +90,13 @@ URL normalisation, NSAlert error path, NSProgressIndicator; 8 apps in `APPS` (~7
 VM-verified end-to-end (2026-04-18): apple.com load, title update, back/forward
 disabled state, reload, address-bar typing (triple-click + VNC keyboard), link
 navigation, error alert (NSAlert sheet), window resize — all PASS on Tahoe VM.
+Note Editor landed 2026-04-18 — NSSplitView, NSTextView, WKWebView loadHTMLString,
+NSUndoManager, NSNotificationCenter, NSSavePanel completion block, NSOpenPanel;
+9th app in `APPS` (~90s harness). Three first-time patterns validated: NSSavePanel
+completion block (`make-objc-block` with `(Int64 -> Void)` signature), NSTextDidChange-
+Notification observer (module-level var guards weak-observer lifetime), NSAlert via
+`objc-interop.rkt` alloc+init escape hatch. `scan_rkt_string_literals` comment-skip
+bug fixed in `bundle-racket-oo/src/deps.rs`.
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -102,68 +109,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 ### Sample Apps
 
-#### Note Editor
-- **Status:** done
-- **Priority:** medium
-- **Dependencies:** none
-- **Description:** Markdown editor with live preview. NSSplitView (editor +
-  preview), NSTextView, WKWebView (loadHTMLString with JS markdown rendering),
-  NSUndoManager, NSNotificationCenter (text-change observation), NSSavePanel
-  (completion block), NSOpenPanel, NSAlert (unsaved-changes), window dirty-state
-  tracking. Exercises completion blocks, notification observation, and
-  cross-framework rendering (AppKit + WebKit) — patterns no existing app tests.
-  NSNotificationCenter observer pattern is now established (PDFKit Viewer).
-  Completion block pattern (NSSavePanel `beginSheetModalForWindow:completionHandler:`)
-  is new territory — expect iteration on block-callback plumbing.
-  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-- **Results:** Note Editor landed 2026-04-18. App source at
-  `generation/targets/racket-oo/apps/note-editor/note-editor.rkt`, spec at
-  `knowledge/apps/note-editor/spec.md`. 9th app registered in `APPS` in
-  `runtime_load_test.rs`; `raco make` passes for all 9 apps (~90s harness).
-  VM-verified end-to-end on Tahoe via GUIVisionVMDriver: split view layout
-  with vertical divider; typing `# Hello World` triggered `NSTextDidChangeNotification`
-  which (a) set window `setDocumentEdited: YES` (close-box dot appeared),
-  (b) updated title to "Untitled — edited — Note Editor", and (c) re-rendered
-  the WKWebView preview via `loadHTMLString:baseURL:` showing the H1 heading;
-  Save… opened `NSSavePanel` as an attached sheet, the completion block
-  received `NSModalResponseOK` (1) when Save was clicked, wrote the file
-  to `/Users/admin/Documents/untitled.md`, cleared the dirty indicator,
-  and updated the title to `untitled.md — Note Editor`; Undo button
-  invoked `nsundomanager-undo` via NSTextView's undo manager, reverted
-  the text, and the observer re-fired to update preview and dirty flag.
-
-  Three first-time patterns validated:
-  1. **NSSavePanel completion block** — the generated
-     `nssavepanel-begin-sheet-modal-for-window-completion-handler!` wraps
-     a Racket procedure as an ObjC block via `make-objc-block` with signature
-     `(Int64 -> Void)`; modal-response code delivered correctly to the
-     Racket handler without explicit rooting of the block.
-  2. **NSTextDidChangeNotification observer** — registered on the text view's
-     notification source via `addObserver:selector:name:object:`, handler
-     kept in module-level var to survive Cocoa's weak-observer pool, wrapped
-     constant via `borrow-objc-object` matching the PDFKit Viewer pattern.
-  3. **NSAlert manual alloc+init** — NSAlert has no generated `make-nsalert-*`
-     constructor; used `objc-interop.rkt` escape hatch (`(tell (tell NSAlert
-     alloc) init)`) wrapped via `wrap-objc-object #:retained #t` to satisfy
-     class-wrapper param contracts. First app to require `objc-interop.rkt`.
-
-  Walker bug surfaced and fixed: `scan_rkt_string_literals` in
-  `bundle-racket-oo/src/deps.rs` ignored `;`-to-EOL comments, so the doc
-  comment in `runtime/objc-interop.rkt` containing the literal string
-  `".../runtime/objc-interop.rkt"` was treated as a broken require target.
-  Fixed by adding comment-skip to the scanner state machine. Two new tests:
-  `skips_rkt_literals_inside_line_comments` and
-  `semicolon_inside_string_stays_in_string` — the latter guards the
-  rather pathological but valid `(require "path;foo.rkt")` case.
-
-  Follow-ups surfaced: (a) NSAlert's missing init constructor forces every
-  consumer through `objc-interop.rkt` — worth investigating whether the
-  emitter should synthesize an alloc+init wrapper for classes that expose
-  no explicit `init` but are commonly constructed this way. (b) The
-  agent's `ls` on `/Users/admin/Documents/` triggered a TCC dialog on
-  Tahoe — not app-relevant, but a useful reminder that TCC scope changed
-  for the default `guivision-agent` binary recently; unrelated to the
-  Note Editor work.
+_(none currently)_
 
 ### Harness & Verification
 
@@ -175,8 +121,8 @@ _(none currently)_
 - **Status:** not_started
 - **Priority:** medium
 - **Dependencies:** none — "at least 2 more sample apps" dependency satisfied
-  (8 apps done: hello-window, counter, ui-controls-gallery, file-lister,
-  drawing-canvas, pdfkit-viewer, scenekit-viewer, mini-browser).
+  (9 apps done: hello-window, counter, ui-controls-gallery, file-lister,
+  drawing-canvas, pdfkit-viewer, scenekit-viewer, mini-browser, note-editor).
 - **Description:** Targeted tests for CoreGraphics, AVFoundation, MapKit beyond
   what sample apps cover. Scope TBD — may be better defined after app experience
   reveals which frameworks have surprising emitter edge cases. Note: the runtime
@@ -188,15 +134,43 @@ _(none currently)_
 #### Racket Class System Analysis
 - **Status:** not_started
 - **Priority:** low
-- **Dependencies:** Note Editor complete (Mini Browser functionally done 2026-04-18;
-  real usage has revealed which patterns matter — Note Editor adds completion
-  blocks and undo manager before analysis)
+- **Dependencies:** none (Note Editor complete 2026-04-18; real usage has revealed
+  which patterns matter across completion blocks, undo, and notification observers)
 - **Description:** Analyse the current racket-oo emitter output and runtime to
   determine whether it truly models macOS APIs using Racket's class system
   (`racket/class`) as much as possible — e.g., using `class*`, `define/public`,
   `inherit`, `super-new`, interfaces for protocols, mixins for categories.
   Identify where the current approach falls short of idiomatic Racket OO and
   propose concrete changes to make better use of the class system.
+- **Results:** _pending_
+
+#### NSAlert Synthesized Constructor
+- **Status:** not_started
+- **Priority:** low
+- **Dependencies:** none
+- **Description:** `NSAlert` exposes no explicit `-init` override, so the emitter
+  generates no `make-nsalert-*` constructor. Every consumer must escape through
+  `objc-interop.rkt` (`(tell (tell NSAlert alloc) init)` + `wrap-objc-object
+  #:retained #t`). Investigate whether the emitter should synthesise an alloc+init
+  wrapper for ObjC classes whose only construction path is the default `-init`.
+  Fix location: `emit_class.rs` — detect classes with no explicit init selector
+  and emit a synthetic `(make-<class>-init ...)` constructor. NSAlert is the
+  confirmed case; audit for others. If this pattern is common, the escaped
+  `objc-interop.rkt` path should remain documented but the emitter should remove
+  the need for it in simple alloc+init cases.
+- **Results:** _pending_
+
+#### CF Struct Globals from CoreFoundation
+- **Status:** not_started
+- **Priority:** low
+- **Dependencies:** none
+- **Description:** `kCFTypeDictionaryKeyCallBacks` and `kCFTypeDictionaryValueCallBacks`
+  (and similar CF struct globals) are absent from the collected IR — they are not
+  emitted to `constants.rkt`. Current workaround: raw `get-ffi-obj` call in app
+  code. Investigate why the extractor misses these and add them to the IR so
+  `constants.rkt` emits them as `ffi-obj-ref` forms (struct globals pattern). The
+  broader `TypeRefKind::Struct` emit path exists and works for geometry constants;
+  the gap is collection-side.
 - **Results:** _pending_
 
 #### Accessibility set-value fails for NSTextField inside NSStackView
@@ -255,4 +229,6 @@ _(none currently)_
   give no hint that wrapping is required — must be prominently documented with examples.
   Bundle IDs must use `com.linkuistics.*` domain. Two-stage signing required for
   bundles. Orphan tart VMs outside `vm-start.sh` have no recoverable VNC password.
+  NSAlert construction via `objc-interop.rkt` escape hatch (no generated constructor).
+  NSSavePanel completion block signature: `(Int64 -> Void)` via `make-objc-block`.
 - **Results:** _pending_
