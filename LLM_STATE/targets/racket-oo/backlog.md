@@ -10,7 +10,7 @@ emit `(tell #:type _void ...)` directly, closing the calling-convention gap that
 neither snapshot tests nor the runtime load harness can observe. **Runtime load
 verification harness** (`generation/crates/emit-racket-oo/tests/runtime_load_test.rs`):
 16 library `dynamic-require` checks, 10 required frameworks, plus `raco make` of
-all 6 sample apps, gated on `RUNTIME_LOAD_TEST=1` (~55s end-to-end). Class-property
+all 7 sample apps, gated on `RUNTIME_LOAD_TEST=1` (~55s end-to-end). Class-property
 setter arity bug fixed (2026-04-15) — setters now omit self for class properties.
 `_id` parameter contracts tightened with nullable marking (2026-04-15) — non-nullable
 params get 3-element union, nullable get 4-element with `#f`, matching `coerce-arg`'s
@@ -71,7 +71,8 @@ calls across 2 files. Modaliser FFI upstream blockers all landed (2026-04-17):
 and `ax-get-attribute/array` in `ax-helpers.rkt`, `make-cgevent-tap` `#:on-disabled`
 keyword with forward-reference tap-box plumbing. PDFKit Viewer landed 2026-04-17 —
 first app exercising PDFKit bindings and NSNotificationCenter observer pattern;
-6 apps now in `APPS` in the runtime load harness (~55s).
+SceneKit Viewer landed 2026-04-17 — first app using SceneKit; 7 apps now in `APPS`
+in the runtime load harness (~55s).
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -101,15 +102,9 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 #### Mini Browser
 - **Status:** not_started
-- **Dependencies:** `wkwebview.rkt` has a generator bug — `_NSEdgeInsets`
-  unbound due to `any_struct_type` not detecting `NSEdgeInsets` in WKWebView's
-  property set; root cause is `NSEdgeInsets` missing from `is_known_geometry_struct`
-  in `ffi_type_mapping.rs`. Fix tracked in this backlog as "Fix unbound
-  `_NSEdgeInsets` in generated `webkit/wkwebview.rkt`" (relocated from core
-  backlog 2026-04-18).
-  **Workaround is functional**: use raw `tell` calls against WKWebView — skip
-  importing `wkwebview.rkt` entirely. Drawing Canvas used the same raw-`tell`
-  pattern for event handling, confirming the workaround is viable.
+- **Dependencies:** none (`_NSEdgeInsets` fix resolved 2026-04-18 — `wkwebview.rkt`
+  loads cleanly; workaround of using raw `tell` against WKWebView remains viable
+  if any other WebKit binding issues surface).
 - **Description:** Minimal web browser. WKWebView, WKNavigationDelegate (async
   multi-step delegate: didStart → didFinish/didFail), NSURL/NSURLRequest,
   back/forward/reload, NSProgressIndicator, NSAlert (error display).
@@ -119,13 +114,75 @@ Runtime location: generation/targets/racket-oo/runtime/
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
 
+### Generator Bug Fixes
+
+#### Fix NSEvent class/instance method name collision
+- **Status:** not_started
+- **Priority:** high
+- **Dependencies:** none
+- **Surfaced by:** Memory entry "NSEvent class/instance method name collision
+  (generator bug)" — `nsevent.rkt` is unloadable; any code using NSEvent API
+  must use raw `tell`.
+- **Description:** `NSEvent +modifierFlags` (class method) and `-modifierFlags`
+  (instance method) both kebab-case to `nsevent-modifier-flags`, producing
+  duplicate `define` forms in `appkit/nsevent.rkt`. The module cannot be
+  required at all (`only-in` does not skip module expansion). Workaround: use
+  raw `tell` for NSEvent properties (e.g., `locationInWindow`). Fix: extend the
+  class/instance disambiguation logic in `emit_class.rs` (analogous to
+  `make_class_method_name` / `make_class_property_{getter,setter}_name` already
+  in place for class-level collisions) to also disambiguate instance methods
+  whose kebab name collides with a class method. Regenerate `appkit/nsevent.rkt`
+  after fix; verify load via `dynamic-require`; add to `LIBRARY_LOAD_CHECKS`.
+- **Scope:** `emit_class.rs` naming/deduplication logic. Regenerate AppKit.
+- **Results:** _pending_
+
+#### Fix class-return contracts to allow nil
+- **Status:** not_started
+- **Priority:** medium
+- **Dependencies:** none
+- **Surfaced by:** PDFKit Viewer development (2026-04-17); memory entry
+  "Class-return contracts are non-nullable (generator bug)".
+- **Description:** `map_return_contract` in `emit_class.rs` emits `<class>?`
+  predicates (e.g., `pdfdocument?`) for `TypeRefKind::Class { name }` returns.
+  The generated predicate returns `#f` for a nil-pointing `objc-object`, so any
+  Cocoa property that legitimately returns nil (e.g., `PDFView.document` before
+  assignment, `PDFView.currentPage` on empty view, `NSTableView.dataSource`
+  before wiring, `NSWindow.firstResponder` under timing races) fails its own
+  return contract. Workaround: track object in Racket-side state rather than
+  querying the wrapper, or catch via `(with-handlers ([exn:fail:contract? ...])
+  ...)`. Fix: change `map_return_contract` to emit `(or/c <class>? #f)` for all
+  typed class returns, unless the IR carries an explicit `_Nonnull` / non-null
+  annotation. Regenerate all affected class wrappers.
+- **Scope:** `emit_class.rs::map_return_contract`. Widespread — affects all class
+  wrappers with typed object-return properties.
+- **Results:** _pending_
+
+#### Fix `list->nsarray`/`hash->nsdictionary` to return wrapped objects
+- **Status:** not_started
+- **Priority:** medium
+- **Dependencies:** none
+- **Surfaced by:** Memory entry "`list->nsarray` / `hash->nsdictionary` return
+  raw cpointers (contract gap)" — 2026-04-17.
+- **Description:** Both helpers return the raw `(tell (tell NSMutableArray alloc)
+  init)` cpointer. Class-wrapper param contracts `(or/c string? objc-object? #f)`
+  (which exclude `cpointer?` per the 2026-04-16 tightening) reject this at the
+  call boundary. Workaround: `(wrap-objc-object (list->nsarray …) #:retained #t)`
+  at every call site. Fix: wrap the result inside each helper with
+  `(wrap-objc-object result #:retained #t)` so callers receive an `objc-object?`
+  directly. `alloc+init` is +1 retained, so `#:retained #t` is correct. Add a
+  smoke test in the runtime load harness (construct a list, pass to a class
+  wrapper boundary, verify no contract violation).
+- **Scope:** Runtime helper file hosting `list->nsarray` / `hash->nsdictionary`
+  (likely `runtime/cf-bridge.rkt`). Low risk.
+- **Results:** _pending_
+
 ### Future Work
 
 #### Framework Coverage Deepening
 - **Status:** not_started
 - **Dependencies:** none — "at least 2 more sample apps" dependency satisfied
-  (6 apps done: hello-window, counter, ui-controls-gallery, file-lister,
-  drawing-canvas, pdfkit-viewer).
+  (7 apps done: hello-window, counter, ui-controls-gallery, file-lister,
+  drawing-canvas, pdfkit-viewer, scenekit-viewer).
 - **Description:** Targeted tests for CoreGraphics, AVFoundation, MapKit beyond
   what sample apps cover. Scope TBD — may be better defined after app experience
   reveals which frameworks have surprising emitter edge cases. Note: the runtime
@@ -146,126 +203,6 @@ Runtime location: generation/targets/racket-oo/runtime/
   Identify where the current approach falls short of idiomatic Racket OO and
   propose concrete changes to make better use of the class system.
 - **Results:** _pending_
-
-#### Generator Bug Fixes (Batch — from Modaliser Learnings)
-- **Status:** done
-- **Dependencies:** none
-- **Description:** Four generator bugs confirmed via Modaliser usage (filed 2026-04-17).
-  All have caller-side workarounds; upstream fixes belong in the emitter.
-  1. **`nsmenuitem-separator-item`** — `separatorItem` class factory method emitted as
-     instance property. Fix: detect class factory methods in `emit_class.rs`, exclude
-     from property emission.
-  2. **`nsscreen.rkt` duplicate `define`** — the generated file fails to load at all;
-     any code that `require`s NSScreen bindings must use raw `tell` as a workaround.
-     Likely a method or property declared both directly on the class and via a category,
-     not deduplicated before emission. Fix: dedup gap in `effective_properties` or
-     `emit_class.rs` deduplication logic. Regenerate `appkit/nsscreen.rkt` after the
-     fix; verify the module loads cleanly. (Augmented 2026-04-18 with context relocated
-     from core backlog.)
-  3. **`CFStringGetCStringPtr` return contract** — `string?` should be `(or/c string? #f)`;
-     the function legitimately returns NULL when the string's internal encoding does not
-     match the requested encoding — a documented, common case. Memory entry
-     "`const char *` maps to `TypeRefKind::CString`" states the correct return contract
-     is `(or/c string? #f)`, but the emitter may be generating `string?` alone without
-     the `#f` branch for some code paths. Fix: audit `map_return_contract` in
-     `emit_class.rs` for `TypeRefKind::CString` — ensure it always emits `(or/c string? #f)`,
-     not `string?` alone. Regenerate affected `functions.rkt` files (start with CoreFoundation).
-     (Augmented 2026-04-18 with context relocated from core backlog.)
-  4. **Integer param widening** (`AXValueCreate`, `AXValueGetValue`, `CFNumberGetValue`) —
-     params emitted as `_uint64` where `_uint32`/`_int32` is correct. Fix: tighten the
-     integer-width mapping in `ffi_type_mapping.rs`.
-- **Results:** All four sub-bugs verified as already resolved in current source (2026-04-18).
-  Most fixes landed in commit `1d03ede` (Racket-OO contract tightening, 2026-04-18 00:44).
-  Evidence per sub-bug:
-  1. `appkit/nsmenuitem.rkt:302` defines `(nsmenuitem-separator-item)` as a zero-arg
-     class factory method; runtime smoke test returns a real NSMenuItem struct.
-     `naming.rs` now has `make_class_method_name` with `-class` disambiguation for
-     class/instance method collisions.
-  2. `appkit/nsscreen.rkt` loads cleanly via `dynamic-require`. Class-method / class-property
-     disambiguation in `make_class_method_name` / `make_class_property_{getter,setter}_name`
-     closes the collision path that produced the duplicate `define`s.
-  3. `corefoundation/functions.rkt:605` emits
-     `[CFStringGetCStringPtr (c-> ... (or/c string? #f))]`.
-     `emit_functions.rs::map_contract` always emits `(or/c string? #f)` for
-     `TypeRefKind::CString` in return position (`is_return_type == true`), never
-     bare `string?`. Broad grep for `string?)]` return-position contracts turned
-     up zero offenders.
-  4. `applicationservices/functions.rkt:503/506` show `AXValueCreate` / `AXValueGetValue`
-     correctly taking `_uint32` for the `AXValueType` enum param; `corefoundation/functions.rkt:1264`
-     shows `CFNumberGetValue` taking `_int64` for `CFNumberType` (which is typedef `CFIndex` →
-     `long` → `int64` on 64-bit — semantically correct). The fix lives in
-     `racket_alias_uses_underlying_uint32_when_known` + `racket_alias_uses_underlying_int64_for_nsinteger_enum`
-     — the alias mapper now consults `underlying_primitive` from the IR instead of
-     defaulting to `_uint64`.
-  All four `raco make` / `dynamic-require` loads succeed. No source edits needed;
-  backlog entry was stale.
-
-#### Fix unbound `_NSEdgeInsets` in generated `webkit/wkwebview.rkt`
-- **Status:** done
-- **Priority:** high
-- **Dependencies:** none
-- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-17); any module that
-  transitively `require`s WKWebView bindings fails to load. Relocated from core backlog
-  2026-04-18 (misfiled — racket-oo generation, not shared pipeline).
-- **Symptom:** `generated/oo/webkit/wkwebview.rkt` references `_NSEdgeInsets`, which is
-  not bound in the generated WebKit FFI layer. The module fails at load time, blocking
-  any application that imports WKWebView — including mini-browser and similar apps
-  that rely on a full app-load path.
-- **Suspected root cause:** `NSEdgeInsets` is a struct typedef in AppKit, not WebKit.
-  The WebKit emitter references the FFI type but does not import or re-export the AppKit
-  struct definition. Either the emitter must emit a cross-framework `require` for
-  `_NSEdgeInsets`, or the struct definition must be placed in a shared location accessible
-  to both.
-- **Fix direction:** Determine whether `NSEdgeInsets` maps to `TypeRefKind::Struct` in
-  the IR. If so, ensure the WebKit emitter imports the AppKit cstruct definition (or a
-  shared geometry module) before using `_NSEdgeInsets`. Regenerate and verify module
-  load via the runtime load harness and a transitive `require` smoke test.
-- **Scope:** Emitter cross-framework struct import logic. Regenerate `webkit/wkwebview.rkt`
-  after fix; verify transitive `require` works from a standalone module.
-- **Results:** Already resolved in current source (2026-04-18). `NSEdgeInsets` is listed
-  in `is_known_geometry_struct` in `emit/src/ffi_type_mapping.rs:72` and exported as
-  `_NSEdgeInsets` from `runtime/type-mapping.rkt:25`. `any_struct_type` correctly detects
-  `NSEdgeInsets` uses in WKWebView via `mapper.is_struct_type` (which recognises both
-  `Struct` and `Alias` kinds via the geometry allowlist), so the emitter emits the
-  `(require ... type-mapping.rkt)` line into `webkit/wkwebview.rkt:12`. Fresh
-  `dynamic-require` load of the on-disk `generated/oo/webkit/wkwebview.rkt` succeeds
-  (compiled cache cleared, loaded clean). The file is already in `LIBRARY_LOAD_CHECKS`
-  at `runtime_load_test.rs:133`, so the harness protects against regression. No source
-  edits needed.
-
-#### Fix generator to emit `bool`/`BOOL` return types as `_bool` not `_uint8`
-- **Status:** done
-- **Priority:** high
-- **Dependencies:** none
-- **Surfaced by:** Modaliser-Racket development (2026-04-16); boolean methods silently
-  misidentified as true when returning false. Relocated from core backlog 2026-04-18
-  (misfiled — racket-oo generation, not shared pipeline).
-- **Symptom:** The racket-oo emitter maps C `bool`/`BOOL` return types to `_uint8` on
-  some code paths. In Racket, `_uint8` decodes to an integer, and all integers
-  (including `0`) are truthy — only `#f` is falsy. A method returning `false`/`0` is
-  therefore silently misidentified as true in any boolean context. The correct FFI type
-  is `_bool`, which decodes `0` → `#f` and non-zero → `#t`. Until fixed, callers must
-  wrap boolean returns with `(positive? ...)` or `(not (zero? ...))`.
-- **Fix direction:** `racket_ffi_type_for_primitive` in `generation/crates/emit/src/ffi_type_mapping.rs`
-  already maps `"bool" => Some("_bool")` — so the bug path is either (a) `BOOL` (ObjC
-  typedef) not being normalised to `bool` before reaching this function, or (b) a
-  return-type-specific path that bypasses `racket_ffi_type_for_primitive`. Audit the
-  FFI type mapper for `bool`/`BOOL` primitive names and ensure `_bool` is emitted on
-  every return-type path. Regenerate and verify with a method known to return `NO`/`false`.
-- **Scope:** `ffi_type_mapping.rs` mapper and callers; regenerate affected bindings.
-  Likely widespread across frameworks wherever `BOOL` return types appear.
-- **Results:** Source fix already landed in commit `1d03ede` (2026-04-18 00:44) —
-  `extract-objc/src/type_mapping.rs:257-261` maps `BOOL` and `Boolean` typedefs to
-  `TypeRefKind::Primitive { name: "bool" }` at collection time, so the FFI mapper's
-  existing `"bool" => "_bool"` branch fires correctly. Spot-check: `foundation/nsfilemanager.rkt`
-  emits every `fileExistsAtPath:`-family msgSend as `... -> _bool`; the Foundation
-  IR shows 342 bool-return methods on current collection. Added regression test
-  `foundation_bool_return_resolves_to_primitive_bool` in
-  `collection/crates/extract-objc/tests/extract_foundation.rs` — asserts
-  `NSBundle -load` resolves to `Primitive { name: "bool" }`. Passes. No emitter
-  edits needed. Note: a handful of `-> _uint8` returns remain in generated CoreServices
-  and Carbon `functions.rkt`, but those files are three days stale (mtime 2026-04-15,
-  pre-fix); they'll refresh on the next pipeline regeneration. The source is correct.
 
 #### Add Info.plist customization API to `bundle-racket-oo`
 - **Status:** not_started
@@ -310,58 +247,6 @@ Runtime location: generation/targets/racket-oo/runtime/
   file copying. If a second language target begins bundling, extract the shared
   signing logic upward at that time rather than pre-emptively.
 - **Results:** _pending_
-
-#### `make-objc-block` nil/`#f` Regression Fix
-- **Status:** done
-- **Priority:** high
-- **Dependencies:** none
-- **Surfaced by:** Modaliser-Racket FFI migration (2026-04-16); completion-handler
-  arguments set to `#f` caused `(apply #f ...)` crash on block invocation. Relocated
-  from core backlog 2026-04-18 (misfiled — racket-oo runtime, not shared pipeline).
-- **Description:** `runtime/block.rkt` has a documented nil guard (memory: "returns `(values #f #f)`
-  for `#f` input") and a passing `runtime_block_nil_guard` harness test. However, Modaliser
-  (2026-04-18) confirms the fix is incomplete: passing `#f` as the callback to `make-objc-block`
-  still creates a live block whose invocation calls `(apply #f args)`, crashing or silently
-  misbehaving. The guard may only protect certain code paths, not the general construction path.
-  Callers currently must pass an explicit `(lambda args (void))` as a workaround.
-- **Fix direction:** Audit `make-objc-block` in `runtime/block.rkt`. Either (a) at the
-  top of the function, normalise `#f` → `(lambda args (void))` before storing `proc`
-  (one-line fix, keeps a live block wrapper around a no-op) — simple but allocates an
-  unused block; or (b) ensure `#f` input produces `(values #f #f)` (NULL block pointer,
-  no block allocated) without creating a live block wrapper — preferred, matches the
-  existing documented contract. Update `runtime_block_nil_guard` to also exercise
-  invocation of the returned values, not just construction.
-- **Scope:** `runtime/block.rkt` only. Low risk.
-- **Results:** Option (b) already implemented (`runtime/block.rkt:67-70`): the very
-  first form of `make-objc-block` is `(if (not proc) (values #f #f) ...)` — no block
-  wrapper is ever allocated for a `#f` proc. The Modaliser observation referenced in
-  the backlog is stale; it dates from before the guard landed. Hardened the existing
-  `runtime_block_nil_guard` test (`runtime_load_test.rs:408-446`) with two additional
-  checks: (1) verify `block-ptr` is literally `#f` (not a live `cpointer?` wrapper) so
-  a regression that created a live-but-no-op block would be caught; (2) positive-path
-  test: a real lambda produces a `cpointer?` block and `exact-integer?` id, and
-  `free-objc-block` cleans it up — this protects the happy path against future
-  refactors that might regress it while trying to strengthen nil handling. All 5
-  checks pass. Recommend Modaliser-Racket drop the `(lambda args (void))` workaround
-  in `panel-manager.rkt` and refresh its memory note, but that's their decision.
-
-#### `spi-helpers.rkt` GC-malloc `free` Fix
-- **Status:** done
-- **Priority:** high
-- **Dependencies:** none
-- **Description:** `spi-helpers.rkt` calls `free` on a `(malloc …)` buffer — GC-managed
-  memory → SIGABRT at runtime. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 analogous
-  `free` calls removed already. Apply the same fix to `spi-helpers.rkt`: drop the
-  `free` call and let the GC reclaim. Filed 2026-04-17 from Modaliser learnings.
-- **Results:** Verified no-op — `runtime/spi-helpers.rkt` was authored correctly
-  from the start. Line 37 already carries the comment "malloc with no mode flag returns
-  GC-tracked memory; never call free", and there is no `free` call in the file
-  (sole `malloc` at line 38, pointer then `ptr-ref`'d and discarded). The file
-  first landed in commit `9aec2f7` (2026-04-18 "add missed updates manually"),
-  with the guidance comment already in place. `runtime/spi-helpers.rkt` is in
-  `LIBRARY_LOAD_CHECKS` so the harness covers regression. Backlog entry was stale —
-  the sibling-file fix pattern was already applied by the original author when the
-  file was introduced.
 
 #### Self-Contained App Bundling (Swift Stub Launcher)
 - **Status:** not_started

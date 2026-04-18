@@ -232,6 +232,14 @@ Use `only-in` rather than wholesale `require` when consuming a subset of generat
 
 Documents exactly which generated names the consumer uses; prevents `racket/contract` re-exports from leaking through. Global-variable constants (e.g. `kCFRunLoopCommonModes`) are emitted as `(get-ffi-obj 'name lib _pointer)` and resolve correctly via `dlsym`.
 
+### Distributable bundles must exclude `compiled/` subdirectories
+Host-compiled `.zo` files under `compiled/` are machine- and Racket-version-specific
+(linklets bake in host-specific path references). Copying them to a different machine
+causes runtime contract errors at load time (confirmed 2026-04-18: `make-nsmenuitem-init-with-title-action-key-equivalent` arg 2 on Tahoe VM). Strip before packaging:
+`find . -name compiled -type d -exec rm -rf {} +` or `rsync --exclude=compiled`.
+This is a hard requirement alongside the symlink→copy and dylib `@rpath` fixes
+for cross-machine distributable bundles.
+
 ### Sample apps bundle via `bundle-racket-oo` crate
 `apianyware-macos-bundle-racket-oo` builds racket-oo `.app` bundles: require-tree BFS for dependency discovery, `Resources/racket-app/<rel>` layout preserving the source tree so relative requires resolve at runtime, optional `lib/libAPIAnywareRacket.dylib` copy. CLI: `cargo run --example bundle_app -p apianyware-macos-bundle-racket-oo -- <script>` or `-- --all`. Built bundles land at `apps/<name>/build/<App Name>.app` (gitignored). Every sample app calls `(install-standard-app-menu! app "<Display>")` from `runtime/app-menu.rkt`.
 
