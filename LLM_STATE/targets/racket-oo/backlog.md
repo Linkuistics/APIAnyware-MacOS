@@ -103,7 +103,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 ### Sample Apps
 
 #### Note Editor
-- **Status:** not_started
+- **Status:** done
 - **Priority:** medium
 - **Dependencies:** none
 - **Description:** Markdown editor with live preview. NSSplitView (editor +
@@ -116,7 +116,54 @@ Runtime location: generation/targets/racket-oo/runtime/
   Completion block pattern (NSSavePanel `beginSheetModalForWindow:completionHandler:`)
   is new territory — expect iteration on block-callback plumbing.
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-- **Results:** _pending_
+- **Results:** Note Editor landed 2026-04-18. App source at
+  `generation/targets/racket-oo/apps/note-editor/note-editor.rkt`, spec at
+  `knowledge/apps/note-editor/spec.md`. 9th app registered in `APPS` in
+  `runtime_load_test.rs`; `raco make` passes for all 9 apps (~90s harness).
+  VM-verified end-to-end on Tahoe via GUIVisionVMDriver: split view layout
+  with vertical divider; typing `# Hello World` triggered `NSTextDidChangeNotification`
+  which (a) set window `setDocumentEdited: YES` (close-box dot appeared),
+  (b) updated title to "Untitled — edited — Note Editor", and (c) re-rendered
+  the WKWebView preview via `loadHTMLString:baseURL:` showing the H1 heading;
+  Save… opened `NSSavePanel` as an attached sheet, the completion block
+  received `NSModalResponseOK` (1) when Save was clicked, wrote the file
+  to `/Users/admin/Documents/untitled.md`, cleared the dirty indicator,
+  and updated the title to `untitled.md — Note Editor`; Undo button
+  invoked `nsundomanager-undo` via NSTextView's undo manager, reverted
+  the text, and the observer re-fired to update preview and dirty flag.
+
+  Three first-time patterns validated:
+  1. **NSSavePanel completion block** — the generated
+     `nssavepanel-begin-sheet-modal-for-window-completion-handler!` wraps
+     a Racket procedure as an ObjC block via `make-objc-block` with signature
+     `(Int64 -> Void)`; modal-response code delivered correctly to the
+     Racket handler without explicit rooting of the block.
+  2. **NSTextDidChangeNotification observer** — registered on the text view's
+     notification source via `addObserver:selector:name:object:`, handler
+     kept in module-level var to survive Cocoa's weak-observer pool, wrapped
+     constant via `borrow-objc-object` matching the PDFKit Viewer pattern.
+  3. **NSAlert manual alloc+init** — NSAlert has no generated `make-nsalert-*`
+     constructor; used `objc-interop.rkt` escape hatch (`(tell (tell NSAlert
+     alloc) init)`) wrapped via `wrap-objc-object #:retained #t` to satisfy
+     class-wrapper param contracts. First app to require `objc-interop.rkt`.
+
+  Walker bug surfaced and fixed: `scan_rkt_string_literals` in
+  `bundle-racket-oo/src/deps.rs` ignored `;`-to-EOL comments, so the doc
+  comment in `runtime/objc-interop.rkt` containing the literal string
+  `".../runtime/objc-interop.rkt"` was treated as a broken require target.
+  Fixed by adding comment-skip to the scanner state machine. Two new tests:
+  `skips_rkt_literals_inside_line_comments` and
+  `semicolon_inside_string_stays_in_string` — the latter guards the
+  rather pathological but valid `(require "path;foo.rkt")` case.
+
+  Follow-ups surfaced: (a) NSAlert's missing init constructor forces every
+  consumer through `objc-interop.rkt` — worth investigating whether the
+  emitter should synthesize an alloc+init wrapper for classes that expose
+  no explicit `init` but are commonly constructed this way. (b) The
+  agent's `ls` on `/Users/admin/Documents/` triggered a TCC dialog on
+  Tahoe — not app-relevant, but a useful reminder that TCC scope changed
+  for the default `guivision-agent` binary recently; unrelated to the
+  Note Editor work.
 
 ### Harness & Verification
 
