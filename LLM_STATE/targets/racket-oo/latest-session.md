@@ -1,10 +1,43 @@
-### Session 20 (2026-04-18T07:08:15Z) — triage: verify and close backlog items relocated from core
+### Session 20 (2026-04-18T07:47:49Z) — Self-contained bundle distributability hardening
 
-- Worked through five backlog tasks relocated from core to racket-oo during the prior triage session. All five turned out to be already resolved or never broken; the triage session's job was verification and closure.
-- **Generator Bug Fixes (Batch):** Confirmed all four sub-bugs (separatorItem, nsscreen duplicate define, CFStringGetCStringPtr contract, integer param widening) resolved in commit `1d03ede` (2026-04-18 00:44). No source edits required.
-- **Fix unbound `_NSEdgeInsets`:** Confirmed `NSEdgeInsets` in `is_known_geometry_struct` and exported from `runtime/type-mapping.rkt`; `wkwebview.rkt` loads cleanly. No source edits required.
-- **Fix BOOL return type → `_bool`:** Fix already in `extract-objc/src/type_mapping.rs:257-261` mapping `BOOL`/`Boolean` → `Primitive { name: "bool" }`. Added regression test `foundation_bool_return_resolves_to_primitive_bool` in `collection/crates/extract-objc/tests/extract_foundation.rs` to guard against regression.
-- **`make-objc-block` nil guard:** Guard already implemented at `runtime/block.rkt:67-70`. Hardened `runtime_block_nil_guard` test in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs` from 3 to 5 checks: added explicit `#f` block-ptr assertion and a positive-path lambda test.
-- **`spi-helpers.rkt` GC-malloc free:** File was authored correctly from the start with guidance comment; no `free` call present. Backlog entry was stale.
-- Key learning: triage sessions that relocate tasks from core to racket-oo should grep the source before writing the backlog entry — several of these were already fixed in the same commit wave (1d03ede) that prompted the relocation.
-- Next: Mini Browser app (WKWebView workaround pattern confirmed viable) or Note Editor (completion block territory).
+- **Attempted:** Complete the "Self-Contained App Bundling (Swift Stub Launcher)" backlog
+  task by closing two distributability gaps: `compiled/` leakage into bundles, and
+  dylib install-name still pointing at build-tree `@rpath`.
+
+- **What worked:**
+  - `copy_dir_recursive` in `bundle.rs` now skips any directory named `compiled/`,
+    preventing Racket's `.zo` bytecode cache (which bakes host-absolute paths into
+    linklets) from leaking into distributable bundles.
+  - New `normalize_dylib_install_names` function runs `install_name_tool -id
+    @executable_path/../Resources/racket-app/lib/<name>` on every `.dylib` in the
+    bundled `lib/` directory. Non-fatal if `install_name_tool` is absent (logs a
+    warning). Verified via `otool -D`: `libAPIAnywareRacket.dylib` now carries the
+    correct bundle-relative identity.
+  - Three new integration tests added to `bundle_file_lister.rs`:
+    `bundle_lib_copy_excludes_compiled_subdirectory` (unit-level: creates a `lib/compiled/`
+    directory with a poison `.zo` and asserts it is absent from the bundle),
+    `bundle_has_no_compiled_directories_anywhere` (walks the full bundle tree of the
+    real file-lister app and fails on any `compiled/` directory), and
+    `bundle_dylib_install_name_is_bundle_relative` (uses `otool -D` to assert the
+    bundled dylib starts with `@executable_path/`).
+  - All 34 `bundle-racket-oo` integration tests pass; full workspace (548 tests) and
+    the runtime-load harness (7 apps, ~73s) both green.
+  - Backlog task "Self-Contained App Bundling" marked `done` with detailed results.
+  - Three stale `done` tasks verified correct (no safety-net flips needed).
+
+- **What didn't work / was deferred:**
+  - Bundling the Racket runtime itself (not required — stub `execv`s into
+    `/opt/homebrew/bin/racket`).
+  - Info.plist customization and stable signing identity split into separate backlog tasks.
+
+- **What to try next:**
+  - Start a sample app (Note Editor or Mini Browser) — no blocking dependencies remain.
+  - Or tackle Info.plist customization to let Modaliser-Racket migrate from `bundle/build.sh`.
+
+- **Key learnings:**
+  - Racket `.zo` linklets are not relocatable — any `compiled/` tree must be excluded from
+    distributable artifacts; the emitter's walker already ignores them implicitly but the
+    `lib/` copy path needed an explicit guard.
+  - `install_name_tool -id` on a bundled dylib is a lightweight operation (no re-link)
+    that makes the bundle self-describing; Racket's `ffi-lib` is indifferent but future
+    direct-link consumers and `dyld` introspection tools require it.

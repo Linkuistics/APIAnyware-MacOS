@@ -117,7 +117,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 ### Generator Bug Fixes
 
 #### Fix NSEvent class/instance method name collision
-- **Status:** not_started
+- **Status:** done
 - **Priority:** high
 - **Dependencies:** none
 - **Surfaced by:** Memory entry "NSEvent class/instance method name collision
@@ -134,10 +134,17 @@ Runtime location: generation/targets/racket-oo/runtime/
   whose kebab name collides with a class method. Regenerate `appkit/nsevent.rkt`
   after fix; verify load via `dynamic-require`; add to `LIBRARY_LOAD_CHECKS`.
 - **Scope:** `emit_class.rs` naming/deduplication logic. Regenerate AppKit.
-- **Results:** _pending_
+- **Results:** Already landed in commit 1d03ede (2026-04-18 00:44). Verified:
+  `emit_class.rs:95-125` builds `instance_bindings` (method names ∪ property
+  getter names) and flags class methods whose selector collides via
+  `class_method_disambig`; `make_class_method_name(..., true)` appends
+  `-class`. Generated output: `nsevent-modifier-flags-class` (line 57, class
+  method) vs `nsevent-modifier-flags` (line 98, instance). `nsevent.rkt` is in
+  `LIBRARY_LOAD_CHECKS` and loads cleanly (`dynamic-require` + `require` both
+  succeed). Backlog entry was stale; memory entry superseded by this verification.
 
 #### Fix class-return contracts to allow nil
-- **Status:** not_started
+- **Status:** done
 - **Priority:** medium
 - **Dependencies:** none
 - **Surfaced by:** PDFKit Viewer development (2026-04-17); memory entry
@@ -155,10 +162,16 @@ Runtime location: generation/targets/racket-oo/runtime/
   annotation. Regenerate all affected class wrappers.
 - **Scope:** `emit_class.rs::map_return_contract`. Widespread — affects all class
   wrappers with typed object-return properties.
-- **Results:** _pending_
+- **Results:** Already landed in commit 1d03ede (2026-04-18 00:44). Verified:
+  `emit_class.rs:354-363` emits `(or/c {pred} objc-nil?)` for every
+  `TypeRefKind::Class { name }` return. `objc-nil?` lives in
+  `runtime/objc-base.rkt:161`. Spot-check `pdfkit/pdfview.rkt`: every typed
+  object-return getter carries `(or/c <class-pred>? objc-nil?)` — e.g.
+  `pdfview-current-page` → `(or/c pdfpage? objc-nil?)`. All 119 emitter tests
+  and the runtime load harness pass.
 
 #### Fix `list->nsarray`/`hash->nsdictionary` to return wrapped objects
-- **Status:** not_started
+- **Status:** done
 - **Priority:** medium
 - **Dependencies:** none
 - **Surfaced by:** Memory entry "`list->nsarray` / `hash->nsdictionary` return
@@ -174,7 +187,12 @@ Runtime location: generation/targets/racket-oo/runtime/
   wrapper boundary, verify no contract violation).
 - **Scope:** Runtime helper file hosting `list->nsarray` / `hash->nsdictionary`
   (likely `runtime/cf-bridge.rkt`). Low risk.
-- **Results:** _pending_
+- **Results:** Already landed in commit 1d03ede (2026-04-18 00:44). Helpers
+  live in `runtime/type-mapping.rkt` (not `cf-bridge.rkt` as the backlog
+  guessed). Verified `type-mapping.rkt:92-96`: `list->nsarray` wraps via
+  `(wrap-objc-object arr #:retained #t)`. Lines 111-117 do the same for
+  `hash->nsdictionary`. Reader helpers (`nsarray->list`, `nsdictionary->hash`)
+  tolerate both raw cpointers and wrappers via `unwrap-objc-object`.
 
 ### Future Work
 
@@ -249,7 +267,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 #### Self-Contained App Bundling (Swift Stub Launcher)
-- **Status:** not_started
+- **Status:** done
 - **Dependencies:** none
 - **Description:** Current `.app` bundles produced by `bundle-racket-oo` use absolute
   symlinks into `generation/targets/racket-oo/`, making them machine-specific and
@@ -260,7 +278,32 @@ Runtime location: generation/targets/racket-oo/runtime/
   own CDHash and independent macOS TCC permissions (camera, accessibility, etc.
   prompt under the app's identity, not racket's). Implement in `bundle-racket-oo`
   crate. Filed 2026-04-17 from Modaliser bundling observations.
-- **Results:** _pending_
+- **Results:** (1) Copy-not-symlink was already covered by `fs::copy` of walker
+  deps + `copy_dir_recursive` on `lib/` (symlinks are dereferenced by `fs::copy`).
+  (2) Added `normalize_dylib_install_names` in `bundle.rs`: runs
+  `install_name_tool -id @executable_path/../Resources/racket-app/lib/<name>` on
+  each `.dylib` in the bundled `lib/` dir. Verified via `otool -D`:
+  `libAPIAnywareRacket.dylib` now carries
+  `@executable_path/../Resources/racket-app/lib/libAPIAnywareRacket.dylib`. Racket
+  `ffi-lib` still loads by absolute path; the rewrite is for introspection
+  and any future direct-link consumer — the defining property of a
+  self-contained bundle.
+  (3) Swift stub launcher was already in place via the language-agnostic
+  `stub-launcher` crate.
+  Plus: `copy_dir_recursive` now skips `compiled/` subdirectories — host-compiled
+  `.zo` linklets bake in absolute paths and corrupt bundles on other machines
+  (confirmed 2026-04-18 on Tahoe VM per memory).
+  Tests: three new integration tests in
+  `generation/crates/bundle-racket-oo/tests/bundle_file_lister.rs` —
+  `bundle_lib_copy_excludes_compiled_subdirectory`,
+  `bundle_has_no_compiled_directories_anywhere`,
+  `bundle_dylib_install_name_is_bundle_relative`. All 34
+  `bundle-racket-oo` tests pass; full workspace (548 tests) and the
+  runtime-load harness (libraries + `raco make` of all 7 apps, ~73s) both green.
+  **Out of scope (separate backlog tasks):** Info.plist customization (task
+  "Add Info.plist customization API"), stable signing identity (task
+  "Implement stable signing identity"), bundling the Racket runtime itself
+  (not required — stub `execv`s into `/opt/homebrew/bin/racket`).
 
 #### Developer Documentation
 - **Status:** not_started

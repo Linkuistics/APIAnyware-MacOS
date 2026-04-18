@@ -237,8 +237,21 @@ Host-compiled `.zo` files under `compiled/` are machine- and Racket-version-spec
 (linklets bake in host-specific path references). Copying them to a different machine
 causes runtime contract errors at load time (confirmed 2026-04-18: `make-nsmenuitem-init-with-title-action-key-equivalent` arg 2 on Tahoe VM). Strip before packaging:
 `find . -name compiled -type d -exec rm -rf {} +` or `rsync --exclude=compiled`.
-This is a hard requirement alongside the symlink→copy and dylib `@rpath` fixes
-for cross-machine distributable bundles.
+**`bundle-racket-oo` enforces this automatically:** the `.rkt`-only walker skips
+`compiled/` implicitly (no `.rkt` files inside), and `copy_dir_recursive` for `lib/`
+explicitly skips any `compiled/` subdirectory. Tests
+`bundle_lib_copy_excludes_compiled_subdirectory` and
+`bundle_has_no_compiled_directories_anywhere` guard this invariant.
+
+### `bundle-racket-oo` normalizes dylib install_name to `@executable_path/...`
+After copying `lib/` into the bundle, `normalize_dylib_install_names` shells out to
+`install_name_tool -id @executable_path/../Resources/racket-app/lib/<name>` on each
+`.dylib`. Racket's `ffi-lib` uses an explicit filesystem path and is indifferent to
+the identity, but any native consumer (direct-link tool, dyld introspection) can now
+resolve the dylib inside the bundle — the defining property of a self-contained
+bundle. Non-fatal if `install_name_tool` is missing: logs a `tracing::warn!` and
+leaves the original identity. Test `bundle_dylib_install_name_is_bundle_relative`
+asserts the `@executable_path/` prefix on the bundled dylib.
 
 ### Sample apps bundle via `bundle-racket-oo` crate
 `apianyware-macos-bundle-racket-oo` builds racket-oo `.app` bundles: require-tree BFS for dependency discovery, `Resources/racket-app/<rel>` layout preserving the source tree so relative requires resolve at runtime, optional `lib/libAPIAnywareRacket.dylib` copy. CLI: `cargo run --example bundle_app -p apianyware-macos-bundle-racket-oo -- <script>` or `-- --all`. Built bundles land at `apps/<name>/build/<App Name>.app` (gitignored). Every sample app calls `(install-standard-app-menu! app "<Display>")` from `runtime/app-menu.rkt`.
@@ -364,15 +377,14 @@ Three runtime files, all in `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`:
 ### Racket CS `malloc` returns GC memory; never `free`
 `(malloc …)` in Racket CS returns GC-tracked memory. Passing it to `free` causes SIGABRT because `free` expects C-heap pointers only. Do not call `free` on `(malloc …)` buffers — the GC reclaims them automatically. Only call `free` on memory returned by a C function that itself calls `malloc` internally. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 such `free` calls removed. `spi-helpers.rkt` was authored correctly with no `free` calls.
 
-### NSEvent class/instance method name collision (generator bug)
-`NSEvent +modifierFlags` (class method) and `-modifierFlags` (instance method) both kebab-case to `nsevent-modifier-flags`, producing duplicate `define` forms. `nsevent.rkt` cannot be required at all. Filed in core backlog. Workaround: use raw `tell` for NSEvent properties (e.g. `locationInWindow`) instead of requiring the module. Blocked behind the broader class/instance selector-collision fix in `emit_class.rs`.
+### Class/instance selector disambiguation already handles `+`/`-` collisions
+`emit_class.rs` builds `instance_bindings` = instance method names ∪ instance property getter names, then `class_method_disambig` flags class methods whose selector collides. `make_class_method_name(..., true)` emits the `-class` suffix. NSEvent's `+modifierFlags`/`-modifierFlags` split correctly into `nsevent-modifier-flags-class` and `nsevent-modifier-flags`. `nsevent.rkt` is in `LIBRARY_LOAD_CHECKS` and loads cleanly. Landed commit `1d03ede` (2026-04-18).
 
+### Typed class returns are nullable via `(or/c <pred>? objc-nil?)`
+`map_return_contract` in `emit_class.rs` emits `(or/c {pred} objc-nil?)` for every `TypeRefKind::Class { name }` return. `objc-nil?` lives in `runtime/objc-base.rkt`. Legitimately-nil Cocoa properties (`PDFView.document` before assignment, `NSTableView.dataSource` before wiring, `NSWindow.firstResponder` under timing races) no longer fail their own contracts. Landed commit `1d03ede` (2026-04-18).
 
-### Class-return contracts are non-nullable (generator bug)
-Object-returning properties get contracts like `pdfdocument?` via `collect_return_type_class_names` + `map_return_contract`. The generated predicate (`(define (pdfdocument? v) (objc-instance-of? v "PDFDocument"))`) returns `#f` for a NULL-pointered `objc-object`, so any Cocoa property that returns nil for "no value yet" (e.g. `PDFView.document` before assignment, `PDFView.currentPage` on empty view, `NSTableView.dataSource` before wiring, `NSWindow.firstResponder` under rare timing) fails its own return contract. **Workaround:** track the object in Racket state instead of asking the wrapper back (see PDFKit Viewer's `current-document`), or wrap the call in `(with-handlers ([exn:fail:contract? (lambda _ …)]) …)` to fall back. Filed in core backlog 2026-04-17; fix is to default object returns to `(or/c <class-pred>? objc-null?)` unless the IR marks the return nonnull.
-
-### `list->nsarray` / `hash->nsdictionary` return raw cpointers (contract gap)
-Both helpers return the raw `(tell (tell NSMutableArray alloc) init)` pointer. Class-wrapper param contracts (`(or/c string? objc-object? #f)`, which excludes `cpointer?` per the 2026-04-16 tightening) reject that at the call boundary. **Caller-side workaround:** `(wrap-objc-object (list->nsarray …) #:retained #t)` — `alloc+init` is +1 retained, so the wrapper's finalizer balances correctly. Filed in core backlog 2026-04-17; fix is to move the wrap inside the helpers themselves.
+### `list->nsarray`/`hash->nsdictionary` live in `type-mapping.rkt` and wrap results
+Both helpers in `runtime/type-mapping.rkt` wrap the `(tell (tell NSMutableArray alloc) init)` result via `(wrap-objc-object arr #:retained #t)` — `alloc+init` is +1 retained so the finalizer balances. Callers pass the result directly into class-wrapper param contracts without manual wrapping. `nsarray->list` / `nsdictionary->hash` accept both raw cpointers and wrappers via `unwrap-objc-object`. Landed commit `1d03ede` (2026-04-18).
 
 ### `PDFViewPageChangedNotification` observer pattern
 First app (PDFKit Viewer) to use NSNotificationCenter. Key bits:
