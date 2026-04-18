@@ -409,24 +409,43 @@ fn runtime_block_nil_guard() {
 #lang racket/base
 (require ffi/unsafe \"runtime/block.rkt\")
 
-;; Test 1: make-objc-block with #f returns (values #f #f)
+;; Test 1: make-objc-block with #f returns (values #f #f) — no live block wrapper
 (define-values (block-ptr block-id)
   (make-objc-block #f (list) _void))
 (unless (and (not block-ptr) (not block-id))
   (eprintf \"FAIL: make-objc-block #f should return (values #f #f), got ~a ~a~n\" block-ptr block-id)
   (exit 1))
 
-;; Test 2: free-objc-block with #f is a no-op
+;; Test 2: the returned block-ptr must be usable as a NULL _pointer FFI arg.
+;; A live wrapper would be a cpointer satisfying cpointer?; #f passes through
+;; FFI as NULL. This verifies no block was constructed at all.
+(unless (eq? block-ptr #f)
+  (eprintf \"FAIL: block-ptr must be exactly #f (NULL), not a live wrapper; got ~a~n\" block-ptr)
+  (exit 1))
+
+;; Test 3: free-objc-block with #f is a no-op
 (free-objc-block #f)
 
-;; Test 3: call-with-objc-block with #f passes #f to body
+;; Test 4: call-with-objc-block with #f passes #f to body
 (define-values (result cb-id)
   (call-with-objc-block #f (list) _void (lambda (bp) bp)))
 (unless (and (not result) (not cb-id))
   (eprintf \"FAIL: call-with-objc-block #f should yield #f, got ~a ~a~n\" result cb-id)
   (exit 1))
 
-(printf \"OK: make-objc-block nil guard — 3 checks passed~n\")
+;; Test 5: normal path still works — a real proc yields a live wrapper
+(define invoked? #f)
+(define-values (real-block real-id)
+  (make-objc-block (lambda () (set! invoked? #t)) (list) _void))
+(unless (cpointer? real-block)
+  (eprintf \"FAIL: real block should be cpointer?, got ~a~n\" real-block)
+  (exit 1))
+(unless (exact-integer? real-id)
+  (eprintf \"FAIL: real block-id should be integer, got ~a~n\" real-id)
+  (exit 1))
+(free-objc-block real-id)
+
+(printf \"OK: make-objc-block nil guard — 5 checks passed~n\")
 ";
 
     let script_path = temp.path().join("__nil_guard_test.rkt");

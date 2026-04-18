@@ -228,6 +228,37 @@ fn foundation_methods_have_source_field() {
 }
 
 #[test]
+fn foundation_bool_return_resolves_to_primitive_bool() {
+    // ObjC `BOOL` is a typedef (unsigned char on intel, bool on arm64) that
+    // libclang surfaces as a typedef node. The extractor must resolve it to
+    // `TypeRefKind::Primitive { name: "bool" }` so the Racket FFI mapper emits
+    // `_bool` — not `_uint8`. `_uint8` decodes to an integer in Racket, and
+    // all integers (including 0) are truthy, silently misidentifying `NO`.
+    //
+    // `NSBundle -load` is a well-known BOOL-returning method present in
+    // every macOS SDK.
+    let fw = foundation();
+    let nsbundle = fw.classes.iter().find(|c| c.name == "NSBundle").unwrap();
+    let load = nsbundle
+        .methods
+        .iter()
+        .find(|m| m.selector == "load")
+        .expect("load should be present on NSBundle");
+
+    match &load.return_type.kind {
+        TypeRefKind::Primitive { name } => {
+            assert_eq!(
+                name, "bool",
+                "NSBundle -load should return Primitive {{ name: \"bool\" }}, got {name:?}"
+            );
+        }
+        other => panic!(
+            "NSBundle -load return should be Primitive {{ name: \"bool\" }}, got {other:?}"
+        ),
+    }
+}
+
+#[test]
 fn foundation_serializes_to_json() {
     let fw = foundation();
     let json = serde_json::to_string_pretty(&fw).expect("should serialize to JSON");
