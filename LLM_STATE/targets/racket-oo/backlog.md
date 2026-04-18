@@ -99,47 +99,6 @@ Runtime location: generation/targets/racket-oo/runtime/
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
 - **Results:** _pending_
 
-#### SceneKit Viewer
-- **Status:** done
-- **Dependencies:** none
-- **Description:** 3D scene viewer with animated geometry. SCNView (3D viewport),
-  SCNScene, SCNNode, SCNBox/SCNSphere/SCNTorus/SCNCylinder, SCNMaterial,
-  SCNLight, SCNCamera, SCNAction (rotation animation), NSPopUpButton (geometry
-  picker), NSColorPanel. "Wow factor" app — 3D rendering from Racket. Tests
-  SceneKit framework end-to-end, chained object construction (scene graph),
-  cross-framework NSView subclass, float-heavy API.
-  PDFKit Viewer confirmed non-AppKit frameworks work end-to-end; Drawing Canvas
-  confirmed multi-override `make-dynamic-subclass` works. Both patterns needed
-  here. No known generator blockers.
-  See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-- **Results:** Landed 2026-04-17. `apps/scenekit-viewer/scenekit-viewer.rkt` +
-  `knowledge/apps/scenekit-viewer/spec.md`. VM-validated end-to-end via
-  GUIVisionVMDriver: cube/sphere geometry swap, continuous NSColorPanel
-  color change (red → blue visible on sphere), rotation animation active.
-  `raco make` harness now at 7 apps (~70s). SceneKit added to
-  `REQUIRED_FRAMEWORKS`. Bundle ID `com.linkuistics.SceneKitViewer`, bundle
-  1.1 MB (only `scenekit/` + `appkit/` under generated/).
-  **Novel pattern this surfaced:** two protocol-inherited methods
-  (`SCNNode.runAction:` on SCNActionable, `SCNView.setAutoenables-
-  DefaultLighting:` on SCNSceneRenderer) not emitted on the class binding.
-  Workaround: module-local typed `objc_msgSend` aliases (app-menu.rkt
-  pattern). **Generator gap:** protocol-inherited methods are a distinct
-  axis from superclass-inherited methods (core-backlog "Emit inherited
-  methods from NSView/NSControl superclasses" addresses only superclass
-  inheritance). Filing a matching protocol-inheritance entry in core
-  backlog during triage is warranted.
-  **Avoided entirely:** SCNVector3 cstruct gap (not in `type-mapping.rkt`,
-  not in `is_known_geometry_struct`). Path: `allowsCameraControl = #t`
-  auto-places camera; geometry sits at origin; rotation uses
-  `rotateByX:y:z:duration:` which takes scalar CGFloats not a vector.
-  Spec documents this tradeoff. If a future app needs explicit camera /
-  light placement, SCNVector3 becomes a required type-mapping.rkt entry.
-  **Established pattern from this app:** `apply-current-color!` re-applies
-  the user's color to a freshly-generated firstMaterial after a geometry
-  swap. Without it, every picker change resets color to white. Worth
-  adding to memory as "`SCN*` geometry swap resets firstMaterial — track
-  color in Racket state, not on the geometry".
-
 #### Mini Browser
 - **Status:** not_started
 - **Dependencies:** `wkwebview.rkt` has a generator bug — `_NSEdgeInsets`
@@ -336,6 +295,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 
 #### `spi-helpers.rkt` GC-malloc `free` Fix
 - **Status:** not_started
+- **Priority:** high
 - **Dependencies:** none
 - **Description:** `spi-helpers.rkt` calls `free` on a `(malloc …)` buffer — GC-managed
   memory → SIGABRT at runtime. `cf-bridge.rkt` and `ax-helpers.rkt` had 9 analogous
