@@ -62,6 +62,7 @@ DriverKit requires kernel headers unavailable in user-space SDKs. Tk is a legacy
 
 ### Stub launcher gives unique CDHash per app
 macOS TCC grants permissions per-CDHash. Without per-app stubs, all apps sharing a runtime binary (e.g., `/opt/homebrew/bin/racket`) share one TCC permission set. `apianyware-macos-stub-launcher` (`generation/crates/stub-launcher/`) generates a ~50KB Swift binary per app that `execv`s into the language runtime. API: `StubConfig` → `create_app_bundle()` for full `.app` assembly, or `generate_stub_source()` + `compile_stub()` for custom workflows. Compiles via `swiftc`.
+**Ad-hoc codesigning invalidates TCC grants on every rebuild.** Each `swiftc` compilation with ad-hoc signing (`-`) produces a new CDHash, so any Accessibility/Screen Recording TCC grant must be re-granted after every rebuild. The systemic fix is a stable signing identity (Developer ID or self-signed cert with a fixed key) so the CDHash is stable across recompiles. Until the `.app` bundler implements stable signing, document re-grant as a known workflow step.
 
 ### Prefer synthetic tests over SDK-dependent tests
 Tests depending on extracted SDK data (e.g., `Foundation.json`) silently skip when absent → false-green CI. Core logic tests (resolution, enrichment, emission) use synthetic in-memory data. Real-SDK tests are for integration-level extraction fidelity only.
@@ -244,3 +245,53 @@ theoretically vulnerable to a single-uppercase-letter framework prefix (none exi
 `list->nsarray` and `hash->nsdictionary` in `type-mapping.rkt` return `wrap-objc-object
 … #:retained #t`. The inverse `nsarray->list` / `nsdictionary->hash` call
 `unwrap-objc-object` on their inputs before conversion.
+
+### clang-2.0.0 panics on any non-UTF-8 CXString, not just paths
+`clang-2.0.0/src/utility.rs:271` runs `CStr::to_str().expect("invalid Rust string")`
+on every string libclang returns. Doc comments are the highest-risk source — some
+Quartz-subframework cursors carry a stray non-UTF-8 byte at positions 20–32 of the
+brief comment, triggering `Utf8Error { valid_up_to: N, error_len: 1 }`. The panic
+starts as a normal Rust unwind but sits inside `extern "C" fn visit` one frame
+above, so Rust converts it to a process abort — `catch_unwind(AssertUnwindSafe(…))`
+at the call site keeps the unwind inside Rust territory and the visitor continues.
+Pattern used in `safe_get_comment_brief` / `catch_clang_utf8_panic` in
+`extract_declarations.rs`; reapply for any future extractor hot spot that calls
+libclang string-returning methods (name, USR, display_name, comment variants) on
+entities sourced from Quartz-umbrella subframeworks or other headers with
+miscoded byte sequences.
+
+### Enum-typedef underlying type needs get_canonical_type
+`Entity::get_enum_underlying_type()` on a `CF_ENUM(UInt32, AXValueType)` enum
+returns a `clang::Type` whose `TypeKind` is `Typedef` (the `UInt32` typedef),
+not `UInt`. Calling `map_primitive_name` on it falls through to the
+display-name default → `"UInt32"`, which the FFI mapper then doesn't recognize.
+`.get_canonical_type()` drills through the typedef wrapper to the real
+`TypeKind::UInt`, producing the canonical `"uint32"` name the rest of the
+pipeline expects. Applies anywhere a typed typedef is the "underlying" of
+another type declaration.
+
+### Bundle walkers must use logical paths, not canonical paths
+When a language-target bundler walks an app's require/import graph to copy
+transitive dependencies, resolving each candidate via `canonicalize()` breaks
+any source layout that stitches external trees via symlinks (e.g.
+Modaliser-Racket's `bindings/` → `APIAnyware-MacOS/generation/targets/racket-oo/`).
+The canonical path falls outside the app's `source_root`, so an
+"is-this-under-source_root?" guard rejects it. The fix is to normalize paths
+absolutely but without following symlinks: `std::path::absolute` + manual
+`.`/`..` collapse. Reads (`fs::read_to_string`, `fs::copy`) still follow
+symlinks transparently, so the bundler ends up with real copies of the
+symlink targets laid out under the symlinked (logical) bundle path —
+self-contained, no leak of external paths. Pattern lives in
+`bundle-racket-oo/src/deps.rs::collect_dependencies`; reuse verbatim for
+future bundlers (Python, Chez, Gerbil, etc.). Unix-only: uses
+`std::os::unix::fs::symlink` in tests.
+
+### `stub-launcher` script_resource_dir must come from the entry path
+`stub-launcher`'s Swift stub calls
+`Bundle.main.path(forResource:ofType:inDirectory:)`. For an app whose entry
+is at the `source_root` root (e.g. Modaliser's `main.rkt`), `inDirectory` is
+just `"racket-app"`. For the APIAnyware sample-app layout (entry at
+`apps/<name>/<name>.rkt`), `inDirectory` is `"racket-app/apps/<name>"`. The
+general formula: `racket-app/ + (entry.parent() - source_root)`. Encoded in
+`bundle-racket-oo::bundle::derive_script_resource_dir`; hardcoding it (the
+pre-2026-04-18 behavior) blocks non-sample-app layouts.
