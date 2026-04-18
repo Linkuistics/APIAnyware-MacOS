@@ -338,12 +338,12 @@ When overriding superclass methods, pull the type encoding string via `(method-t
 ### Struct-typed global constants use `ffi-obj-ref`
 Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dispatch_source_type_*`, geometry zero-constants) are emitted as `(define sym (ffi-obj-ref 'sym lib))` — returning the symbol's address. Non-struct constants keep `(get-ffi-obj 'sym lib type)` — dereferencing the symbol. The distinction is in `generate_constants_file` via `is_struct_data_symbol()`. Contract for struct globals is `cpointer?`. `constants.rkt` does not require `type-mapping.rkt` — struct globals use `ffi-obj-ref`, not a typed getter needing a cstruct. **Known gap (generator bug):** CF struct globals from CoreFoundation (`kCFTypeDictionaryKeyCallBacks`, `kCFTypeDictionaryValueCallBacks`) are NOT currently emitted — they are absent from the collected IR. Workaround: `(get-ffi-obj 'kCFTypeDictionaryKeyCallBacks (ffi-lib "CoreFoundation") _pointer)`. Core backlog task filed 2026-04-16.
 
-### `wkwebview.rkt` `_NSEdgeInsets` fix (landed 2026-04-18)
+### `wkwebview.rkt` `_NSEdgeInsets` fix
 `wkwebview.rkt` referenced `_NSEdgeInsets` without requiring `runtime/type-mapping.rkt`.
 Root cause: `NSEdgeInsets` was missing from `is_known_geometry_struct` in
 `ffi_type_mapping.rs`, so `any_struct_type` did not detect it and the conditional
 require was not emitted. Fixed by adding `NSEdgeInsets` to the allowlist. `wkwebview.rkt`
-now loads cleanly. Follow-up: add `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS` (see backlog).
+now loads cleanly and is in `LIBRARY_LOAD_CHECKS`.
 
 ### `nsscreen.rkt` duplicate definition (generator bug)
 `nsscreen.rkt` contains a duplicate `define` form that prevents the file from loading.
@@ -408,4 +408,13 @@ First app (PDFKit Viewer) to use NSNotificationCenter. Key bits:
 Tasks relocated from another target plan may already be fixed in the same commit wave that prompted the relocation. Always grep the relevant source files before writing a new backlog entry for a relocated task — several BOOL/integer/nil-guard tasks were already resolved and only needed verification, not new fixes.
 
 ### Sample app registration in runtime load harness
-Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app therefore requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports any framework not already built by the hermetic tree. For PDFKit Viewer: added `"PDFKit"` to `REQUIRED_FRAMEWORKS` and `"pdfkit-viewer"` + `"drawing-canvas"` (previously missed) to `APPS`. For SceneKit Viewer: added `"SceneKit"` to `REQUIRED_FRAMEWORKS` and `"scenekit-viewer"` to `APPS`. All 7 sample apps now exercised via `raco make` under the harness (~55s for the full run).
+Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app therefore requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports any framework not already built by the hermetic tree. For PDFKit Viewer: added `"PDFKit"` to `REQUIRED_FRAMEWORKS` and `"pdfkit-viewer"` + `"drawing-canvas"` (previously missed) to `APPS`. For SceneKit Viewer: added `"SceneKit"` to `REQUIRED_FRAMEWORKS` and `"scenekit-viewer"` to `APPS`. For Mini Browser: `"mini-browser"` appended to `APPS`. All 8 sample apps now exercised via `raco make` under the harness (~72s for the full run).
+
+### Two-stage signing required for app bundles
+Sign the stub binary before copying `Resources/` (first pass), then re-sign the full bundle after `Resources/` is populated (second pass). A single post-copy sign produces an inconsistent bundle that Gatekeeper rejects. `stub-launcher`'s `codesign.rs` implements both passes via `codesign --force --sign`.
+
+### `plist` crate skips round-trip for empty overrides
+`plist::to_file_xml` output is not byte-identical to Apple's `PlistBuddy`. `merge_info_plist_overrides` in `bundle-racket-oo` skips the read-modify-write cycle entirely when `info_plist_overrides` is empty to avoid spurious diffs.
+
+### Accessibility set-value fails for NSStackView-hosted textfields
+The GUIVisionVMDriver accessibility agent's set-value path cannot reach textfields nested inside `NSStackView` containers. VNC keyboard input is the correct path for address-bar interaction tests.
