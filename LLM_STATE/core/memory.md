@@ -133,6 +133,13 @@ Each extractor records its own filter decisions. `merge.rs::merge_swift_into_obj
 ### Macros reach IR only via swift-api-digester
 libclang surfaces `#define` macros as `EntityKind::MacroDefinition`, never reaching extract-objc's `VarDecl`/`FunctionDecl` arms. Macros in ObjC framework headers reach collected IR only via `swift-api-digester`, re-exported as top-level `Var` nodes with `c:@macro@` USRs. The filter for macro-derived constants (e.g., CoreText `kCTVersionNumber10_*`) lives in `extract-swift/src/declaration_mapping.rs`, not extract-objc. A defensive comment at `extract_constant` points to the real filter.
 
+### Core backlog scope: shared-pipeline tasks only
+Tasks tagged `[generation]` or `[runtime]` belong in target-specific backlogs
+(e.g., `LLM_STATE/targets/racket-oo/backlog.md`), not `LLM_STATE/core/backlog.md`.
+Scope drift accumulates silently when reactive tasks are filed in whichever plan
+is open. Periodic triage should check `[generation]`/`[runtime]` tags against
+which plan file owns them.
+
 ### Backlog task descriptions are hypotheses
 Task root-cause framing and scope estimates are starting hypotheses. Trace symptom → actual producer → actual consumer before committing to a fix. Scope notes describe importance, not work size — check the production surface before assuming new code is needed. Seven misdirection modes:
 
