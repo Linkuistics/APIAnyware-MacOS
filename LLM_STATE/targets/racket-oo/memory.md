@@ -389,7 +389,7 @@ NSNotificationCenter observer setup:
 Tasks relocated from another target plan may already be fixed in the same commit wave that prompted the relocation. Always grep the relevant source files before writing a new backlog entry for a relocated task.
 
 ### Sample app registration in runtime load harness
-Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports a framework not already in the hermetic tree. All 8 sample apps are exercised via `raco make` under the harness (~72s for the full run).
+Apps are listed in `APPS` in `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`, distinct from the `bundle-racket-oo` integration test which auto-discovers. Adding a new app requires: (1) append to `APPS`; (2) append to `REQUIRED_FRAMEWORKS` if the app imports a framework not already in the hermetic tree. All 9 sample apps are exercised via `raco make` under the harness (~90s for the full run).
 
 ### Two-stage signing required for app bundles
 Sign the stub binary before copying `Resources/` (first pass), then re-sign the full bundle after `Resources/` is populated (second pass). A single post-copy sign produces an inconsistent bundle that Gatekeeper rejects. `stub-launcher`'s `codesign.rs` implements both passes via `codesign --force --sign`.
@@ -415,3 +415,12 @@ No Cmd+A step needed.
 
 ### Detached install pattern under agent exec
 Long-running installs (`brew install minimal-racket`, ~5 min on Tahoe) should be launched via `nohup ... > /tmp/x.log 2>&1 &` through `guivision exec`, then polled for completion. If the command is NOT detached, the spawning shell ends with the HTTP call and the child is killed. Poll via `until $GV exec --vm $ID "test -x /path/to/binary" 2>/dev/null | grep -q DONE; do sleep 15; done` from the host.
+
+### `scan_rkt_string_literals` skips `;`-to-EOL comments
+`scan_rkt_string_literals` in `bundle-racket-oo/src/deps.rs` must skip `;`-to-EOL comments in its state machine. Without this, string literals embedded in doc-comments (e.g. the path `".../runtime/objc-interop.rkt"` appearing in `objc-interop.rkt`'s own header comment) are treated as broken require targets. Two regression tests guard this invariant.
+
+### NSSavePanel completion block uses `(Int64 -> Void)` signature
+`NSSavePanel beginSheetModalForWindow:completionHandler:` expects a block typed `(Int64 -> Void)`. Pass via `make-objc-block`; the completion receives `NSModalResponseOK` (1) or `NSModalResponseCancel` (0) as the `Int64` arg. Same pattern works for any modal completion handler whose response is an `NSModalResponse` enum.
+
+### `NSAlert` has no generated alloc+init wrapper
+`NSAlert` exposes no explicit `-init` override so no `make-nsalert-*` constructor is emitted. Use `objc-interop.rkt`: `(tell (tell NSAlert alloc) init)`, then store the result via `(wrap-objc-object ... #:retained #t)`. Worth investigating whether the emitter should synthesise an alloc+init wrapper for classes with no explicit init selector.
