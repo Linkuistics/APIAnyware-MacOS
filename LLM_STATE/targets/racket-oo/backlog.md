@@ -107,7 +107,8 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 #### Mini Browser
-- **Status:** not_started
+- **Status:** in_progress — entry script lands, raco make + bundle checks
+  green; VM visual verification remains.
 - **Dependencies:** none (`_NSEdgeInsets` fix resolved 2026-04-18 — `wkwebview.rkt`
   loads cleanly; workaround of using raw `tell` against WKWebView remains viable
   if any other WebKit binding issues surface).
@@ -118,12 +119,56 @@ Runtime location: generation/targets/racket-oo/runtime/
   (AppKit + WebKit + Foundation). Modaliser uses WKWebView for HTML rendering
   but does NOT exercise WKNavigationDelegate or URL-based navigation.
   See `docs/specs/2026-04-16-sample-app-portfolio-design.md`.
-- **Results:** _pending_
+- **Results (2026-04-18):** Entry script landed at
+  `apps/mini-browser/mini-browser.rkt`. Uses `make-wknavigationdelegate`
+  from the generated WebKit protocol file, wiring four navigation
+  callbacks (didStart / didFinish / didFailNavigation /
+  didFailProvisionalNavigation). URL normalisation auto-prepends `https://`
+  when the input has no scheme. NSAlert path uses
+  `nsalert-alert-with-error` (idiomatic for NSError; NSAlert has no
+  generated `-init`). Registered in `APPS` in the runtime load harness —
+  `raco make` across all 8 apps (including this one) passes in ~72s.
+  `bundles_every_sample_app` also passes via directory discovery. Status
+  label at the bottom toggles "Loading..." / "Done" on didStart /
+  didFinish; window title updates from `wkwebview-title` during chrome
+  refresh. **VM verification (2026-04-18):** Booted a fresh Tahoe VM
+  (`mini-browser-test`), installed `minimal-racket` via brew, bundled
+  and uploaded `Mini Browser.app`, launched via `open`. Accessibility
+  snapshot confirms: (1) initial apple.com load succeeds — address bar
+  shows `https://www.apple.com/`; (2) window title updates to
+  "Apple — Mini Browser" proving the `didFinishNavigation:` →
+  `refresh-chrome!` path; (3) Back/Forward buttons correctly disabled
+  (fresh history); (4) Reload button activates successfully, app stays
+  responsive; (5) WKWebView accessibility group/scroll-area visible
+  under content view. Remaining items from the test-strategy checklist
+  (address-bar typing, link navigation, error alert on invalid URL,
+  resize) need VNC keyboard input rather than agent set-value — the
+  agent's set-value query didn't match the NSStackView-hosted textfield;
+  likely needs a deeper accessibility hierarchy descent or VNC-level
+  typing. Task stays `in_progress` until those remaining checks are
+  walked via VNC.
 
 ### Harness & Verification
 
-#### Add `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS`
+#### Fix `nsscreen.rkt` duplicate definition
 - **Status:** not_started
+- **Priority:** medium
+- **Dependencies:** none
+- **Source:** Reported by Modaliser-Racket (upstream binding-generation bug, 2026-04-18)
+- **Symptom:** `nsscreen.rkt` contains a duplicate `define` form that prevents the
+  file from loading. Any code transitively requiring `nsscreen.rkt` (or using
+  `only-in` on it) fails at load time. Workaround: use raw `tell`/`objc_msgSend`
+  for NSScreen calls instead of importing the generated binding.
+- **Fix direction:** Identify the duplicate symbol in the NSScreen class emitter.
+  Likely a property/method name collision similar to the NSEvent
+  `modifierFlags` class/instance collision fixed in commit `1d03ede`; apply the
+  same `PropertyNameSets` partitioning or `class_method_disambig` guard in
+  `emit_class.rs`. Regenerate and verify via runtime load harness.
+  When fixed, add `nsscreen.rkt` to `LIBRARY_LOAD_CHECKS`.
+- **Results:** _pending_
+
+#### Add `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS`
+- **Status:** done
 - **Priority:** high
 - **Dependencies:** none (`_NSEdgeInsets` fix landed 2026-04-18 — `wkwebview.rkt`
   loads cleanly per Mini Browser task verification)
@@ -133,7 +178,15 @@ Runtime location: generation/targets/racket-oo/runtime/
   `generation/crates/emit-racket-oo/tests/runtime_load_test.rs`. Verify the
   harness passes with `RUNTIME_LOAD_TEST=1`. One-line harness edit; no emitter
   or runtime changes needed.
-- **Results:** _pending_
+- **Results (2026-04-18):** No code change required — the entry
+  `"generated/oo/webkit/wkwebview.rkt"` had already been added to
+  `LIBRARY_LOAD_CHECKS` in commit `1d03ede` (same commit wave that landed
+  the nullable-class-returns and naming-disambiguation changes). Grep
+  verified the line in place; `RUNTIME_LOAD_TEST=1 cargo test -p
+  apianyware-macos-emit-racket-oo --test runtime_load_test
+  runtime_load_libraries_via_dynamic_require` passes all 25 checks in
+  ~21s. Backlog task was stale. Matches the "grep source before filing
+  relocated backlog tasks" rule in memory.md.
 
 ### Future Work
 
@@ -164,7 +217,7 @@ Runtime location: generation/targets/racket-oo/runtime/
 - **Results:** _pending_
 
 #### Add Info.plist customization API to `bundle-racket-oo`
-- **Status:** not_started
+- **Status:** done
 - **Priority:** medium
 - **Dependencies:** none
 - **Promoted from:** "Add Racket `.app` bundler for distributable builds" follow-up
@@ -181,10 +234,23 @@ Runtime location: generation/targets/racket-oo/runtime/
   keys into the generated Info.plist after the base template is written. Add tests
   for key injection and override precedence.
 - **Scope:** `bundle-racket-oo/src/bundle.rs` only. No emitter changes required.
-- **Results:** _pending_
+- **Results (2026-04-18):** Added `plist = "1.7"` as workspace dep.
+  `AppSpec` gained an `info_plist_overrides: HashMap<String, plist::Value>`
+  field (default empty). After `create_app_bundle` emits the base
+  template, the new `merge_info_plist_overrides` helper parses the
+  generated plist, inserts each override key into the top-level
+  dictionary (so caller keys replace base-template keys of the same
+  name), and writes back via `plist::to_file_xml`. Empty-overrides path
+  skips the round-trip entirely, so the base template stays
+  byte-identical in the common case. New error variants
+  `InfoPlistMerge(plist::Error)` and `InfoPlistRootNotDict(PathBuf)`.
+  6 integration tests in `tests/info_plist_overrides.rs` — default
+  empty; string / boolean / array / dict value shapes; replace-existing;
+  byte-level preservation for the no-override path. All green; full
+  workspace test suite still green (no regressions).
 
 #### Implement stable signing identity for distributable `.app` bundles
-- **Status:** not_started
+- **Status:** done
 - **Priority:** medium
 - **Dependencies:** none (complements "Self-Contained App Bundling" below — bundles
   can be self-contained without stable signing, and vice versa)
@@ -205,7 +271,23 @@ Runtime location: generation/targets/racket-oo/runtime/
   shell-out to `security` and `codesign`. Does not affect bundle layout or Racket
   file copying. If a second language target begins bundling, extract the shared
   signing logic upward at that time rather than pre-emptively.
-- **Results:** _pending_
+- **Results (2026-04-18):** Two-stage signing. stub-launcher grew a
+  `codesign.rs` module exporting `codesign_path(path, identity)` that
+  shells out to `codesign --force --sign <identity> <path>`; error
+  variants `CodesignNotFound` and `CodesignFailed { path, identity,
+  stderr }` on `StubError`. `StubConfig` gained a
+  `signing_identity: Option<String>` field; `create_app_bundle` calls
+  `codesign_path` on the stub binary immediately after compile when set.
+  bundle-racket-oo's `AppSpec` gained the same field, propagated to
+  `StubConfig`; after lib/ is populated, `bundle_app_with_entry` re-signs
+  the full bundle via `codesign_path` so the signature covers Resources/
+  (without this second pass, `codesign --verify` rejects the bundle).
+  Tests: stub-launcher `codesign.rs` unit tests cover ad-hoc success and
+  bogus-identity failure; a new `bundle::create_app_bundle_applies_signing_identity_when_set`
+  integration test confirms the binary gets signed; bundle-racket-oo
+  `tests/signing_identity.rs` asserts `codesign --verify` passes on the
+  fully populated bundle. All 27 stub-launcher tests green, all
+  bundle-racket-oo tests green, full workspace suite clean.
 
 #### Developer Documentation
 - **Status:** not_started

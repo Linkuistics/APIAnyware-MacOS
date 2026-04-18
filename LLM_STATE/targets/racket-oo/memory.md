@@ -338,8 +338,20 @@ When overriding superclass methods, pull the type encoding string via `(method-t
 ### Struct-typed global constants use `ffi-obj-ref`
 Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dispatch_source_type_*`, geometry zero-constants) are emitted as `(define sym (ffi-obj-ref 'sym lib))` — returning the symbol's address. Non-struct constants keep `(get-ffi-obj 'sym lib type)` — dereferencing the symbol. The distinction is in `generate_constants_file` via `is_struct_data_symbol()`. Contract for struct globals is `cpointer?`. `constants.rkt` does not require `type-mapping.rkt` — struct globals use `ffi-obj-ref`, not a typed getter needing a cstruct. **Known gap (generator bug):** CF struct globals from CoreFoundation (`kCFTypeDictionaryKeyCallBacks`, `kCFTypeDictionaryValueCallBacks`) are NOT currently emitted — they are absent from the collected IR. Workaround: `(get-ffi-obj 'kCFTypeDictionaryKeyCallBacks (ffi-lib "CoreFoundation") _pointer)`. Core backlog task filed 2026-04-16.
 
-### `wkwebview.rkt` unbound `_NSEdgeInsets` (generator bug)
-`wkwebview.rkt` references `_NSEdgeInsets` (used in `WKWebView` geometry properties), which is defined and provided by `runtime/type-mapping.rkt`. The generator does not emit a conditional `(require ... type-mapping.rkt)` for `wkwebview.rkt` because `any_struct_type` in `shared_signatures.rs` does not detect `NSEdgeInsets` in WKWebView's property set. Root cause: `NSEdgeInsets` alias is missing from `is_known_geometry_struct` in `ffi_type_mapping.rs`. Fix: add `NSEdgeInsets` there; `any_struct_type` will then detect it and emit the require. Result: anything transitively importing `wkwebview.rkt` cannot load in isolation. **Workaround:** use raw `tell` instead of generated WKWebView bindings. When fixed, add `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS`.
+### `wkwebview.rkt` `_NSEdgeInsets` fix (landed 2026-04-18)
+`wkwebview.rkt` referenced `_NSEdgeInsets` without requiring `runtime/type-mapping.rkt`.
+Root cause: `NSEdgeInsets` was missing from `is_known_geometry_struct` in
+`ffi_type_mapping.rs`, so `any_struct_type` did not detect it and the conditional
+require was not emitted. Fixed by adding `NSEdgeInsets` to the allowlist. `wkwebview.rkt`
+now loads cleanly. Follow-up: add `wkwebview.rkt` to `LIBRARY_LOAD_CHECKS` (see backlog).
+
+### `nsscreen.rkt` duplicate definition (generator bug)
+`nsscreen.rkt` contains a duplicate `define` form that prevents the file from loading.
+`only-in` does not bypass this — module expansion fails before the filter applies.
+Workaround: use raw `tell` for NSScreen calls rather than importing `nsscreen.rkt`.
+Likely a property/method name collision; fix path mirrors the NSEvent `modifierFlags`
+class/instance collision resolved in commit `1d03ede`. See backlog task "Fix `nsscreen.rkt`
+duplicate definition". When fixed, add `nsscreen.rkt` to `LIBRARY_LOAD_CHECKS`.
 
 ### `make-dynamic-subclass` guards against duplicate registration
 `objc_allocateClassPair` returns NULL for a name already registered — subsequent `class_addMethod` would crash. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. Required for modules that register a subclass at load time and may be required twice in the same Racket VM.
