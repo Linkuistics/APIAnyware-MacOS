@@ -270,6 +270,19 @@ display-name default → `"UInt32"`, which the FFI mapper then doesn't recognize
 pipeline expects. Applies anywhere a typed typedef is the "underlying" of
 another type declaration.
 
+### `TypeRefKind::Alias` carries `underlying_primitive` for FFI width
+`TypeRefKind::Alias { name, framework, underlying_primitive: Option<String> }`
+stores the canonical primitive name (e.g., `"uint32"`, `"int64"`) produced by
+`enum_underlying_primitive()` in `type_mapping.rs` (see "Enum-typedef underlying
+type needs get_canonical_type"). The FFI mapper consults `underlying_primitive`
+for `Alias` kinds to select the correct width and signedness — without it,
+enum-typedef aliases silently map to a wrong-width FFI type. All ~37
+`TypeRefKind::Alias` construction sites supply this field; `None` is valid when
+no canonical primitive is determinable. Shared helper
+`racket_ffi_type_for_primitive` in `ffi_type_mapping.rs` converts the canonical
+name to an FFI type string and is called from both the `Alias` arm and the
+`Primitive` arm.
+
 ### Bundle walkers must use logical paths, not canonical paths
 When a language-target bundler walks an app's require/import graph to copy
 transitive dependencies, resolving each candidate via `canonicalize()` breaks
