@@ -17,6 +17,7 @@
 (define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide NSLock)
 (provide/contract
+  [make-nslock (c-> any/c)]
   [nslock-name (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nslock-set-name! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nslock-lock-before-date (c-> objc-object? (or/c string? objc-object? #f) boolean?)]
@@ -31,6 +32,13 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer -> _bool)))
 (define _msg-1  ; (_fun _pointer _pointer _id -> _bool)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _id -> _bool)))
+
+;; --- Constructors ---
+(define (make-nslock)
+  (wrap-objc-object
+   (tell (tell NSLock alloc) init)
+   #:retained #t))
+
 
 ;; --- Properties ---
 (define (nslock-name self)

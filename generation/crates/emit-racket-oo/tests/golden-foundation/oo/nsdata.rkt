@@ -19,6 +19,7 @@
 (define (range? v) (objc-instance-of? v "Range"))
 (provide NSData)
 (provide/contract
+  [make-nsdata (c-> any/c)]
   [nsdata-bytes (c-> objc-object? (or/c cpointer? #f))]
   [nsdata-description (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsdata-end-index (c-> objc-object? exact-integer?)]
@@ -35,6 +36,13 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer -> _pointer)))
 (define _msg-1  ; (_fun _pointer _pointer -> _uint64)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer -> _uint64)))
+
+;; --- Constructors ---
+(define (make-nsdata)
+  (wrap-objc-object
+   (tell (tell NSData alloc) init)
+   #:retained #t))
+
 
 ;; --- Properties ---
 (define (nsdata-bytes self)

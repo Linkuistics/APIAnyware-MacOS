@@ -18,6 +18,7 @@
 (define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide TKView)
 (provide/contract
+  [make-tkview (c-> any/c)]
   [tkview-title (c-> objc-object? (or/c nsstring? objc-nil?))]
   [tkview-set-title! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [tkview-hidden (c-> objc-object? boolean?)]
@@ -37,6 +38,13 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _bool -> _void)))
 (define _msg-1  ; (_fun _pointer _pointer _pointer -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer -> _void)))
+
+;; --- Constructors ---
+(define (make-tkview)
+  (wrap-objc-object
+   (tell (tell TKView alloc) init)
+   #:retained #t))
+
 
 ;; --- Properties ---
 (define (tkview-title self)

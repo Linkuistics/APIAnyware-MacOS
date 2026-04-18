@@ -19,6 +19,7 @@
 (define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide TKButton)
 (provide/contract
+  [make-tkbutton (c-> any/c)]
   [tkbutton-title (c-> objc-object? (or/c nsstring? objc-nil?))]
   [tkbutton-set-title! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [tkbutton-hidden (c-> objc-object? boolean?)]
@@ -42,6 +43,13 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _double _pointer -> _void)))
 (define _msg-2  ; (_fun _pointer _pointer _pointer -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer -> _void)))
+
+;; --- Constructors ---
+(define (make-tkbutton)
+  (wrap-objc-object
+   (tell (tell TKButton alloc) init)
+   #:retained #t))
+
 
 ;; --- Properties ---
 (define (tkbutton-title self)

@@ -13,7 +13,17 @@
 (define _objc-lib (ffi-lib "libobjc"))
 
 (provide NSObject)
+(provide/contract
+  [make-nsobject (c-> any/c)]
+  )
 
 ;; --- Class reference ---
 (import-class NSObject)
+
+;; --- Constructors ---
+(define (make-nsobject)
+  (wrap-objc-object
+   (tell (tell NSObject alloc) init)
+   #:retained #t))
+
 

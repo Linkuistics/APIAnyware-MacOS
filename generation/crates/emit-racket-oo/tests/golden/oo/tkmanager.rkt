@@ -17,6 +17,7 @@
 (define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide TKManager)
 (provide/contract
+  [make-tkmanager (c-> any/c)]
   [tkmanager-dealloc (c-> objc-object? void?)]
   [tkmanager-description (c-> objc-object? (or/c nsstring? objc-nil?))]
   )
@@ -25,6 +26,11 @@
 (import-class TKManager)
 
 ;; --- Constructors ---
+(define (make-tkmanager)
+  (wrap-objc-object
+   (tell (tell TKManager alloc) init)
+   #:retained #t))
+
 
 ;; --- Instance methods ---
 (define (tkmanager-dealloc self)

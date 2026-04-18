@@ -64,6 +64,27 @@ tasks should be filed directly against the owning per-target plan.
 - **Scope:** Add an IR-level annotation (e.g. a flag on `TypeRef` or a new `TypeRefKind` variant) marking types that are "ObjC objects via OS_OBJECT macro" rather than "genuine ObjC class declarations". Emitters can then auto-generate the cast for values obtained outside the normal message-send path. Alternatively, document the cast requirement prominently in the emitter contract so future targets don't rediscover it from scratch.
 - **Priority:** Low — only bites when a framework exposes a struct global whose declared type is OS_OBJECT-based (currently only libdispatch). The manual workaround (explicit cast at the call site) is well understood. Promote if a second framework triggers the same pattern.
 
+### CF struct globals from CoreFoundation absent from collected IR `[collection]` `[low]`
+- **Surfaced by:** racket-oo Note Editor app (2026-04-18). Promoted from racket-oo
+  backlog 2026-04-18: per the 2026-04-18 scope boundary, collection-side gaps
+  belong in core.
+- **Symptom:** `kCFTypeDictionaryKeyCallBacks` and `kCFTypeDictionaryValueCallBacks`
+  (and similar CF struct globals) are absent from the collected IR — they are not
+  emitted to the per-language `constants.rkt` (or equivalent) by any emitter.
+  Current racket-oo workaround: raw `get-ffi-obj` call in app code.
+- **Suspected root cause:** TBD — extractor likely skips struct-typed globals at
+  some point in the visitor (or libclang surfaces them via a USR form the existing
+  filters drop). The broader `TypeRefKind::Struct` emit path already exists and works
+  for geometry constants like `NSZeroPoint`/`NSEdgeInsetsZero`; once these symbols
+  enter the IR, downstream emitters will pick them up via the existing
+  `is_struct_data_symbol` branch in the racket-oo constants emitter.
+- **Scope:** Investigate why the extractor misses these CF struct globals and add
+  them to the IR so per-language constants emitters can render them as
+  `ffi-obj-ref` (or equivalent struct-data references). Audit blast radius across
+  CoreFoundation and adjacent frameworks before merging — there may be a broader
+  family of `kCF*CallBacks`-style struct globals.
+- **Results:** _pending_
+
 #### Emit protocol-inherited methods on class bindings
 - **Status:** not_started
 - **Priority:** medium

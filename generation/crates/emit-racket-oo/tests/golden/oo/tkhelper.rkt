@@ -17,6 +17,7 @@
 (define (nsstring? v) (objc-instance-of? v "NSString"))
 (provide TKHelper)
 (provide/contract
+  [make-tkhelper (c-> any/c)]
   [tkhelper-dealloc (c-> objc-object? void?)]
   [tkhelper-description (c-> objc-object? (or/c nsstring? objc-nil?))]
   )
@@ -25,6 +26,11 @@
 (import-class TKHelper)
 
 ;; --- Constructors ---
+(define (make-tkhelper)
+  (wrap-objc-object
+   (tell (tell TKHelper alloc) init)
+   #:retained #t))
+
 
 ;; --- Instance methods ---
 (define (tkhelper-dealloc self)

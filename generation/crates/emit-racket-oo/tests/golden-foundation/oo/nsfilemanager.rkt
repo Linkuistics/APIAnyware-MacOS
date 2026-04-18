@@ -23,6 +23,7 @@
 (define (nsurl? v) (objc-instance-of? v "NSURL"))
 (provide NSFileManager)
 (provide/contract
+  [make-nsfilemanager (c-> any/c)]
   [nsfilemanager-current-directory-path (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsfilemanager-default-manager (c-> (or/c nsfilemanager? objc-nil?))]
   [nsfilemanager-delegate (c-> objc-object? any/c)]
@@ -136,6 +137,13 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _uint64 _uint64 -> _id)))
 (define _msg-21  ; (_fun _pointer _pointer _uint64 _uint64 _id _bool _pointer -> _id)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _uint64 _uint64 _id _bool _pointer -> _id)))
+
+;; --- Constructors ---
+(define (make-nsfilemanager)
+  (wrap-objc-object
+   (tell (tell NSFileManager alloc) init)
+   #:retained #t))
+
 
 ;; --- Properties ---
 (define (nsfilemanager-current-directory-path self)

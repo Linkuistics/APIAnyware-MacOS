@@ -23,6 +23,7 @@
 (define (nstimezone? v) (objc-instance-of? v "NSTimeZone"))
 (provide NSDateFormatter)
 (provide/contract
+  [make-nsdateformatter (c-> any/c)]
   [nsdateformatter-am-symbol (c-> objc-object? (or/c nsstring? objc-nil?))]
   [nsdateformatter-set-am-symbol! (c-> objc-object? (or/c string? objc-object? #f) void?)]
   [nsdateformatter-pm-symbol (c-> objc-object? (or/c nsstring? objc-nil?))]
@@ -136,6 +137,13 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _pointer _pointer _id _NSRange _pointer -> _bool)))
 (define _msg-11  ; (_fun _pointer _pointer _uint64 -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _uint64 -> _void)))
+
+;; --- Constructors ---
+(define (make-nsdateformatter)
+  (wrap-objc-object
+   (tell (tell NSDateFormatter alloc) init)
+   #:retained #t))
+
 
 ;; --- Properties ---
 (define (nsdateformatter-am-symbol self)

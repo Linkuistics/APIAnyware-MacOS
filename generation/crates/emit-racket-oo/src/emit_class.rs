@@ -21,7 +21,7 @@ use crate::method_filter::{
 };
 use crate::naming::{
     make_class_method_name, make_class_property_getter_name, make_class_property_setter_name,
-    make_method_name, make_property_getter_name, make_property_setter_name,
+    make_constructor_name, make_method_name, make_property_getter_name, make_property_setter_name,
     make_unique_constructor_name,
 };
 use crate::shared_signatures::{
@@ -161,10 +161,14 @@ pub fn generate_class_file(cls: &Class, framework: &str) -> String {
     emit_shared_msg_bindings(&mut w, &sig_map);
 
     // Constructors
-    if !init_methods.is_empty() {
+    let needs_default_constructor = !has_explicit_constructor(&init_methods);
+    if !init_methods.is_empty() || needs_default_constructor {
         w.line(";; --- Constructors ---");
         for m in &init_methods {
             emit_constructor(&mut w, &cls.name, m, &sig_map, &mapper);
+        }
+        if needs_default_constructor {
+            emit_default_constructor(&mut w, &cls.name);
         }
         w.blank_line();
     }
@@ -455,6 +459,16 @@ fn build_export_contracts(
         exports.push(ExportContract { name, contract });
     }
 
+    // Synthesized default constructor: (-> any/c) when no explicit init in IR.
+    // 73% of classes inherit -init from NSObject without overriding it; without
+    // synthesis those classes have no constructor and callers must drop into
+    // objc-interop's alloc+init escape hatch.
+    if !has_explicit_constructor(init_methods) {
+        let name = make_constructor_name(&cls.name);
+        let contract = format_arrow_contract(&[], "any/c");
+        exports.push(ExportContract { name, contract });
+    }
+
     // Properties
     for p in properties {
         let disambig = p.class_property && class_property_disambig.contains(&p.name);
@@ -634,6 +648,28 @@ fn emit_shared_msg_bindings(w: &mut CodeWriter, sig_map: &SignatureMap) {
 }
 
 // --- Constructors ---
+
+/// True when at least one init method in the IR would be emitted as an
+/// explicit `make-<class>-<selector>` constructor. Bare `init` is excluded
+/// because `emit_constructor` skips it; unsupported selectors (Swift parens,
+/// variadic, etc.) are also excluded so the emit-time skip stays in sync.
+fn has_explicit_constructor(init_methods: &[&Method]) -> bool {
+    init_methods
+        .iter()
+        .any(|m| is_supported_method(m) && m.selector != "init")
+}
+
+/// Emit a synthesized default constructor for a class whose IR carries no
+/// explicit init beyond bare `-init`. Calls the inherited NSObject
+/// `[Class alloc] init]` and wraps with the +1-retained finalizer plumbing.
+fn emit_default_constructor(w: &mut CodeWriter, class_name: &str) {
+    let fn_name = make_constructor_name(class_name);
+    write_line!(w, "(define ({fn_name})");
+    w.line("  (wrap-objc-object");
+    write_line!(w, "   (tell (tell {} alloc) init)", class_name);
+    w.line("   #:retained #t))");
+    w.blank_line();
+}
 
 fn emit_constructor(
     w: &mut CodeWriter,
@@ -1814,7 +1850,123 @@ mod tests {
     }
 
     #[test]
+    fn test_default_constructor_synthesized_when_no_init_in_ir() {
+        // Class with no init methods at all (e.g. NSAlert) should get a
+        // synthesized default constructor make-<class> so callers don't
+        // need to drop into objc-interop's alloc+init escape hatch.
+        let cls = Class {
+            name: "TKAlert".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "messageText",
+                false,
+                false,
+                vec![],
+                type_id(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        assert!(
+            output.contains("(define (make-tkalert)"),
+            "Default constructor definition. Output:\n{output}"
+        );
+        assert!(
+            output.contains("(tell (tell TKAlert alloc) init)"),
+            "Default constructor body. Output:\n{output}"
+        );
+        assert!(
+            output.contains("[make-tkalert (c-> any/c)]"),
+            "Default constructor contract. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_default_constructor_synthesized_when_only_bare_init() {
+        // Class with only the bare `init` selector in IR should get the
+        // default constructor — `init` is currently skipped by the explicit
+        // emit path, so without synthesis there'd be no constructor at all.
+        let cls = Class {
+            name: "TKBareInit".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method("init", false, true, vec![], type_id())],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        assert!(
+            output.contains("(define (make-tkbareinit)"),
+            "Default constructor synthesized for bare-init-only class. Output:\n{output}"
+        );
+        assert!(
+            output.contains("[make-tkbareinit (c-> any/c)]"),
+            "Default constructor contract. Output:\n{output}"
+        );
+    }
+
+    #[test]
+    fn test_default_constructor_suppressed_when_explicit_init_exists() {
+        // Class with an explicit init (e.g. NSView's initWithFrame:) should
+        // NOT get the synthesized default — the explicit init's signature is
+        // the canonical construction path and bare alloc+init may be wrong.
+        let cls = Class {
+            name: "TKView".to_string(),
+            superclass: String::new(),
+            protocols: vec![],
+            properties: vec![],
+            methods: vec![make_test_method(
+                "initWithFrame:",
+                false,
+                true,
+                vec![Param {
+                    name: "frame".to_string(),
+                    param_type: TypeRef {
+                        nullable: false,
+                        kind: TypeRefKind::Alias {
+                            name: "NSRect".into(),
+                            framework: None,
+                            underlying_primitive: None,
+                        },
+                    },
+                }],
+                type_id(),
+            )],
+            category_methods: vec![],
+            ancestors: vec![],
+            all_methods: vec![],
+            all_properties: vec![],
+        };
+        let output = generate_class_file(&cls, "TestKit");
+        assert!(
+            !output.contains("(define (make-tkview)"),
+            "Default constructor must NOT be emitted alongside explicit init. Output:\n{output}"
+        );
+        assert!(
+            !output.contains("[make-tkview (c->"),
+            "Default constructor contract must NOT be exported. Output:\n{output}"
+        );
+        // Explicit-init constructor still emitted as before
+        assert!(
+            output.contains("[make-tkview-init-with-frame (c-> any/c any/c)]"),
+            "Explicit init constructor still emitted. Output:\n{output}"
+        );
+    }
+
+    #[test]
     fn test_empty_class_provide() {
+        // A class with no methods or properties still gets the synthesized
+        // default constructor — `[Class alloc] init]` is always callable on
+        // an ObjC class via the inherited NSObject -init. Therefore the
+        // class name AND the default constructor are exported.
         let cls = Class {
             name: "TKEmpty".to_string(),
             superclass: String::new(),
@@ -1832,12 +1984,8 @@ mod tests {
             "Empty class should export class name. Output:\n{output}"
         );
         assert!(
-            !output.contains("(provide/contract"),
-            "Empty class should not emit provide/contract. Output:\n{output}"
-        );
-        assert!(
-            !output.contains("provide/contract"),
-            "No contracts for empty class"
+            output.contains("[make-tkempty (c-> any/c)]"),
+            "Empty class still gets the default constructor. Output:\n{output}"
         );
     }
 

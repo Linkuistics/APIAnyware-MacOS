@@ -43,7 +43,6 @@
          "../../generated/oo/foundation/nsnotificationcenter.rkt"
          "../../generated/oo/webkit/wkwebview.rkt"
          "../../runtime/objc-base.rkt"
-         "../../runtime/objc-interop.rkt"
          "../../runtime/type-mapping.rkt"
          "../../runtime/coerce.rkt"
          "../../runtime/delegate.rkt"
@@ -375,16 +374,11 @@
     #t))
 
 ;; --- Unsaved-changes confirmation ---
-;; Manual NSAlert construction (NSAlert doesn't emit an init
-;; constructor in the current bindings). `alloc+init` returns a +1
-;; retained pointer; wrap-objc-object with #:retained #t prevents the
-;; finalizer from double-retaining.
 (define (confirm-discard? message)
   (cond
     [(not dirty?) #t]
     [else
-     (define raw (tell (tell NSAlert alloc) init))
-     (define alert (wrap-objc-object raw #:retained #t))
+     (define alert (make-nsalert))
      (nsalert-set-alert-style! alert NSAlertStyleWarning)
      (nsalert-set-message-text! alert message)
      (nsalert-set-informative-text! alert

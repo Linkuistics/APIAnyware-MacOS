@@ -18,6 +18,7 @@
 (define (nsstatusitem? v) (objc-instance-of? v "NSStatusItem"))
 (provide NSStatusBar)
 (provide/contract
+  [make-nsstatusbar (c-> any/c)]
   [nsstatusbar-system-status-bar (c-> (or/c nsstatusbar? objc-nil?))]
   [nsstatusbar-thickness (c-> objc-object? real?)]
   [nsstatusbar-vertical (c-> objc-object? boolean?)]
@@ -36,6 +37,13 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer -> _double)))
 (define _msg-2  ; (_fun _pointer _pointer _double -> _id)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _double -> _id)))
+
+;; --- Constructors ---
+(define (make-nsstatusbar)
+  (wrap-objc-object
+   (tell (tell NSStatusBar alloc) init)
+   #:retained #t))
+
 
 ;; --- Properties ---
 (define (nsstatusbar-system-status-bar)

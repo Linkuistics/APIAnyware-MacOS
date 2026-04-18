@@ -18,6 +18,7 @@
 (define (nsnotificationcenter? v) (objc-instance-of? v "NSNotificationCenter"))
 (provide NSNotificationCenter)
 (provide/contract
+  [make-nsnotificationcenter (c-> any/c)]
   [nsnotificationcenter-default-center (c-> (or/c nsnotificationcenter? objc-nil?))]
   [nsnotificationcenter-add-observer-selector-name-object! (c-> objc-object? (or/c string? objc-object? #f) string? (or/c string? objc-object? #f) (or/c string? objc-object? #f) void?)]
   [nsnotificationcenter-add-observer-for-name-object-queue-using-block! (c-> objc-object? (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c string? objc-object? #f) (or/c procedure? #f) any/c)]
@@ -36,6 +37,13 @@
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _id _id _id _pointer -> _id)))
 (define _msg-1  ; (_fun _pointer _pointer _id _pointer _id _id -> _void)
   (get-ffi-obj "objc_msgSend" _objc-lib (_fun _pointer _pointer _id _pointer _id _id -> _void)))
+
+;; --- Constructors ---
+(define (make-nsnotificationcenter)
+  (wrap-objc-object
+   (tell (tell NSNotificationCenter alloc) init)
+   #:retained #t))
+
 
 ;; --- Properties ---
 (define (nsnotificationcenter-default-center)
