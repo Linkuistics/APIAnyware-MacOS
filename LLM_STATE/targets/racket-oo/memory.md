@@ -271,8 +271,8 @@ Create `apps/<name>/<name>.rkt` and `knowledge/apps/<name>/spec.md` with `# <Dis
 ### Accessibility menu drill-down needs a mouse click
 `guivision agent snapshot --window "Menu Bar"` only surfaces the top-level menu items (Apple, app-name). The submenu is not in the accessibility tree until the menu opens. To verify the full menu content, click the menu title via VNC (`guivision input click --connect spec.json X Y`) then `screenshot` the region. The agent's `press --role menu-item --label "Counter"` query returns `No element found matching query` because accessibility doesn't treat menu bar items as directly-pressable in the default snapshot mode.
 
-### GUIVisionVMDriver per-VM connection spec (supports multiple VMs)
-As of 2026-04-18, `vm-start.sh` writes a per-VM spec to
+### GUIVisionVMDriver uses per-VM connection spec
+`vm-start.sh` writes a per-VM spec to
 `$XDG_STATE_HOME/guivision/vms/<id>.json` (default:
 `~/.local/state/guivision/vms/<id>.json`), so multiple VMs can run
 concurrently with distinct ids. The old single `~/.guivision/connect.json`
@@ -409,7 +409,7 @@ Sign the stub binary before copying `Resources/` (first pass), then re-sign the 
 `plist::to_file_xml` output is not byte-identical to Apple's `PlistBuddy`. `merge_info_plist_overrides` in `bundle-racket-oo` skips the read-modify-write cycle entirely when `info_plist_overrides` is empty to avoid spurious diffs.
 
 ### Accessibility set-value fails for NSStackView-hosted textfields
-The GUIVisionVMDriver accessibility agent's set-value path cannot reach textfields nested inside `NSStackView` containers. VNC keyboard input is the correct path for address-bar interaction tests. Concrete symptoms (2026-04-18, Tahoe): `set-value --role textfield --window ...` returns `Multiple elements matched`; retrying with `--index 0` returns `No element found matching query`. Use `input click` (screen-absolute coords, triple-click for select-all) followed by `input type` + `input key return`.
+The GUIVisionVMDriver accessibility agent's set-value path cannot reach textfields nested inside `NSStackView` containers. VNC keyboard input is the correct path for address-bar interaction tests. Concrete symptoms on Tahoe: `set-value --role textfield --window ...` returns `Multiple elements matched`; retrying with `--index 0` returns `No element found matching query`. Use `input click` (screen-absolute coords, triple-click for select-all) followed by `input type` + `input key return`.
 
 ### `guivision input click --window` coord offset on Tahoe
 The `--window <name>` flag on `guivision input click` translates window-relative coords via the AX-reported window origin, which includes the window's drop-shadow inset. On Tahoe this produces VNC click coords roughly 40 px below the intended target (confirmed: a textfield whose AX center is window-rel (567, 97) translated to VNC screen (679, 139) but the visible center in a full-screen VNC screenshot was (564, 99)). Use screen-absolute VNC coords derived from a full-screen screenshot, not `--window`-relative. Measure once per test, reuse for the session.
