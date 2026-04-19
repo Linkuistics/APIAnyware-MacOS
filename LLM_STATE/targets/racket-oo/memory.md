@@ -335,7 +335,7 @@ Constants whose IR type is `TypeRefKind::Struct` (e.g. `_dispatch_main_q`, `_dis
 `NSEdgeInsets` was missing from `is_known_geometry_struct` in `ffi_type_mapping.rs`, causing `any_struct_type` to miss it and the conditional `type-mapping.rkt` require to be omitted from `wkwebview.rkt`. Fixed by adding `NSEdgeInsets` to the allowlist. `wkwebview.rkt` is in `LIBRARY_LOAD_CHECKS`.
 
 ### `make-dynamic-subclass` guards against duplicate registration
-`objc_allocateClassPair` returns NULL for a name already registered — subsequent `class_addMethod` would crash. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. Required for modules that register a subclass at load time and may be required twice in the same Racket VM.
+`objc_allocateClassPair` returns NULL for a name already registered — `class_addMethod(NULL, ...)` crashes. `make-dynamic-subclass` guards by returning the existing class via `objc_getClass` first. `class_addMethod` on an already-registered class (non-NULL) is a libobjc no-op, not an error, so re-requiring a module that calls `make-dynamic-subclass` at load time is safe.
 
 ### Record typedefs extract to `TypeRefKind::Struct`
 `map_typedef` in `extract-objc` emits `TypeRefKind::Struct { name }` (not `Alias`) for `TypeKind::Record` typedefs. Enables `is_struct_data_symbol` in the constants emitter to recognize CF struct globals (`kCFTypeDictionaryKeyCallBacks`, `NSInt*CallBacks`, geometry zero-constants like `NSZeroPoint`/`NSEdgeInsetsZero`) and emit `ffi-obj-ref` instead of `get-ffi-obj`. Requires re-collect to propagate.
@@ -434,8 +434,14 @@ Protocol files generate `make-<proto>` delegate factory functions. No Racket `in
 ### `make-dynamic-subclass` is the only genuine OO mechanism
 All ObjC subclassing goes through `dynamic-class.rkt`'s `make-dynamic-subclass`. It is the single use case in the target that resembles class-based OO — everything else is flat message-passing. See "`dynamic-class.rkt` exports libobjc subclass surface".
 
-### Option B recommended for ObjC subclassing: `objc-subclass` macro
-A focused `objc-subclass` macro layered over `make-dynamic-subclass` (option B) is preferred over full `class*` migration (option A) or renaming the target (option D). Keeps the flat generated API unchanged while giving the subclassing use case a cleaner surface. Full analysis in `docs/specs/2026-04-19-racket-oo-class-system-analysis.md`.
+### `objc-subclass` macro is the ObjC subclassing surface
+`runtime/objc-subclass.rkt` implements Option B: `define-objc-subclass` layered over `make-dynamic-subclass`. Eliminates manual IMP/fptr assembly, GC pinning, and superclass encoding lookup. The `(self SEL)` prefix is handled automatically; user lambdas receive args without SEL. IMPs are pinned module-level against GC. Use `#:arg-types`/`#:ret-type` for unsupported struct/union/bitfield types. Constructor synthesis (`make-<class>`) is deliberately absent — inferring inherited init FFI signatures at expansion time would drift per superclass. `drawing-canvas.rkt` is the canonical consumer. Design rationale in `docs/specs/2026-04-19-racket-oo-class-system-analysis.md`.
+
+### ObjC encoding strings interleave stack-offset digits
+Stack-offset digits appear between type tokens in ObjC encoding strings (e.g. `q8@0:4`). The parser in `objc-subclass.rkt` must skip numeric characters explicitly between tokens. Struct and union tokens (`{...}` / `(...)`) require balanced-delimiter parsing, not simple character dispatch — e.g. `{CGRect={CGPoint=dd}{CGSize=dd}}` nests arbitrarily deep.
+
+### `syntax-parse` `~?` for optional keyword macro syntax
+`~?` in `syntax-parse` pattern templates collapses an absent keyword clause to a sentinel value without nested `if`. Used in `define-objc-subclass` for `#:arg-types`/`#:ret-type` optional keywords — the preferred approach for optional keyword syntax in macros.
 
 ### Default constructor `make-<class>` synthesized for init-less classes
 The emitter synthesizes `(define (make-<class>) (wrap-objc-object (tell (tell <Class> alloc) init) #:retained #t))` for any class whose IR lacks an explicit init beyond bare `init`. Covers ~73% of all generated classes (5,304 total: 54% no init at all, 19% bare-init-only). Suppressed when at least one explicit init exists (e.g. NSWindow keeps only `make-nswindow-init-with-content-rect-...`). The synthesis trigger lives in `has_explicit_constructor` in `emit_class.rs` and mirrors the long-standing emit-time skip on `m.selector == "init"`. Examples that previously required the `objc-interop.rkt` escape hatch and now have a direct constructor: NSAlert, NSColorPanel, NSStackView, NSSavePanel, NSOpenPanel, NSFileManager.
