@@ -50,6 +50,7 @@ const RUNTIME_FILES: &[&str] = &[
     "nsview-helpers.rkt",
     "objc-base.rkt",
     "objc-interop.rkt",
+    "objc-subclass.rkt",
     "spi-helpers.rkt",
     "swift-helpers.rkt",
     "type-mapping.rkt",
@@ -147,6 +148,7 @@ const LIBRARY_LOAD_CHECKS: &[&str] = &[
     "runtime/ax-helpers.rkt",
     "runtime/cgevent-helpers.rkt",
     "runtime/objc-interop.rkt",
+    "runtime/objc-subclass.rkt",
     "runtime/spi-helpers.rkt",
 ];
 
@@ -461,6 +463,148 @@ fn runtime_block_nil_guard() {
     if !output.status.success() {
         panic!(
             "make-objc-block nil guard test failed.\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+
+    eprintln!("{}", String::from_utf8_lossy(&output.stdout).trim_end());
+}
+
+#[test]
+fn runtime_objc_subclass_macro() {
+    if skip_unless_enabled("runtime_objc_subclass_macro") {
+        return;
+    }
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    copy_runtime(&temp.path().join("runtime")).expect("copy runtime");
+    copy_lib(&temp.path().join("lib")).expect("copy lib");
+
+    // Exercises define-objc-subclass end-to-end: zero-arg method (hash,
+    // returns NSUInteger) and one-arg method (isEqual:, object→BOOL) on
+    // the same subclass of NSObject. Both paths must:
+    //   - register the class under the requested name
+    //   - wire the IMP via the correct _cprocedure signature (inferred
+    //     from the superclass's own ObjC type-encoding)
+    //   - execute the user lambda when called via objc_msgSend
+    //
+    // NSObject is the only superclass available without also pulling in
+    // AppKit; both overridden selectors are defined on NSObject itself so
+    // the superclass lookup always succeeds. Running with inferred types
+    // also exercises the ObjC encoding parser: "Q24@0:8" (hash) and
+    // "B32@0:8@16" (isEqual:) must tokenise correctly.
+    let script = "\
+#lang racket/base
+(require ffi/unsafe
+         \"runtime/dynamic-class.rkt\"
+         \"runtime/objc-subclass.rkt\")
+
+(define hash-called? #f)
+(define isEqual-arg #f)
+
+(define-objc-subclass APIAnywareSubclassMacroTest NSObject
+  [(hash)
+    (lambda (self)
+      (set! hash-called? #t)
+      99)]
+  [(isEqual:)
+    (lambda (self other)
+      (set! isEqual-arg other)
+      #t)])
+
+;; 1. Class is registered under the requested name.
+(unless (objc-get-class \"APIAnywareSubclassMacroTest\")
+  (eprintf \"FAIL: APIAnywareSubclassMacroTest not registered~n\")
+  (exit 1))
+
+;; 2. Instantiate via raw objc_msgSend — the macro does not synthesize a
+;; constructor; alloc+init is inherited from NSObject.
+(define objc-lib (ffi-lib \"libobjc\"))
+(define msg->ptr
+  (get-ffi-obj \"objc_msgSend\" objc-lib
+               (_fun _pointer _pointer -> _pointer)))
+(define msg->u64
+  (get-ffi-obj \"objc_msgSend\" objc-lib
+               (_fun _pointer _pointer -> _uint64)))
+(define msg-isEqual
+  (get-ffi-obj \"objc_msgSend\" objc-lib
+               (_fun _pointer _pointer _pointer -> _bool)))
+(define sel-reg
+  (get-ffi-obj \"sel_registerName\" objc-lib
+               (_fun _string -> _pointer)))
+
+(define cls APIAnywareSubclassMacroTest)
+(define instance
+  (msg->ptr (msg->ptr cls (sel-reg \"alloc\")) (sel-reg \"init\")))
+(unless instance
+  (eprintf \"FAIL: alloc+init returned NULL~n\") (exit 1))
+
+;; 3. Call [instance hash] — expected 99, with side-effect on hash-called?.
+(define h (msg->u64 instance (sel-reg \"hash\")))
+(unless (= h 99)
+  (eprintf \"FAIL: expected hash=99, got ~a~n\" h) (exit 1))
+(unless hash-called?
+  (eprintf \"FAIL: hash handler not invoked~n\") (exit 1))
+
+;; 4. Call [instance isEqual:instance] — expected #t, with side-effect
+;; capturing the `other` arg. The arg arrives as a raw cpointer (matches
+;; the declared _pointer FFI type in the override).
+(define eq-result (msg-isEqual instance (sel-reg \"isEqual:\") instance))
+(unless eq-result
+  (eprintf \"FAIL: expected isEqual=#t, got ~a~n\" eq-result) (exit 1))
+(unless (and isEqual-arg (ptr-equal? isEqual-arg instance))
+  (eprintf \"FAIL: isEqual arg not captured as instance pointer; got ~a~n\" isEqual-arg)
+  (exit 1))
+
+;; 5. Idempotency: re-evaluating define-objc-subclass with the same ObjC
+;; class name must not fail — make-dynamic-subclass returns the existing
+;; class. A module top-level (define name ...) cannot appear twice, so
+;; the re-use is checked inside a let so the inner define is a local
+;; binding. The live IMP stays the original one because libobjc forbids
+;; class_addMethod after registration; the correct response to a module
+;; re-require is exactly this no-op.
+(let ()
+  (define-objc-subclass APIAnywareSubclassMacroTest NSObject
+    [(hash) (lambda (self) 123)])
+  (unless (objc-get-class \"APIAnywareSubclassMacroTest\")
+    (eprintf \"FAIL: idempotent re-define lost the class~n\") (exit 1))
+  ;; Old IMP still wins — libobjc rejects add-method after registration.
+  (define h2 (msg->u64 instance (sel-reg \"hash\")))
+  (unless (= h2 99)
+    (eprintf \"FAIL: re-define should not replace live IMP; got ~a~n\" h2)
+    (exit 1)))
+
+;; 6. Keyword-based explicit override — verify #:ret-type bypasses inference.
+;; The override form exists so unusual types (unions, bitfields, non-
+;; geometry structs not in the known-structs table) can still be expressed.
+;; Here the override is redundant (inference would pick _uint64 anyway) but
+;; the check is that the macro's shape with #:ret-type parses and runs.
+(let ()
+  (define-objc-subclass APIAnywareSubclassExplicitOverride NSObject
+    [(hash) #:ret-type _uint64 (lambda (self) 55)])
+  (define inst-o
+    (msg->ptr (msg->ptr APIAnywareSubclassExplicitOverride (sel-reg \"alloc\"))
+              (sel-reg \"init\")))
+  (define h-o (msg->u64 inst-o (sel-reg \"hash\")))
+  (unless (= h-o 55)
+    (eprintf \"FAIL: explicit-override hash=~a, expected 55~n\" h-o)
+    (exit 1)))
+
+(printf \"OK: define-objc-subclass — 6 checks passed~n\")
+";
+
+    let script_path = temp.path().join("__objc_subclass_test.rkt");
+    std::fs::write(&script_path, script).expect("write objc-subclass test script");
+
+    let output = Command::new("racket")
+        .arg(&script_path)
+        .output()
+        .expect("invoke racket");
+
+    if !output.status.success() {
+        panic!(
+            "objc-subclass macro test failed.\n--- stdout ---\n{}\n--- stderr ---\n{}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr),
         );

@@ -17,7 +17,7 @@
 
 (require ffi/unsafe
          ;; ffi/unsafe/objc supplies sel_registerName, needed only for the
-         ;; dynamic-subclass alloc/init dance. _SEL and objc-get-class
+         ;; alloc/init dance on the dynamic class. _SEL and objc-get-class
          ;; collide with dynamic-class.rkt; except-in prefers the
          ;; runtime's versions.
          (except-in ffi/unsafe/objc _SEL objc-get-class)
@@ -47,11 +47,7 @@
          "../../runtime/delegate.rkt"
          "../../runtime/app-menu.rkt"
          "../../runtime/nsevent-helpers.rkt"
-         (only-in "../../runtime/dynamic-class.rkt"
-                  objc-get-class
-                  make-dynamic-subclass
-                  get-instance-method
-                  method-type-encoding))
+         "../../runtime/objc-subclass.rkt")
 
 ;; --- Constants (not yet extracted by collector) ---
 ;; NSWindowStyleMask
@@ -127,49 +123,7 @@
   (set! drawing? #f)
   (set! current-points '()))
 
-;; --- drawRect: / mouse IMPs ---
-;;
-;; Module-level `define`s for both the Racket proc AND the function-ptr
-;; are required — a closure-local binding would be GC'd and the ObjC
-;; dispatch would trampoline through freed memory.
-
-;; drawRect: signature → void (id self, SEL sel, NSRect dirty)
-;;
-;; TODO (learning-mode contribution):
-;; Render `strokes` into the CGContext pulled from the current
-;; NSGraphicsContext. For each stroke:
-;;   - set RGB stroke color and line width from the stroke vector
-;;   - begin a path, move to the first point, add lines to the rest
-;;   - stroke the path
-;; Single-point strokes (mouseDown with no drag) need special handling —
-;; CGContextStrokePath on a single point draws nothing. Options: (a) skip
-;; them, (b) draw a filled circle, (c) add a zero-length second point.
-;; Using `CGContextSetLineCap` with `kCGLineCapRound` + approach (c) gives
-;; a dot at the click location for free.
-;;
-;; Helpful bindings already imported:
-;;   nsgraphicscontext-current-context    — current NSGraphicsContext
-;;   nsgraphicscontext-cg-context         — extract CGContextRef (cpointer)
-;;   CGContextSetRGBStrokeColor           — ctx r g b a → void
-;;   CGContextSetLineWidth                — ctx width → void
-;;   CGContextSetLineCap                  — ctx cap-enum → void
-;;   CGContextSetLineJoin                 — ctx join-enum → void
-;;   CGContextBeginPath                   — ctx → void
-;;   CGContextMoveToPoint                 — ctx x y → void
-;;   CGContextAddLineToPoint              — ctx x y → void
-;;   CGContextStrokePath                  — ctx → void
-;;
-;; Stroke vector layout: #(r g b width points)
-;;   r, g, b   — real in [0,1]
-;;   width     — real
-;;   points    — list of (cons x y) in order from first to last
-(define (draw-rect-impl self sel rect)
-  (with-handlers ([exn:fail? (lambda (e)
-                               (eprintf "drawRect: error: ~a\n" (exn-message e)))])
-    (define gc (nsgraphicscontext-current-context))
-    (when gc
-      (define ctx (nsgraphicscontext-cg-context gc))
-      (render-strokes ctx strokes))))
+;; --- Stroke rendering ---
 
 ;; Iterate strokes, rendering each as a stroked polyline. Per-stroke
 ;; color/width forces one BeginPath/StrokePath pair per stroke — they
@@ -207,68 +161,53 @@
            (CGContextAddLineToPoint ctx (car pt) (cdr pt)))])
       (CGContextStrokePath ctx))))
 
-(define draw-rect-fptr
-  (function-ptr draw-rect-impl
-                (_cprocedure (list _pointer _pointer _NSRect) _void)))
-
-;; Mouse handlers: void (id self, SEL sel, id nsevent).
-;; Event -> view-local point: locationInWindow is in window coords.
-;; Passing fromView: #f converts from window coords to the receiver's
-;; coordinate system (NSView default: bottom-left origin, unflipped).
+;; Event → view-local point. locationInWindow is in window coords;
+;; passing fromView: #f converts to the receiver's own coord system
+;; (NSView default: bottom-left origin, unflipped).
 (define (event->view-point self event)
   (define window-pt (nsevent-location-in-window event))
   (nsview-convert-point-from-view (borrow-objc-object self) window-pt #f))
 
-(define (mouse-down-impl self sel event)
-  (with-handlers ([exn:fail? (lambda (e)
-                               (eprintf "mouseDown: error: ~a\n" (exn-message e)))])
-    (define pt (event->view-point self event))
-    (start-stroke! (NSPoint-x pt) (NSPoint-y pt))
-    (nsview-set-needs-display! (borrow-objc-object self) #t)))
-
-(define (mouse-dragged-impl self sel event)
-  (with-handlers ([exn:fail? (lambda (e)
-                               (eprintf "mouseDragged: error: ~a\n" (exn-message e)))])
-    (define pt (event->view-point self event))
-    (extend-stroke! (NSPoint-x pt) (NSPoint-y pt))
-    (nsview-set-needs-display! (borrow-objc-object self) #t)))
-
-(define (mouse-up-impl self sel event)
-  (with-handlers ([exn:fail? (lambda (e)
-                               (eprintf "mouseUp: error: ~a\n" (exn-message e)))])
-    (end-stroke!)
-    (nsview-set-needs-display! (borrow-objc-object self) #t)))
-
-(define mouse-down-fptr
-  (function-ptr mouse-down-impl
-                (_cprocedure (list _pointer _pointer _pointer) _void)))
-(define mouse-dragged-fptr
-  (function-ptr mouse-dragged-impl
-                (_cprocedure (list _pointer _pointer _pointer) _void)))
-(define mouse-up-fptr
-  (function-ptr mouse-up-impl
-                (_cprocedure (list _pointer _pointer _pointer) _void)))
-
-;; --- DrawingCanvasView class registration ---
+;; --- DrawingCanvasView dynamic subclass ---
 ;;
-;; Pull the ObjC type encodings from NSView's own method table rather
-;; than hand-writing them — the NSRect encoding is ABI-defined and
-;; version-sensitive. `get-instance-method` returns the Method pointer
-;; from NSView (or any ancestor that implements the selector).
-(define nsview-cls (objc-get-class "NSView"))
-(define draw-rect-encoding
-  (method-type-encoding (get-instance-method nsview-cls "drawRect:")))
-(define mouse-event-encoding
-  (method-type-encoding (get-instance-method nsview-cls "mouseDown:")))
-
-(define DrawingCanvasView-class
-  (make-dynamic-subclass
-   "NSView" "DrawingCanvasView"
-   (list
-    (list "drawRect:"     draw-rect-fptr      draw-rect-encoding)
-    (list "mouseDown:"    mouse-down-fptr     mouse-event-encoding)
-    (list "mouseDragged:" mouse-dragged-fptr  mouse-event-encoding)
-    (list "mouseUp:"      mouse-up-fptr       mouse-event-encoding))))
+;; `define-objc-subclass` auto-handles the four bits that used to be
+;; boilerplate:
+;;   - module-level function-ptr + GC pinning per method
+;;   - _cprocedure signature assembly including the (self SEL) prefix
+;;   - ObjC type-encoding lookup from NSView's own method table (the
+;;     NSRect encoding is ABI-defined and version-sensitive; pulling
+;;     from the live superclass method is always correct)
+;;   - Racket FFI arg/return types, inferred from the same superclass
+;;     encoding (drawRect: → _NSRect; mouseDown: etc. → _pointer id)
+(define-objc-subclass DrawingCanvasView NSView
+  [(drawRect:)
+   (lambda (self rect)
+     (with-handlers ([exn:fail? (lambda (e)
+                                  (eprintf "drawRect: error: ~a\n" (exn-message e)))])
+       (define gc (nsgraphicscontext-current-context))
+       (when gc
+         (define ctx (nsgraphicscontext-cg-context gc))
+         (render-strokes ctx strokes))))]
+  [(mouseDown:)
+   (lambda (self event)
+     (with-handlers ([exn:fail? (lambda (e)
+                                  (eprintf "mouseDown: error: ~a\n" (exn-message e)))])
+       (define pt (event->view-point self event))
+       (start-stroke! (NSPoint-x pt) (NSPoint-y pt))
+       (nsview-set-needs-display! (borrow-objc-object self) #t)))]
+  [(mouseDragged:)
+   (lambda (self event)
+     (with-handlers ([exn:fail? (lambda (e)
+                                  (eprintf "mouseDragged: error: ~a\n" (exn-message e)))])
+       (define pt (event->view-point self event))
+       (extend-stroke! (NSPoint-x pt) (NSPoint-y pt))
+       (nsview-set-needs-display! (borrow-objc-object self) #t)))]
+  [(mouseUp:)
+   (lambda (self event)
+     (with-handlers ([exn:fail? (lambda (e)
+                                  (eprintf "mouseUp: error: ~a\n" (exn-message e)))])
+       (end-stroke!)
+       (nsview-set-needs-display! (borrow-objc-object self) #t)))])
 
 ;; Allocate + init a DrawingCanvasView instance. Uses raw objc_msgSend
 ;; because the class is dynamic (no generated wrapper). initWithFrame:
@@ -284,7 +223,7 @@
 (define (make-drawing-canvas-view frame)
   (borrow-objc-object
    (_msg-init-with-frame
-    (_msg-alloc DrawingCanvasView-class (sel_registerName "alloc"))
+    (_msg-alloc DrawingCanvasView (sel_registerName "alloc"))
     (sel_registerName "initWithFrame:")
     frame)))
 
