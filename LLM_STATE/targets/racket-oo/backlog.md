@@ -96,7 +96,10 @@ NSUndoManager, NSNotificationCenter, NSSavePanel completion block, NSOpenPanel;
 completion block (`make-objc-block` with `(Int64 -> Void)` signature), NSTextDidChange-
 Notification observer (module-level var guards weak-observer lifetime), NSAlert via
 `objc-interop.rkt` alloc+init escape hatch. `scan_rkt_string_literals` comment-skip
-bug fixed in `bundle-racket-oo/src/deps.rs`.
+bug fixed in `bundle-racket-oo/src/deps.rs`. Class System Analysis complete
+(2026-04-19): zero `racket/class` use confirmed; "OO" is conventional not technical;
+option B (`objc-subclass` macro over `make-dynamic-subclass`) recommended; full
+analysis in `docs/specs/2026-04-19-racket-oo-class-system-analysis.md`.
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -131,63 +134,21 @@ _(none currently)_
   values, call functions, check results) rather than mere load checks.
 - **Results:** _pending_
 
-#### Racket Class System Analysis
-- **Status:** done
+#### `objc-subclass` Macro (Option B)
+- **Status:** not_started
 - **Priority:** low
-- **Dependencies:** none (Note Editor complete 2026-04-18; real usage has revealed
-  which patterns matter across completion blocks, undo, and notification observers)
-- **Description:** Analyse the current racket-oo emitter output and runtime to
-  determine whether it truly models macOS APIs using Racket's class system
-  (`racket/class`) as much as possible — e.g., using `class*`, `define/public`,
-  `inherit`, `super-new`, interfaces for protocols, mixins for categories.
-  Identify where the current approach falls short of idiomatic Racket OO and
-  propose concrete changes to make better use of the class system.
-- **Results:** Design analysis written to
-  `docs/specs/2026-04-19-racket-oo-class-system-analysis.md`. Key findings:
-  (1) **Zero use of `racket/class`** — verified by grep across the entire
-  `generation/targets/racket-oo/` tree; every generated file uses
-  `#lang racket/base`. The "OO" label is conventional (receiver-first
-  procedural API over `objc-object?` wrappers), not technical.
-  (2) **Inheritance is flattened**: `effective_methods()` in `emit_class.rs`
-  re-emits every inherited method at the leaf class; NSButton is not a
-  Racket-level subtype of NSView. This works because ObjC's own dispatch is
-  dynamic (`objc_msgSend`), so the Racket-side structural gap is invisible at
-  runtime.
-  (3) **Protocols are delegate factories, not interfaces**: each protocol
-  file exports `make-<proto>` (variadic selector/handler pairs) and
-  `<proto>-selectors` — no `interface` form, no conformance checking.
-  (4) **Current caller friction is FFI-shaped, not OO-shaped**: 9 apps
-  (2,632 lines) work without obvious pain. Logged memory entries call out
-  `borrow-objc-object`/nullable-return/name-collision/CS-`malloc-free`
-  issues — none of which `racket/class` would fix.
-  (5) **One genuine OO win — dynamic subclassing.** `drawing-canvas`
-  overrides drawRect:/mouseDown:/mouseDragged:/mouseUp: via
-  `make-dynamic-subclass` with flat `(selector imp type-encoding)` tuples;
-  `class* parent% () (define/override ...)` is the natural shape for this
-  pattern, and matches the one use case (Modaliser NSPanel override) also
-  cited in `dynamic-class.rkt`'s header.
-
-  Five options analysed (A full migration, B targeted subclass layer,
-  C thin caller-side veneer, D rename target, E status quo). Recommendation:
-  **B + E** — build a focused `objc-subclass` `class*` macro over the
-  existing `make-dynamic-subclass` runtime; keep the flat generated API for
-  message-sending to existing ObjC classes; document the mismatch in
-  developer docs rather than renaming.
-
-  **Rejected option A** (full `class*` migration, 3–6 weeks emitter work,
-  rewrite all 9 apps) — disproportionate to the lived need. The static
-  class tree's flatness is a Racket-side cosmetic issue that ObjC's own
-  dynamic dispatch hides at runtime.
-
-  **Decision points surfaced for the maintainer** (not decided here):
-  (a) whether to proceed with option B and when; (b) whether to rename
-  the target to honest labelling before writing developer docs (task #3);
-  (c) whether to open a fresh backlog entry for B or defer.
-
-  Suggests next: the Developer Documentation task should **cover the
-  procedural-shape-under-an-OO-name mismatch in one paragraph** regardless
-  of whether option B is adopted. If option B is adopted first, docs can
-  describe both idioms cleanly.
+- **Dependencies:** none
+- **Description:** Implement a focused `objc-subclass` macro layered over
+  `make-dynamic-subclass` in `runtime/dynamic-class.rkt` (option B from the
+  class system analysis). The macro should provide a `class*`-shaped surface for
+  ObjC subclassing — e.g. `(objc-subclass MyView NSView () (define/override (drawRect: rect) ...))`.
+  This is the single use case where a class-based idiom is genuinely more natural
+  than the flat `make-dynamic-subclass` tuple API. Does NOT require changing
+  generated files or app code that doesn't subclass. Precedes the documentation
+  task if adopted — docs can then cover both idioms cleanly. Decision to adopt
+  was deferred by the analysis; this task captures the recommended path.
+  See `docs/specs/2026-04-19-racket-oo-class-system-analysis.md` for full analysis.
+- **Results:** _pending_
 
 #### Developer Documentation
 - **Status:** not_started
@@ -220,4 +181,10 @@ _(none currently)_
   classes — `objc-interop.rkt` escape hatch is no longer needed for plain alloc+init
   construction; document its remaining valid use for NSCoder-style explicit-init flows.
   NSSavePanel completion block signature: `(Int64 -> Void)` via `make-objc-block`.
+  **Must cover the "OO in name only" mismatch** — one paragraph explaining that
+  "racket-oo" uses a conventional name: the emitted API is flat procedural
+  (`tell`-based message-passing over `objc-object?` wrappers), not `racket/class`-based.
+  If the `objc-subclass` macro (Option B) is adopted before this task runs, document
+  both idioms: flat message-sending for existing ObjC classes, `objc-subclass` for
+  custom subclasses.
 - **Results:** _pending_
