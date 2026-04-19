@@ -100,6 +100,11 @@ bug fixed in `bundle-racket-oo/src/deps.rs`. Class System Analysis complete
 (2026-04-19): zero `racket/class` use confirmed; "OO" is conventional not technical;
 option B (`objc-subclass` macro over `make-dynamic-subclass`) recommended; full
 analysis in `docs/specs/2026-04-19-racket-oo-class-system-analysis.md`.
+`define-objc-subclass` macro landed (2026-04-19) — Option B implemented in
+`runtime/objc-subclass.rkt`; type encoding inference from superclass method;
+`(self SEL)` prefix auto-inserted; IMPs GC-pinned module-level; `drawing-canvas`
+rewritten as first consumer (70+ lines collapsed to one form); full harness green
+(4/4 runtime load tests, ~85s).
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -133,105 +138,6 @@ _(none currently)_
   so this task's focus should be deeper per-framework API exercises (construct
   values, call functions, check results) rather than mere load checks.
 - **Results:** _pending_
-
-#### `objc-subclass` Macro (Option B)
-- **Status:** done
-- **Priority:** low
-- **Dependencies:** none
-- **Description:** Implement a focused `objc-subclass` macro layered over
-  `make-dynamic-subclass` in `runtime/dynamic-class.rkt` (option B from the
-  class system analysis). The macro should provide a `class*`-shaped surface for
-  ObjC subclassing — e.g. `(objc-subclass MyView NSView () (define/override (drawRect: rect) ...))`.
-  This is the single use case where a class-based idiom is genuinely more natural
-  than the flat `make-dynamic-subclass` tuple API. Does NOT require changing
-  generated files or app code that doesn't subclass. Precedes the documentation
-  task if adopted — docs can then cover both idioms cleanly. Decision to adopt
-  was deferred by the analysis; this task captures the recommended path.
-  See `docs/specs/2026-04-19-racket-oo-class-system-analysis.md` for full analysis.
-- **Results:** Landed as `runtime/objc-subclass.rkt`. Syntax is not the
-  `class*`-shaped `define/override` form from the analysis sketch — Racket's
-  class system brings machinery this target doesn't use. The final shape
-  infers Racket FFI arg/return types from the superclass's own ObjC type
-  encoding, so the common case writes nothing but selector + handler:
-
-  ```racket
-  (define-objc-subclass DrawingCanvasView NSView
-    [(drawRect:)     (lambda (self rect)  ...)]
-    [(mouseDown:)    (lambda (self event) ...)]
-    [(mouseDragged:) (lambda (self event) ...)]
-    [(mouseUp:)      (lambda (self event) ...)])
-  ```
-
-  Each clause: `[(selector-id) #:arg-types? #:ret-type? handler]`. By default
-  the macro calls `method_getTypeEncoding` on the superclass method, parses
-  the encoding string (return / self / SEL / args tokens), and picks the
-  matching Racket FFI type. Covered token set: all primitives, id (`@`),
-  SEL (`:`), Class (`#`), `char*` / void pointer / arbitrary pointer / `?`,
-  and the geometry structs from `type-mapping.rkt` (NSPoint, NSSize, NSRect,
-  NSRange, NSEdgeInsets, NSDirectionalEdgeInsets, NSAffineTransformStruct,
-  CGAffineTransform, CGVector) under both their NS and CG names. Unknown
-  structs, unions, arrays, and bitfields error with a message pointing at
-  the keyword escape hatch:
-
-  ```racket
-  [(unusualMethod:) #:arg-types (_some-weird-type) #:ret-type _void
-   (lambda (self x) ...)]
-  ```
-
-  Either keyword is optional and independent. Explicit types override
-  inference; the superclass-method lookup still runs because
-  `class_addMethod` needs the ObjC encoding string regardless.
-
-  Macro also:
-  - stringifies the selector identifier (Racket allows `:` in identifiers)
-  - builds the `_cprocedure` type with the `(self SEL)` prefix auto-inserted
-  - wraps the user lambda to discard the `sel` arg, so handlers are just
-    `(lambda (self args...) ...)` with no unused `sel` param
-  - pins user proc + wrapped proc + fptr in a module-level list against GC
-
-  **Verification:**
-  - `runtime_objc_subclass_macro` test in `runtime_load_test.rs` exercises
-    zero-arg (`hash` → NSUInteger, encoding `Q24@0:8`) and one-arg
-    (`isEqual:` → id→BOOL, encoding `B32@0:8@16`) overrides on NSObject under
-    full inference, plus idempotent re-definition inside a `let`, plus a
-    keyword-override branch (`#:ret-type _uint64`). 6 sub-checks all pass.
-  - Standalone smoke test also confirmed NSRect struct inference works for
-    NSView's `drawRect:` (encoding `v56@0:8{CGRect={CGPoint=dd}{CGSize=dd}}16`
-    resolves the `{CGRect=...}` token against `_NSRect` — ABI-identical on
-    64-bit Apple).
-  - `objc-subclass.rkt` added to `RUNTIME_FILES` and `LIBRARY_LOAD_CHECKS`.
-  - `drawing-canvas` rewritten: ~70 lines of hand-rolled `*-impl`/`*-fptr`
-    bindings + encoding lookups + tuple-list construction collapsed to one
-    `define-objc-subclass` form with zero type annotations. Compiles via
-    `raco make` inside the harness.
-  - Full harness green: 4/4 runtime load tests pass (~85s). Full workspace
-    `cargo test` green, zero failures. No pipeline regeneration needed —
-    no emitter / collection / analysis code touched.
-
-  **Trade-offs recorded:**
-  - Idempotency under module reload uses `make-dynamic-subclass`'s existing
-    "return existing class" path. libobjc forbids `class_addMethod` after
-    registration, so re-evaluating a macro form updates the Racket binding
-    but the live IMP keeps the first-registered handler. Expected behavior;
-    test asserts it explicitly.
-  - The pin-list grows monotonically. Classes are never destroyed on macOS,
-    so this is bounded and benign. Not a realistic leak.
-  - Declined to synthesize a `make-<class>` constructor. Instantiation still
-    uses raw `objc_msgSend alloc`+`init` (drawing-canvas retains this
-    pattern). Making it part of the macro would require knowing the inherited
-    init's FFI signature at expansion time, which drifts per superclass.
-  - Type encoding parser handles primitives, id/SEL/Class, pointer-to-X,
-    and balanced-delimited structs/unions/arrays, but errors on union /
-    array / bitfield return types — these aren't representable directly in
-    Racket FFI without an escape hatch, so the keyword override is the
-    correct answer for them.
-
-  **Suggests next:** Developer Documentation task can now document both
-  idioms cleanly — flat `tell`-message-passing for existing classes,
-  `define-objc-subclass` for dynamic subclasses. If Modaliser-Racket's
-  `ui/panel-manager.rkt` (NSPanel subclass cited in `dynamic-class.rkt`
-  commentary) gets imported here, it'd be the natural second consumer and
-  a good test of the inference path on a non-NSView superclass.
 
 #### Developer Documentation
 - **Status:** not_started
@@ -267,7 +173,7 @@ _(none currently)_
   **Must cover the "OO in name only" mismatch** — one paragraph explaining that
   "racket-oo" uses a conventional name: the emitted API is flat procedural
   (`tell`-based message-passing over `objc-object?` wrappers), not `racket/class`-based.
-  If the `objc-subclass` macro (Option B) is adopted before this task runs, document
-  both idioms: flat message-sending for existing ObjC classes, `objc-subclass` for
-  custom subclasses.
+  Document both idioms: flat message-sending for existing ObjC classes,
+  `define-objc-subclass` (from `runtime/objc-subclass.rkt`) for custom subclasses.
+  `drawing-canvas` is the canonical `define-objc-subclass` consumer example.
 - **Results:** _pending_
