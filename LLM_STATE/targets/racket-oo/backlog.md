@@ -144,62 +144,6 @@ _(none currently)_
   propose concrete changes to make better use of the class system.
 - **Results:** _pending_
 
-#### NSAlert Synthesized Constructor
-- **Status:** done
-- **Priority:** low
-- **Dependencies:** none
-- **Description:** `NSAlert` exposes no explicit `-init` override, so the emitter
-  generates no `make-nsalert-*` constructor. Every consumer must escape through
-  `objc-interop.rkt` (`(tell (tell NSAlert alloc) init)` + `wrap-objc-object
-  #:retained #t`). Investigate whether the emitter should synthesise an alloc+init
-  wrapper for ObjC classes whose only construction path is the default `-init`.
-  Fix location: `emit_class.rs` — detect classes with no explicit init selector
-  and emit a synthetic `(make-<class>-init ...)` constructor. NSAlert is the
-  confirmed case; audit for others. If this pattern is common, the escaped
-  `objc-interop.rkt` path should remain documented but the emitter should remove
-  the need for it in simple alloc+init cases.
-- **Results:** Audit confirmed the pattern is **system-wide, not NSAlert-specific**.
-  Of 5,304 generated classes, 2,872 (54%) have no init in IR and a further 983
-  (19%) have only bare `init` — together 73% of all classes. Every one of those
-  classes previously required the `objc-interop.rkt` escape hatch to construct
-  an instance.
-
-  Implementation in `emit_class.rs`:
-  - New `has_explicit_constructor` helper: true when at least one supportable,
-    non-bare-init init is present in the IR (mirrors the existing emit-time skip
-    on `m.selector == "init"` so the synthesis condition stays in sync).
-  - New `emit_default_constructor` helper: emits
-    `(define (make-<class>) (wrap-objc-object (tell (tell <Class> alloc) init) #:retained #t))`.
-  - `generate_class_file` calls the synthesizer when `!has_explicit_constructor`,
-    and `build_export_contracts` adds `[make-<class> (c-> any/c)]` to the
-    `provide/contract` form under the same condition.
-  - Naming uses the existing `make_constructor_name` (already in `naming.rs` but
-    previously unused outside tests) — `make-<class>` form matches what
-    `make-<class>-<selector>` already implies as the "no-suffix" default.
-
-  Suppressed correctly when explicit init exists (verified: NSWindow keeps
-  `make-nswindow-init-with-content-rect-...` and NO `make-nswindow`).
-
-  Verification:
-  - Three new unit tests (no-init, bare-init only, explicit-init) plus updated
-    `test_empty_class_provide` to reflect that empty classes also gain the
-    default constructor — all green (122 unit tests pass).
-  - Full workspace `cargo test` green.
-  - Snapshot goldens regenerated (11 files: 5 Foundation, 1 AppKit, 5 TestKit).
-  - Runtime load harness green: library checks (21.3s), all 9 sample apps
-    `raco make` (87.7s).
-  - Note Editor refactored: `make-nsalert` replaces the
-    `(tell (tell NSAlert alloc) init) + wrap-objc-object #:retained #t` hack;
-    `objc-interop.rkt` import dropped — Note Editor now back to zero
-    `ffi/unsafe`-style imports for the alert path.
-
-  Suggests next: most non-NSAlert classes that previously required the escape
-  hatch (NSColorPanel, NSStackView, NSSavePanel, NSOpenPanel, NSFileManager,
-  ...) now have direct constructors. The `objc-interop.rkt` escape hatch
-  remains valid for NSCoder-like cases but shouldn't be needed for default
-  construction. Memory entry "NSAlert has no generated alloc+init wrapper"
-  is now obsolete and has been updated.
-
 #### Developer Documentation
 - **Status:** not_started
 - **Priority:** medium
@@ -227,6 +171,8 @@ _(none currently)_
   give no hint that wrapping is required — must be prominently documented with examples.
   Bundle IDs must use `com.linkuistics.*` domain. Two-stage signing required for
   bundles. Orphan tart VMs outside `vm-start.sh` have no recoverable VNC password.
-  NSAlert construction via `objc-interop.rkt` escape hatch (no generated constructor).
+  Default alloc+init constructor (`make-<class>`) now synthesized for ~73% of all
+  classes — `objc-interop.rkt` escape hatch is no longer needed for plain alloc+init
+  construction; document its remaining valid use for NSCoder-style explicit-init flows.
   NSSavePanel completion block signature: `(Int64 -> Void)` via `make-objc-block`.
 - **Results:** _pending_
