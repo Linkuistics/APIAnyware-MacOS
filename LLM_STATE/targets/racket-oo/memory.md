@@ -422,5 +422,20 @@ Long-running installs (`brew install minimal-racket`, ~5 min on Tahoe) should be
 ### NSSavePanel completion block uses `(Int64 -> Void)` signature
 `NSSavePanel beginSheetModalForWindow:completionHandler:` expects a block typed `(Int64 -> Void)`. Pass via `make-objc-block`; the completion receives `NSModalResponseOK` (1) or `NSModalResponseCancel` (0) as the `Int64` arg. Same pattern works for any modal completion handler whose response is an `NSModalResponse` enum.
 
+### `racket-oo` generated files use no Racket class system
+Every file under `generation/targets/racket-oo/` uses `#lang racket/base`. Zero occurrences of `class*`, `define/public`, `inherit`, or `interface` forms. "OO" is a conventional target name, not a technical description of the emitted code.
+
+### ObjC inheritance is flattened at emit time
+`effective_methods()` merges the full superclass method set at emit time. The emitted API is flat procedural — no Racket class hierarchy is encoded. Inheritance is a collection-time concern, not a runtime one.
+
+### Protocols emit delegate factories, not interface forms
+Protocol files generate `make-<proto>` delegate factory functions. No Racket `interface`, `mixin`, or `class*` forms are used. The friction in the target is FFI-shaped, not OO-shaped.
+
+### `make-dynamic-subclass` is the only genuine OO mechanism
+All ObjC subclassing goes through `dynamic-class.rkt`'s `make-dynamic-subclass`. It is the single use case in the target that resembles class-based OO — everything else is flat message-passing. See "`dynamic-class.rkt` exports libobjc subclass surface".
+
+### Option B recommended for ObjC subclassing: `objc-subclass` macro
+A focused `objc-subclass` macro layered over `make-dynamic-subclass` (option B) is preferred over full `class*` migration (option A) or renaming the target (option D). Keeps the flat generated API unchanged while giving the subclassing use case a cleaner surface. Full analysis in `docs/specs/2026-04-19-racket-oo-class-system-analysis.md`.
+
 ### Default constructor `make-<class>` synthesized for init-less classes
 The emitter synthesizes `(define (make-<class>) (wrap-objc-object (tell (tell <Class> alloc) init) #:retained #t))` for any class whose IR lacks an explicit init beyond bare `init`. Covers ~73% of all generated classes (5,304 total: 54% no init at all, 19% bare-init-only). Suppressed when at least one explicit init exists (e.g. NSWindow keeps only `make-nswindow-init-with-content-rect-...`). The synthesis trigger lives in `has_explicit_constructor` in `emit_class.rs` and mirrors the long-standing emit-time skip on `m.selector == "init"`. Examples that previously required the `objc-interop.rkt` escape hatch and now have a direct constructor: NSAlert, NSColorPanel, NSStackView, NSSavePanel, NSOpenPanel, NSFileManager.
