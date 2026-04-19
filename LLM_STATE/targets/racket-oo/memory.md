@@ -85,6 +85,9 @@ Requiring both `ffi/unsafe` and `racket/contract` causes a hard `->` identifier 
 
 Contract arrows become `(c-> arg-contract ... ret-contract)`. Applies to `functions.rkt`, `constants.rkt`, every class wrapper, and any file needing `racket/contract`. Protocol files use `->*` and dodge the conflict, but `rename-in` is safe prophylactically.
 
+### `make-nsrect` takes 4 scalars; `make-NSRect` takes point+size
+The 4-scalar convenience constructor `make-nsrect` (x y w h) is the form apps use. The low-level `make-NSRect` struct constructor takes an `NSPoint` and an `NSSize`. Same split applies to `make-nssizey`/`make-NSSize` and `make-nspoint`/`make-NSPoint`.
+
 ### `type-mapping.rkt` must `provide` every cstruct
 Every `define-cstruct` in `runtime/type-mapping.rkt` must appear in its `(provide ...)` list. Current exports: `_NSPoint`, `_NSSize`, `_NSRect`, `_NSRange`, `_CGPoint`, `_CGSize`, `_CGRect`, `_NSEdgeInsets`, `_NSDirectionalEdgeInsets`, `_NSAffineTransformStruct`, `_CGAffineTransform`, `_CGVector`. Adding a geometry struct: (1) `define-cstruct`, (2) add to provide, (3) add to `is_known_geometry_struct` in `emit/src/ffi_type_mapping.rs`. Struct detection goes through `any_struct_type(type_refs, mapper)` in `shared_signatures.rs`, used by class wrappers, `emit_functions.rs`, and `emit_constants.rs` — a one-allowlist-edit operation.
 
@@ -308,6 +311,9 @@ DelegateBridge.swift defines `impInt0..3` (returning `Int32`) and `impLong0..3` 
 ### `borrow-objc-object` wraps raw pointer as `objc-object?`
 `borrow-objc-object` in `objc-base.rkt` creates a struct satisfying `objc-object?` from a raw cpointer, with no retain/release. `make-delegate` returns one so delegates satisfy `objc-object?` at class wrapper boundaries (e.g. `nsbutton-set-target!`). The `#:param-types` trampoline uses `borrow-objc-object` to wrap `'object`-typed callback args automatically.
 
+### `make-delegate` handlers receive no `self`; positional args alternate
+Positional args to `make-delegate` are alternating selector-string / procedure pairs. Handler lambdas do NOT receive `self` — only the delegated arguments. Keyword args are `#:return-types` and `#:param-types`. `make-<proto>` pre-fills both hashes from protocol IR.
+
 ### `#:param-types` on `make-delegate` auto-coerces callback args
 Hash mapping selectors to lists of type symbols (`'object`, `'long`, `'int`, `'bool`, `'pointer`). The trampoline coerces each arg before the handler runs; `delegate-set!` also reads stored param-types. Protocol emitter generates the hash via `param_type_symbol` in `emit_protocol.rs` from IR param types.
 
@@ -429,7 +435,7 @@ Every file under `generation/targets/racket-oo/` uses `#lang racket/base`. Zero 
 `effective_methods()` merges the full superclass method set at emit time. The emitted API is flat procedural — no Racket class hierarchy is encoded. Inheritance is a collection-time concern, not a runtime one.
 
 ### Protocols emit delegate factories, not interface forms
-Protocol files generate `make-<proto>` delegate factory functions. No Racket `interface`, `mixin`, or `class*` forms are used. The friction in the target is FFI-shaped, not OO-shaped.
+Protocol files generate `make-<proto>` delegate factory functions — thin wrappers over `make-delegate` that pre-fill both the handler hash and the `#:param-types` hash from protocol IR. No Racket `interface`, `mixin`, or `class*` forms are used. The friction in the target is FFI-shaped, not OO-shaped.
 
 ### `make-dynamic-subclass` is the only genuine OO mechanism
 All ObjC subclassing goes through `dynamic-class.rkt`'s `make-dynamic-subclass`. It is the single use case in the target that resembles class-based OO — everything else is flat message-passing. See "`dynamic-class.rkt` exports libobjc subclass surface".
