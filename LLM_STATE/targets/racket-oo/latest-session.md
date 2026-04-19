@@ -1,43 +1,8 @@
-### Session 22 (2026-04-19T07:18:36Z) — objc-subclass macro landed
+### Session 20 (2026-04-19T07:43:12Z) — Developer documentation guide landed
 
-- **Attempted:** Implement the `objc-subclass` Macro (Option B) task: a `define-objc-subclass`
-  macro layered over `make-dynamic-subclass` that eliminates the manual boilerplate
-  (IMP/fptr assembly, GC pinning, superclass encoding lookup) required to create ObjC subclasses.
-
-- **What worked:**
-  - `runtime/objc-subclass.rkt` created with full ObjC type-encoding parser (primitives,
-    id/SEL/Class, pointers, balanced struct/union/array tokens) and a `known-structs` table
-    covering all geometry types from `type-mapping.rkt` (NSPoint/NSSize/NSRect/NSRange/
-    NSEdgeInsets/NSDirectionalEdgeInsets/NSAffineTransformStruct/CGAffineTransform/CGVector).
-  - Macro handles the `(self SEL)` prefix automatically, wraps user lambdas to drop the
-    SEL arg, pins IMPs in a module-level list against GC.
-  - Escape hatch via `#:arg-types` / `#:ret-type` for unsupported struct/union/bitfield types.
-  - `drawing-canvas.rkt` rewritten: ~70 lines of boilerplate (4× hand-rolled `*-impl` /
-    `*-fptr` / encoding-lookup / tuple-list construction) collapsed to one `define-objc-subclass`
-    form with zero type annotations, demonstrating the macro on all four NSView overrides.
-  - `runtime_load_test.rs` extended: `objc-subclass.rkt` added to RUNTIME_FILES and
-    LIBRARY_LOAD_CHECKS; `runtime_objc_subclass_macro` test exercises zero-arg (`hash`),
-    one-arg (`isEqual:`), alloc+init, idempotent re-define, IMP-stays-first, and keyword
-    override — 6 sub-checks all pass.
-  - Full harness green (4/4 runtime load tests, ~85s). Full workspace `cargo test` green.
-  - Backlog task status correctly flipped to `done` with full Results block.
-
-- **What didn't work / wasn't attempted:** No pipeline regeneration needed — no emitter,
-  collection, or analysis code was changed. Constructor synthesis (`make-<class>`) was
-  deliberately declined — inferring inherited init FFI signatures at expansion time would
-  drift per superclass.
-
-- **What this suggests next:** Developer Documentation task can now document both idioms
-  cleanly: flat `tell`-message-passing for existing ObjC classes, `define-objc-subclass`
-  for dynamic subclasses. If Modaliser-Racket's `ui/panel-manager.rkt` (NSPanel subclass)
-  gets imported, it would be a natural second consumer of the macro on a non-NSView superclass.
-
-- **Key learnings:**
-  - ObjC encoding strings interleave stack-offset digits between type tokens — the parser
-    must skip numeric characters explicitly; `{CGRect=...}` struct tokens need balanced-
-    delimiter parsing rather than simple character dispatch.
-  - Racket's `syntax-parse` `~?` template is the right tool for optional keyword syntax
-    in macros — it collapses absent keyword branches to a sentinel without nested `if`.
-  - Idempotency under module reload falls naturally out of `make-dynamic-subclass`'s
-    existing "return existing class" path; `class_addMethod` after registration is a
-    libobjc no-op (not an error), so re-requiring a module is safe.
+- **Attempted:** Write comprehensive developer documentation for the racket-oo target covering every topic listed in the Developer Documentation backlog task.
+- **What worked:** Landed `generation/targets/racket-oo/docs/developer-guide.md` (833 lines, ~33k). 14 sections progressively organised: "What 'OO' means (and does not mean) here" → first program → requiring bindings → method dispatch → object creation (`make-<class>`, explicit init, `objc-interop.rkt` escape hatch) → `define-objc-subclass` with `drawing-canvas` as canonical consumer → delegates (keyword API verified against runtime source, raw-cpointer `borrow-objc-object` wrap trap, lifetime) → completion blocks (NSSavePanel `Int64 -> Void`) → notifications (three-part pattern, weak-observer trap) → threading/callback safety (`_cprocedure` SIGILL, `#:async-apply` deadlock, `call-on-main-thread*`, `dynamic-place`, place-backed async facade, auto-terminating Cocoa-loop test pattern) → FFI boundary (contracts, `coerce-arg`, `->string`, NSColor RGB colour-space gotcha) → app bundling (`com.linkuistics.*`, two-stage signing, new-app registration) → VM testing workflow (VirtioFS stale state, menu drill-down needs VNC click, NSStackView set-value unreachable, `--window` coord offset on Tahoe, triple-click for focus, orphan-VM VNC password recovery) → AppKit widget quirks → further reading.
+- **Verified-against-source corrections made during drafting:** (1) `make-nsrect` is the 4-scalar runtime helper apps use; underlying `make-NSRect` takes NSPoint/NSSize; (2) `make-delegate` handler lambdas do NOT receive `self` — keyword args are `#:return-types`/`#:param-types`, positional args are alternating selector/procedure pairs; (3) `make-<proto>` is a thin wrapper over `make-delegate` pre-filling both hashes from protocol IR.
+- **README updated:** Added "For developers using the bindings" section linking to the guide; corrected `test-results` description to reference GUIVisionVMDriver.
+- **No code changes** — documentation only; no pipeline regeneration needed.
+- **What this suggests trying next:** Framework Coverage Deepening — the only remaining non-done backlog task, targeting CoreGraphics, AVFoundation, and MapKit beyond the shallow load-harness checks.

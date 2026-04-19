@@ -140,7 +140,7 @@ _(none currently)_
 - **Results:** _pending_
 
 #### Developer Documentation
-- **Status:** not_started
+- **Status:** done
 - **Priority:** medium
 - **Dependencies:** none
 - **Description:** Record Racket-specific documentation requirements: `tell`
@@ -176,4 +176,32 @@ _(none currently)_
   Document both idioms: flat message-sending for existing ObjC classes,
   `define-objc-subclass` (from `runtime/objc-subclass.rkt`) for custom subclasses.
   `drawing-canvas` is the canonical `define-objc-subclass` consumer example.
-- **Results:** _pending_
+- **Results:** Landed `generation/targets/racket-oo/docs/developer-guide.md`
+  (833 lines) and linked from `generation/targets/racket-oo/README.md`. 14 sections
+  cover every topic the task listed, progressively organised: "What 'OO' means (and
+  does not mean) here" → first program → requiring bindings → method dispatch →
+  object creation (default `make-<class>`, explicit init, `objc-interop.rkt`
+  escape hatch) → `define-objc-subclass` with `drawing-canvas` as the canonical
+  consumer → delegates (`make-delegate` keyword args verified against actual
+  runtime API, protocol factories, raw-cpointer `borrow-objc-object` wrap trap,
+  lifetime) → completion blocks (NSSavePanel `(Int64 -> Void)`) → notifications
+  (three-part pattern, weak-observer trap) → threading and callback safety (Cocoa
+  blocks Racket scheduler, `_cprocedure` SIGILL, `#:async-apply` deadlock,
+  `call-on-main-thread*`, `dynamic-place`, place-backed async facade, auto-
+  terminating Cocoa-loop test pattern) → FFI boundary (contracts, `coerce-arg`,
+  `->string`, NSColor RGB colour-space gotcha, `tell`-on-receiver `coerce-arg`
+  requirement) → app bundling (CFBundleName + TCC rationale, `bundle-racket-oo`,
+  `com.linkuistics.*` bundle IDs, two-stage signing, new-app registration) →
+  VM testing workflow (`--vm <id>` spec-file resolution, stale VirtioFS, menu
+  drill-down needs VNC click, NSStackView set-value fails, `--window` coord
+  offset on Tahoe, triple-click focus, detached brew install, orphan-VM VNC
+  password recovery) → AppKit widget quirks (radio mutual exclusion, NSStepper
+  continuous, scroll direction, baseline alignment, cell-based table row height)
+  → further reading cross-references. Verified-against-source corrections made
+  during drafting: (1) `make-nsrect` is the 4-scalar runtime helper (apps use
+  this), underlying `make-NSRect` takes NSPoint/NSSize; (2) `make-delegate`
+  handler lambdas do NOT receive `self` (unlike `define-objc-subclass` IMPs) —
+  keyword args are `#:return-types`/`#:param-types`, positional args are
+  alternating selector/procedure pairs; (3) `make-<proto>` factory is a thin
+  wrapper over `make-delegate` that pre-fills both hashes from the protocol IR.
+  No code changes — docs only.
