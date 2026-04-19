@@ -121,7 +121,27 @@ _(none currently)_
 
 ### Harness & Verification
 
-_(none currently)_
+#### Testing Hardening
+- **Status:** not_started
+- **Priority:** high
+- **Dependencies:** none
+- **Description:** Four areas under-tested after the milestone:
+  (1) `define-objc-subclass` — only `drawing-canvas` is a consumer; add at least
+  one more test exercising `#:arg-types`/`#:ret-type` overrides and the
+  struct-type encoding parser (nested `{...}` balanced-delimiter case).
+  (2) Default constructor synthesis — `make-<class>` synthesized for ~73% of all
+  classes; add explicit harness checks for NSAlert, NSColorPanel, NSStackView,
+  NSSavePanel, NSOpenPanel (these formerly required the `objc-interop.rkt`
+  escape hatch; confirm they now construct cleanly via `make-<class>`).
+  (3) `LIBRARY_LOAD_CHECKS` coverage audit — identify any runtime files or
+  generated framework files added since the last audit that are missing from
+  the harness; add them. Cross-reference `RUNTIME_FILES` list against
+  `LIBRARY_LOAD_CHECKS` in `runtime_load_test.rs`.
+  (4) CF struct globals gap — `kCFTypeDictionaryKeyCallBacks` et al. are absent
+  from collected IR (known gap in memory.md); decide whether to extend IR
+  extraction or document the `(get-ffi-obj ... _pointer)` workaround as
+  canonical; add a harness canary for whichever path is chosen.
+- **Results:** _pending_
 
 ### Future Work
 
@@ -138,70 +158,3 @@ _(none currently)_
   so this task's focus should be deeper per-framework API exercises (construct
   values, call functions, check results) rather than mere load checks.
 - **Results:** _pending_
-
-#### Developer Documentation
-- **Status:** done
-- **Priority:** medium
-- **Dependencies:** none
-- **Description:** Record Racket-specific documentation requirements: `tell`
-  macro usage, `import-class` patterns, what's surprising for Racket developers,
-  paradigm-appropriate examples for both OO and functional styles. Must include
-  threading/callback safety constraints discovered by Modaliser-Racket:
-  `_cprocedure` callbacks SIGILL from foreign OS threads (GCD workers,
-  libdispatch), `#:async-apply` deadlocks under `nsapplication-run`, safe
-  alternatives (`call-on-main-thread`, `dynamic-place` for I/O), and the
-  place-backed async facade pattern for Cocoa integration. Any generated binding
-  exposing a C callback type should carry a warning about the foreign-thread
-  constraint. Also cover: `only-in` for generated binding subsets, auto-terminating
-  Cocoa-loop test pattern, VNC/GUIVisionVMDriver workflow quirks (menu accessibility
-  drill-down requires VNC click, not agent snapshot alone; `set-value` unreachable
-  for textfields inside NSStackView containers — use VNC keyboard input instead;
-  `--window` flag coord offset on Tahoe — use screen-absolute coords; triple-click
-  for NSStackView-hosted textfields), completion block plumbing (NSSavePanel/NSOpenPanel),
-  NSNotificationCenter observer lifetime (keep delegate in module-level var — Cocoa
-  holds observers weakly). Delegate callback raw cpointer boundary: ObjC delegate
-  callbacks (WKScriptMessageHandler, NSTableView data source, etc.) deliver raw
-  cpointers for `id`-typed args; generated contracts require `objc-object?`; callers
-  must wrap with `(borrow-objc-object ptr)` at every such boundary. Generated contracts
-  give no hint that wrapping is required — must be prominently documented with examples.
-  Bundle IDs must use `com.linkuistics.*` domain. Two-stage signing required for
-  bundles. Orphan tart VMs outside `vm-start.sh` have no recoverable VNC password.
-  Default alloc+init constructor (`make-<class>`) now synthesized for ~73% of all
-  classes — `objc-interop.rkt` escape hatch is no longer needed for plain alloc+init
-  construction; document its remaining valid use for NSCoder-style explicit-init flows.
-  NSSavePanel completion block signature: `(Int64 -> Void)` via `make-objc-block`.
-  **Must cover the "OO in name only" mismatch** — one paragraph explaining that
-  "racket-oo" uses a conventional name: the emitted API is flat procedural
-  (`tell`-based message-passing over `objc-object?` wrappers), not `racket/class`-based.
-  Document both idioms: flat message-sending for existing ObjC classes,
-  `define-objc-subclass` (from `runtime/objc-subclass.rkt`) for custom subclasses.
-  `drawing-canvas` is the canonical `define-objc-subclass` consumer example.
-- **Results:** Landed `generation/targets/racket-oo/docs/developer-guide.md`
-  (833 lines) and linked from `generation/targets/racket-oo/README.md`. 14 sections
-  cover every topic the task listed, progressively organised: "What 'OO' means (and
-  does not mean) here" → first program → requiring bindings → method dispatch →
-  object creation (default `make-<class>`, explicit init, `objc-interop.rkt`
-  escape hatch) → `define-objc-subclass` with `drawing-canvas` as the canonical
-  consumer → delegates (`make-delegate` keyword args verified against actual
-  runtime API, protocol factories, raw-cpointer `borrow-objc-object` wrap trap,
-  lifetime) → completion blocks (NSSavePanel `(Int64 -> Void)`) → notifications
-  (three-part pattern, weak-observer trap) → threading and callback safety (Cocoa
-  blocks Racket scheduler, `_cprocedure` SIGILL, `#:async-apply` deadlock,
-  `call-on-main-thread*`, `dynamic-place`, place-backed async facade, auto-
-  terminating Cocoa-loop test pattern) → FFI boundary (contracts, `coerce-arg`,
-  `->string`, NSColor RGB colour-space gotcha, `tell`-on-receiver `coerce-arg`
-  requirement) → app bundling (CFBundleName + TCC rationale, `bundle-racket-oo`,
-  `com.linkuistics.*` bundle IDs, two-stage signing, new-app registration) →
-  VM testing workflow (`--vm <id>` spec-file resolution, stale VirtioFS, menu
-  drill-down needs VNC click, NSStackView set-value fails, `--window` coord
-  offset on Tahoe, triple-click focus, detached brew install, orphan-VM VNC
-  password recovery) → AppKit widget quirks (radio mutual exclusion, NSStepper
-  continuous, scroll direction, baseline alignment, cell-based table row height)
-  → further reading cross-references. Verified-against-source corrections made
-  during drafting: (1) `make-nsrect` is the 4-scalar runtime helper (apps use
-  this), underlying `make-NSRect` takes NSPoint/NSSize; (2) `make-delegate`
-  handler lambdas do NOT receive `self` (unlike `define-objc-subclass` IMPs) —
-  keyword args are `#:return-types`/`#:param-types`, positional args are
-  alternating selector/procedure pairs; (3) `make-<proto>` factory is a thin
-  wrapper over `make-delegate` that pre-fills both hashes from the protocol IR.
-  No code changes — docs only.
