@@ -290,11 +290,12 @@ let app_path = create_app_bundle(&config, Path::new("output/"))?;
 Lower-level API: `generate_stub_source()` and `compile_stub()` for custom
 workflows, `generate_info_plist()` for standalone plist generation.
 
-### GUI Testing with GUIVisionVMDriver
+### GUI Testing with TestAnyware
 
-Sample apps are tested in a macOS VM via `{{DEV_ROOT}}/GUIVisionVMDriver/`
-(the successor to TestAnyware). Never run GUI apps directly from the CLI
--- always use the VM for visual verification. Two channels per VM:
+Sample apps are tested in a macOS VM via `{{DEV_ROOT}}/TestAnyware/`
+(the unified successor to GUIVisionVMDriver, GUIVisionPipeline, Redraw,
+and TestAnywareRedux). Never run GUI apps directly from the CLI -- always
+use the VM for visual verification. Two channels per VM:
 
 - **Agent** (HTTP on port 8648): exec, file upload/download, accessibility
   snapshot/inspect, UI actions
@@ -303,35 +304,37 @@ Sample apps are tested in a macOS VM via `{{DEV_ROOT}}/GUIVisionVMDriver/`
 Key workflow:
 
 ```bash
-GVD={{DEV_ROOT}}/GUIVisionVMDriver
-GV=$GVD/cli/macos/.build/release/guivision
+TA={{DEV_ROOT}}/TestAnyware
+TA_BIN=$TA/cli/.build/release/testanyware
 
-# Boot a fresh VM with a viewer attached
-source $GVD/scripts/macos/vm-start.sh --viewer
-# After sourcing, $GUIVISION_AGENT and $GUIVISION_VNC are set.
-# (They DO NOT survive shell boundaries — re-derive in subsequent calls
-# from `tart ip guivision-default`, or save the values to /tmp.)
+# Boot a fresh VM with a viewer attached. vm-start.sh runs as a normal
+# subprocess (no `source` needed) and prints the VM id on stdout.
+vmid=$($TA/provisioner/scripts/vm-start.sh --viewer)
+
+# Drive the VM via --vm <id> (the CLI reads the per-VM spec written by
+# vm-start.sh from $XDG_STATE_HOME/testanyware/vms/<id>.json), or via
+# the explicit env vars $TESTANYWARE_AGENT / $TESTANYWARE_VNC.
 
 # Install Racket once per fresh clone (~5 min cold)
-$GV exec --agent "$GUIVISION_AGENT" "/opt/homebrew/bin/brew install minimal-racket"
+$TA_BIN exec --vm "$vmid" "/opt/homebrew/bin/brew install minimal-racket"
 
 # Build and ship a sample app as a .app bundle
 cargo run --example bundle_app -p apianyware-macos-bundle-racket-oo -- file-lister
 APP="generation/targets/racket-oo/apps/file-lister/build/File Lister.app"
 tar -C "$(dirname "$APP")" -czf /tmp/app.tgz "$(basename "$APP")"
-$GV upload --agent "$GUIVISION_AGENT" /tmp/app.tgz /Users/admin/app.tgz
-$GV exec --agent "$GUIVISION_AGENT" "tar -xzf /Users/admin/app.tgz -C /Users/admin/ && open '/Users/admin/File Lister.app'"
+$TA_BIN upload --vm "$vmid" /tmp/app.tgz /Users/admin/app.tgz
+$TA_BIN exec --vm "$vmid" "tar -xzf /Users/admin/app.tgz -C /Users/admin/ && open '/Users/admin/File Lister.app'"
 
 # Verify visually
-$GV agent snapshot --agent "$GUIVISION_AGENT" --window "File Lister"
-$GV screenshot --connect /tmp/gv_connect.json -o /tmp/screen.png
-$GV find-text --connect /tmp/gv_connect.json "File Lister"
+$TA_BIN agent snapshot --vm "$vmid" --window "File Lister"
+$TA_BIN screenshot --vm "$vmid" -o /tmp/screen.png
+$TA_BIN find-text --vm "$vmid" "File Lister"
 
 # Always kill before relaunch
-$GV exec --agent "$GUIVISION_AGENT" "pkill -9 -f racket"
+$TA_BIN exec --vm "$vmid" "pkill -9 -f racket"
 
 # Tear down
-source $GVD/scripts/macos/vm-stop.sh
+$TA/provisioner/scripts/vm-stop.sh "$vmid"
 ```
 
 App specs at `knowledge/apps/{app}/spec.md`, validation checklists at

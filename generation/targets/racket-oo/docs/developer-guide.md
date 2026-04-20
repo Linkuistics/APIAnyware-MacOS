@@ -700,46 +700,47 @@ no edit needed there.
 ## Testing apps in a VM
 
 Every sample app is validated end-to-end in a macOS VM via
-`GUIVisionVMDriver`. Never run GUI apps directly from the CLI — always
+`TestAnyware`. Never run GUI apps directly from the CLI — always
 use the VM for visual verification.
 
 ```sh
-GVD={{DEV_ROOT}}/GUIVisionVMDriver
-GV=$GVD/cli/macos/.build/release/guivision
+TA={{DEV_ROOT}}/TestAnyware
+TA_BIN=$TA/cli/.build/release/testanyware
 
-# Boot a VM; vm-start.sh writes a per-VM spec file and prints the VM id.
-ID=$(source $GVD/scripts/macos/vm-start.sh --viewer)
+# Boot a VM; vm-start.sh writes a per-VM spec file and prints the VM id
+# on stdout. Run as a normal subprocess (no `source` needed).
+ID=$($TA/provisioner/scripts/vm-start.sh --viewer)
 
 # Ship a bundled .app.
 APP="apps/file-lister/build/File Lister.app"
 tar -C "$(dirname "$APP")" -czf /tmp/app.tgz "$(basename "$APP")"
-$GV upload --vm $ID /tmp/app.tgz /Users/admin/app.tgz
-$GV exec --vm $ID "tar -xzf /Users/admin/app.tgz -C /Users/admin/ && open '/Users/admin/File Lister.app'"
+$TA_BIN upload --vm $ID /tmp/app.tgz /Users/admin/app.tgz
+$TA_BIN exec --vm $ID "tar -xzf /Users/admin/app.tgz -C /Users/admin/ && open '/Users/admin/File Lister.app'"
 
 # Visual verification.
-$GV agent snapshot --vm $ID --window "File Lister"
-$GV screenshot --vm $ID -o /tmp/s.png
-$GV find-text --vm $ID "File Lister"
+$TA_BIN agent snapshot --vm $ID --window "File Lister"
+$TA_BIN screenshot --vm $ID -o /tmp/s.png
+$TA_BIN find-text --vm $ID "File Lister"
 
 # Always kill before relaunch.
-$GV exec --vm $ID "pkill -9 -f racket"
+$TA_BIN exec --vm $ID "pkill -9 -f racket"
 
 # Teardown.
-source $GVD/scripts/macos/vm-stop.sh $ID
+$TA/provisioner/scripts/vm-stop.sh $ID
 ```
 
 ### `--vm <id>` vs `--connect <spec>`
 
 `vm-start.sh` writes a per-VM spec to
-`$XDG_STATE_HOME/guivision/vms/<id>.json` (default
-`~/.local/state/guivision/vms/<id>.json`). Prefer `--vm <id>` in every
-command — no manual `/tmp/gv_connect.json` juggling. Resolution order
+`$XDG_STATE_HOME/testanyware/vms/<id>.json` (default
+`~/.local/state/testanyware/vms/<id>.json`). Prefer `--vm <id>` in every
+command — no manual `/tmp/ta_connect.json` juggling. Resolution order
 (highest priority first): `--connect`, `--vm`, explicit flags,
-`GUIVISION_VM_ID`, `GUIVISION_VNC`/`_AGENT` env vars.
+`TESTANYWARE_VM_ID`, `TESTANYWARE_VNC`/`_AGENT` env vars.
 
 ### VM workflow quirks worth knowing
 
-**Never use SSH.** `guivision exec` is reliable (the wedge was fixed
+**Never use SSH.** `testanyware exec` is reliable (the wedge was fixed
 2026-04-17). `timedOut: true` is a deadline signal, not a failure —
 poll for completion rather than retrying.
 
@@ -759,9 +760,9 @@ or `No element found`). Use VNC keyboard input instead:
 
 ```sh
 # Triple-click focuses AND selects. Single-click is unreliable.
-$GV input click --vm $ID --count 3 <screen-x> <screen-y>
-$GV input type --vm $ID "new value"
-$GV input key --vm $ID return
+$TA_BIN input click --vm $ID --count 3 <screen-x> <screen-y>
+$TA_BIN input type --vm $ID "new value"
+$TA_BIN input key --vm $ID return
 ```
 
 **`--window` coord offset on Tahoe.** The `--window <name>` flag on
@@ -772,13 +773,13 @@ from a full-screen screenshot.
 **Long-running installs need detach.** `brew install minimal-racket`
 takes ~5 minutes on Tahoe. Without `nohup ... > /tmp/x.log 2>&1 &`,
 the spawning shell ends with the HTTP call and the child is killed.
-Poll via `until $GV exec --vm $ID "test -x /path/to/binary"; do sleep 15; done`.
+Poll via `until $TA_BIN exec --vm $ID "test -x /path/to/binary"; do sleep 15; done`.
 
 **Orphan VMs lose their VNC password.** `tart run --vnc-experimental`
 prints the password once to stdout; a VM started outside `vm-start.sh`
 has no recoverable password. Recovery: `tart stop <id>` then restart
-via `bash scripts/macos/vm-start.sh --id <id>`, which re-clones from
-the golden image.
+via `bash provisioner/scripts/vm-start.sh --id <id>`, which re-clones
+from the golden image.
 
 
 ## AppKit widget quirks

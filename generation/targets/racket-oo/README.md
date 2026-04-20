@@ -26,5 +26,5 @@ widget quirks.
 - `apps/` — sample app implementations
 - `docs/` — user-facing developer documentation
 - `tests/` — Racket-side smoke tests
-- `test-results/` — GUIVisionVMDriver evidence (screenshots, reports)
+- `test-results/` — TestAnyware evidence (screenshots, reports)
 - `lib/` — Swift dylib symlink

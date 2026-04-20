@@ -34,7 +34,7 @@ landed 2026-04-15. Radio-button contract violation fixed (2026-04-16) —
 three phases: type-aware delegates (`#:param-types`), contract cleanup (SEL-as-string,
 `cpointer?` dropped), and app rewrites. All 4 sample apps (`hello-window`, `counter`,
 `ui-controls-gallery`, `file-lister`) carry zero `ffi/unsafe` imports and are
-VM-validated via GUIVisionVMDriver. Runtime additions: `borrow-objc-object`,
+VM-validated via TestAnyware. Runtime additions: `borrow-objc-object`,
 `objc-autorelease`, `->string`. Object param contracts always include `#f` (nil
 messaging is always a no-op). `make-delegate` returns `borrow-objc-object`.
 SEL-typed property setters wrap value with `sel_registerName`.
@@ -49,7 +49,7 @@ Drawing Canvas landed 2026-04-17 —
 dynamic NSView subclass with drawRect/mouseDown/mouseDragged/mouseUp overrides
 via `make-dynamic-subclass`, per-stroke CGContext rendering with round caps,
 NSColorPanel with continuous target-action, line-width NSSlider, Clear button;
-VM-validated end-to-end via GUIVisionVMDriver. First app using
+VM-validated end-to-end via TestAnyware. First app using
 `make-dynamic-subclass` for more than one override. Bundle IDs switched
 project-wide from `com.apianyware.*` to `com.linkuistics.*`.
 `cf-bridge.rkt` landed (2026-04-16) — CFString/CFNumber/CFBoolean/CFArray/CFDictionary

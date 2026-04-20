@@ -182,7 +182,7 @@ Variadic and inline functions are skipped — they can't be bound via `get-ffi-o
 - VirtioFS shared filesystem can serve stale files — use base64 transfer or restart VM
 - Always `pkill -9 -f racket` before relaunching apps
 - Racket module compilation very slow on first run (~5+ min); cached in `compiled/`
-- GUIVisionVMDriver agent `exec` is reliable for long-running commands (wedge fixed 2026-04-17). The `timedOut: true` response field signals a deadline-expired run — distinct from a non-zero exit code; the underlying command keeps running in the VM, so poll for completion rather than switching tools. **Do not use SSH** — `exec` is the right tool.
+- TestAnyware agent `exec` is reliable for long-running commands (wedge fixed 2026-04-17). The `timedOut: true` response field signals a deadline-expired run — distinct from a non-zero exit code; the underlying command keeps running in the VM, so poll for completion rather than switching tools. **Do not use SSH** — `exec` is the right tool.
 
 ### Snapshot testing infrastructure
 `load_enriched_framework(name)` in `snapshot_test.rs` generalizes framework loading — adding a new framework is a file list and test function. AppKit suite has 23 curated golden files covering key class hierarchies (NSResponder→NSView→NSControl→NSButton, NSWindow, table view, menus, text, layout). Rich classes like NSButton and NSWindow exercise more typed message send variants and geometry struct handling than Foundation classes.
@@ -272,23 +272,23 @@ Create `apps/<name>/<name>.rkt` and `knowledge/apps/<name>/spec.md` with `# <Dis
 `as-id` in `runtime/objc-base.rkt` must `(cast ... _pointer _id)` in both the `objc-object?` and `cpointer?` branches. If the `objc-object?` branch returns the raw pointer instead, callers passing a wrapped object to `tell` get `id->C: argument is not 'id' pointer`.
 
 ### Accessibility menu drill-down needs a mouse click
-`guivision agent snapshot --window "Menu Bar"` only surfaces the top-level menu items (Apple, app-name). The submenu is not in the accessibility tree until the menu opens. To verify the full menu content, click the menu title via VNC (`guivision input click --connect spec.json X Y`) then `screenshot` the region. The agent's `press --role menu-item --label "Counter"` query returns `No element found matching query` because accessibility doesn't treat menu bar items as directly-pressable in the default snapshot mode.
+`testanyware agent snapshot --window "Menu Bar"` only surfaces the top-level menu items (Apple, app-name). The submenu is not in the accessibility tree until the menu opens. To verify the full menu content, click the menu title via VNC (`testanyware input click --connect spec.json X Y`) then `screenshot` the region. The agent's `press --role menu-item --label "Counter"` query returns `No element found matching query` because accessibility doesn't treat menu bar items as directly-pressable in the default snapshot mode.
 
-### GUIVisionVMDriver uses per-VM connection spec
-`vm-start.sh` writes a per-VM spec to `$XDG_STATE_HOME/guivision/vms/<id>.json`
-(default: `~/.local/state/guivision/vms/<id>.json`), enabling multiple concurrent VMs
+### TestAnyware uses per-VM connection spec
+`vm-start.sh` writes a per-VM spec to `$XDG_STATE_HOME/testanyware/vms/<id>.json`
+(default: `~/.local/state/testanyware/vms/<id>.json`), enabling multiple concurrent VMs
 with distinct ids. `vm-start.sh` prints the VM id on stdout (so `ID=$(vm-start.sh ...)`
-captures it). Auto-generated id is `guivision-<hex>` unless `--id <name>` is passed.
+captures it). Auto-generated id is `testanyware-<hex>` unless `--id <name>` is passed.
 
 CLI resolution order (highest priority first):
   1. `--connect <path>` — explicit spec file
-  2. `--vm <id>` — resolves via `$XDG_STATE_HOME/guivision/vms/<id>.json`
+  2. `--vm <id>` — resolves via `$XDG_STATE_HOME/testanyware/vms/<id>.json`
   3. `--vnc`/`--agent`/`--platform` explicit flags
-  4. `GUIVISION_VM_ID` env var
-  5. `GUIVISION_VNC`/`GUIVISION_VNC_PASSWORD`/`GUIVISION_AGENT` env vars
+  4. `TESTANYWARE_VM_ID` env var
+  5. `TESTANYWARE_VNC`/`TESTANYWARE_VNC_PASSWORD`/`TESTANYWARE_AGENT` env vars
 
-Use `--vm <id>` or `GUIVISION_VM_ID=<id>` and thread it through `Bash` calls — no
-manual `/tmp/gv_*` file-copying. `vm-stop.sh <id>` tears down a specific VM.
+Use `--vm <id>` or `TESTANYWARE_VM_ID=<id>` and thread it through `Bash` calls — no
+manual `/tmp/ta_*` file-copying. `vm-stop.sh <id>` tears down a specific VM.
 
 ### Auto-terminating Cocoa-loop test pattern
 Tests entering `nsapplication-run` need a structured exit to avoid hanging the test runner:
@@ -404,10 +404,10 @@ Sign the stub binary before copying `Resources/` (first pass), then re-sign the 
 `plist::to_file_xml` output is not byte-identical to Apple's `PlistBuddy`. `merge_info_plist_overrides` in `bundle-racket-oo` skips the read-modify-write cycle entirely when `info_plist_overrides` is empty to avoid spurious diffs.
 
 ### Accessibility set-value fails for NSStackView-hosted textfields
-The GUIVisionVMDriver accessibility agent's set-value path cannot reach textfields nested inside `NSStackView` containers. VNC keyboard input is the correct path for address-bar interaction tests. Concrete symptoms on Tahoe: `set-value --role textfield --window ...` returns `Multiple elements matched`; retrying with `--index 0` returns `No element found matching query`. Use `input click` (screen-absolute coords, triple-click for select-all) followed by `input type` + `input key return`.
+The TestAnyware accessibility agent's set-value path cannot reach textfields nested inside `NSStackView` containers. VNC keyboard input is the correct path for address-bar interaction tests. Concrete symptoms on Tahoe: `set-value --role textfield --window ...` returns `Multiple elements matched`; retrying with `--index 0` returns `No element found matching query`. Use `input click` (screen-absolute coords, triple-click for select-all) followed by `input type` + `input key return`.
 
-### `guivision input click --window` coord offset on Tahoe
-The `--window <name>` flag on `guivision input click` translates window-relative coords via the AX-reported window origin, which includes the window's drop-shadow inset. On Tahoe this produces VNC click coords roughly 40 px below the intended target. Use screen-absolute VNC coords derived from a full-screen screenshot, not `--window`-relative.
+### `testanyware input click --window` coord offset on Tahoe
+The `--window <name>` flag on `testanyware input click` translates window-relative coords via the AX-reported window origin, which includes the window's drop-shadow inset. On Tahoe this produces VNC click coords roughly 40 px below the intended target. Use screen-absolute VNC coords derived from a full-screen screenshot, not `--window`-relative.
 
 ### Triple-click focuses and selects NSStackView-hosted NSTextField
 A single VNC click at the center of an NSStackView-hosted NSTextField does NOT always grant first-responder. Triple-click at the same coords reliably focuses AND selects the field contents. Subsequent `input type` replaces the selection. Pattern for URL-bar-style interaction:
@@ -420,7 +420,7 @@ No Cmd+A step needed.
 `tart run --vnc-experimental` generates a random VNC password printed once to stdout. If the VM was started outside `scripts/macos/vm-start.sh`, the password is lost when the starting shell closes — it is not in `~/.tart/vms/<id>/config.json`. Recovery: `tart stop <id>` and restart via `bash scripts/macos/vm-start.sh --id <id>`, which re-clones from the golden image (any installed tooling inside the clone is lost and must be reinstalled).
 
 ### Detached install pattern under agent exec
-Long-running installs (`brew install minimal-racket`, ~5 min on Tahoe) should be launched via `nohup ... > /tmp/x.log 2>&1 &` through `guivision exec`, then polled for completion. If the command is NOT detached, the spawning shell ends with the HTTP call and the child is killed. Poll via `until $GV exec --vm $ID "test -x /path/to/binary" 2>/dev/null | grep -q DONE; do sleep 15; done` from the host.
+Long-running installs (`brew install minimal-racket`, ~5 min on Tahoe) should be launched via `nohup ... > /tmp/x.log 2>&1 &` through `testanyware exec`, then polled for completion. If the command is NOT detached, the spawning shell ends with the HTTP call and the child is killed. Poll via `until $TA_BIN exec --vm $ID "test -x /path/to/binary" 2>/dev/null | grep -q DONE; do sleep 15; done` from the host.
 
 ### `scan_rkt_string_literals` skips `;`-to-EOL comments
 `scan_rkt_string_literals` in `bundle-racket-oo/src/deps.rs` must skip `;`-to-EOL comments in its state machine. Without this, string literals embedded in doc-comments (e.g. the path `".../runtime/objc-interop.rkt"` appearing in `objc-interop.rkt`'s own header comment) are treated as broken require targets. Two regression tests guard this invariant.

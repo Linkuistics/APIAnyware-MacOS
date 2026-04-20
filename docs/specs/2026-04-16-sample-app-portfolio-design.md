@@ -2,7 +2,7 @@
 
 Redesign of the Racket OO sample app portfolio to maximize API coverage and
 novel pattern exercise, informed by Modaliser-Racket's real-world coverage
-and the availability of LLM-assisted replication + GUIVisionVMDriver for
+and the availability of LLM-assisted replication + TestAnyware for
 automated VM interaction testing.
 
 ## Context
@@ -16,7 +16,7 @@ a feature. Two changes remove that constraint:
    lifecycle, clipboard, CGEvent taps, WKWebView rendering, Accessibility APIs,
    and dynamic ObjC subclasses — superseding the Menu Bar Tool and partially
    overlapping the File Lister's delegate pattern.
-2. **LLMs + GUIVisionVMDriver** automate both app porting (to new language
+2. **LLMs + TestAnyware** automate both app porting (to new language
    targets) and visual verification, so apps can be richer without increasing
    per-language cost.
 
