@@ -105,6 +105,7 @@ analysis in `docs/specs/2026-04-19-racket-oo-class-system-analysis.md`.
 `(self SEL)` prefix auto-inserted; IMPs GC-pinned module-level; `drawing-canvas`
 rewritten as first consumer (70+ lines collapsed to one form); full harness green
 (4/4 runtime load tests, ~85s).
+
 ```
 Language: Racket
 Implementations: Racket (BC or CS)
@@ -113,48 +114,61 @@ Swift dylib: libAPIAnywareRacket.dylib
 Emitter crate: emit-racket-oo
 Runtime location: generation/targets/racket-oo/runtime/
 ```
-## Task Backlog
 
-### Sample Apps
+## Tasks
 
-_(none currently)_
+### Testing Hardening
 
-### Harness & Verification
+**Category:** `harness-and-verification`
+**Status:** not_started
+**Dependencies:** none
 
-#### Testing Hardening
-- **Status:** not_started
-- **Priority:** high
-- **Dependencies:** none
-- **Description:** Four areas under-tested after the milestone:
-  (1) `define-objc-subclass` — only `drawing-canvas` is a consumer; add at least
-  one more test exercising `#:arg-types`/`#:ret-type` overrides and the
-  struct-type encoding parser (nested `{...}` balanced-delimiter case).
-  (2) Default constructor synthesis — `make-<class>` synthesized for ~73% of all
-  classes; add explicit harness checks for NSAlert, NSColorPanel, NSStackView,
-  NSSavePanel, NSOpenPanel (these formerly required the `objc-interop.rkt`
-  escape hatch; confirm they now construct cleanly via `make-<class>`).
-  (3) `LIBRARY_LOAD_CHECKS` coverage audit — identify any runtime files or
-  generated framework files added since the last audit that are missing from
-  the harness; add them. Cross-reference `RUNTIME_FILES` list against
-  `LIBRARY_LOAD_CHECKS` in `runtime_load_test.rs`.
-  (4) CF struct globals gap — `kCFTypeDictionaryKeyCallBacks` et al. are absent
-  from collected IR (known gap in memory.md); decide whether to extend IR
-  extraction or document the `(get-ffi-obj ... _pointer)` workaround as
-  canonical; add a harness canary for whichever path is chosen.
-- **Results:** _pending_
+**Description:**
 
-### Future Work
+**Priority:** high
 
-#### Framework Coverage Deepening
-- **Status:** not_started
-- **Priority:** medium
-- **Dependencies:** none — "at least 2 more sample apps" dependency satisfied
-  (9 apps done: hello-window, counter, ui-controls-gallery, file-lister,
-  drawing-canvas, pdfkit-viewer, scenekit-viewer, mini-browser, note-editor).
-- **Description:** Targeted tests for CoreGraphics, AVFoundation, MapKit beyond
-  what sample apps cover. Scope TBD — may be better defined after app experience
-  reveals which frameworks have surprising emitter edge cases. Note: the runtime
-  load harness already exercises CoreGraphics `functions.rkt` at a shallow level,
-  so this task's focus should be deeper per-framework API exercises (construct
-  values, call functions, check results) rather than mere load checks.
-- **Results:** _pending_
+Four areas under-tested after the milestone:
+(1) `define-objc-subclass` — only `drawing-canvas` is a consumer; add at least
+one more test exercising `#:arg-types`/`#:ret-type` overrides and the
+struct-type encoding parser (nested `{...}` balanced-delimiter case).
+(2) Default constructor synthesis — `make-<class>` synthesized for ~73% of all
+classes; add explicit harness checks for NSAlert, NSColorPanel, NSStackView,
+NSSavePanel, NSOpenPanel (these formerly required the `objc-interop.rkt`
+escape hatch; confirm they now construct cleanly via `make-<class>`).
+(3) `LIBRARY_LOAD_CHECKS` coverage audit — identify any runtime files or
+generated framework files added since the last audit that are missing from
+the harness; add them. Cross-reference `RUNTIME_FILES` list against
+`LIBRARY_LOAD_CHECKS` in `runtime_load_test.rs`.
+(4) CF struct globals gap — `kCFTypeDictionaryKeyCallBacks` et al. are absent
+from collected IR (known gap in memory.md); decide whether to extend IR
+extraction or document the `(get-ffi-obj ... _pointer)` workaround as
+canonical; add a harness canary for whichever path is chosen.
+
+**Results:** _pending_
+
+---
+
+### Framework Coverage Deepening
+
+**Category:** `future-work`
+**Status:** not_started
+**Dependencies:** none
+
+**Description:**
+
+**Priority:** medium
+
+**Dependency context:** "at least 2 more sample apps" dependency satisfied
+(9 apps done: hello-window, counter, ui-controls-gallery, file-lister,
+drawing-canvas, pdfkit-viewer, scenekit-viewer, mini-browser, note-editor).
+
+Targeted tests for CoreGraphics, AVFoundation, MapKit beyond
+what sample apps cover. Scope TBD — may be better defined after app experience
+reveals which frameworks have surprising emitter edge cases. Note: the runtime
+load harness already exercises CoreGraphics `functions.rkt` at a shallow level,
+so this task's focus should be deeper per-framework API exercises (construct
+values, call functions, check results) rather than mere load checks.
+
+**Results:** _pending_
+
+---

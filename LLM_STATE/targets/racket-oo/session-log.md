@@ -1,6 +1,6 @@
 # Session Log
 
-## Pre-history (migrated from milestone 9 learnings)
+### Session 0 (2026-04-11) — Pre-history (migrated from milestone 9 learnings)
 - Racket emitter ports cleanly from POC with three IR type changes: `Enum.enum_type` is `TypeRef` (not `String`), `EnumValue.value` is `i64` (not `String`), Method has `source`/`provenance`/`doc_refs` fields
 - Dylib name: `libAPIAnywareRacket` (not `libanyware_racket`); only `swift-helpers.rkt` references it
 - Generated runtime paths: `../../../runtime/` for class files, `../../../../runtime/` for protocol files
@@ -64,7 +64,7 @@
     trivial (just add a file list and test function)
 - **All tests pass:** 29 crate tests (26 unit + 3 snapshot)
 
-## Session 2025-04-12: Runtime fixes — block nil handling + GCD main-thread dispatch
+### Session 3 (2025-04-12) — Runtime fixes: block nil handling + GCD main-thread dispatch
 - **Tasks completed:**
   1. `make-objc-block` nil handling — when `proc` is `#f`, now returns `(values #f #f)`
      (NULL block pointer + no block-id) instead of wrapping `#f` in a lambda that crashes.
@@ -82,7 +82,7 @@
   - `tests/test-runtime-load.rkt` — updated for 8 modules, main-thread export checks
 - **All tests pass:** 29 Rust crate tests, 64 Racket tests (was 58)
 
-## 2026-04-12 — C-API function emission + contract-based API boundaries
+### Session 4 (2026-04-12) — C-API function emission + contract-based API boundaries
 
 - **Tasks completed:** C-API style emission `[coverage]`, Contract-based API boundaries `[coverage]`
 - **Motivation:** Improve Modaliser-Racket by generating the same style of C function
@@ -110,7 +110,7 @@
   - `generation/crates/emit-racket-oo/tests/golden/oo/main.rkt` — includes functions.rkt
 - **All tests pass:** 48 Racket-OO crate tests (was 29), 64 shared emit tests, 19 CLI tests
 
-## Session: Extend contracts to constants and class wrappers (2026-04-12)
+### Session 5 (2026-04-12) — Extend contracts to constants and class wrappers
 - **Task:** Extend `provide/contract` from `functions.rkt` to `constants.rkt` and class wrappers
 - **Approach:**
   1. Constants: replaced `(provide (except-out (all-defined-out) _fw-lib))` with
@@ -416,7 +416,7 @@
 - **New backlog item candidate** (for triage phase):
   - Delete or fix the loose `apps/hello-window.rkt` stale file (see above).
 
-### Session — 2026-04-13 — Runtime load verification harness
+### Session 9 (2026-04-13) — Runtime load verification harness
 - **Task:** Runtime load verification in test suite. Picked because (a) it
   was the single cross-cutting blocker for ~6 other backlog tasks, (b) the
   recent core sessions (extract-objc internal-linkage filter, extract-swift
@@ -563,7 +563,7 @@
   evidence-vs-source mismatch in one session, both caught by the
   regenerate-or-fail loop the harness now bakes in.
 
-### Session — 2026-04-13 — Audit `void?` / FFI return-type mismatches
+### Session 10 (2026-04-13) — Audit `void?` / FFI return-type mismatches
 - Picked task: "Audit return-type emission for `void?` contract / FFI
   mismatches". The task was promoted out of the larger "Tighten per-class
   method wrapper contracts" item during the 2026-04-12 triage on the

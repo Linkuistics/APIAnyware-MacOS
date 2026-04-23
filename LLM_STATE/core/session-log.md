@@ -83,7 +83,7 @@
   then passed after fix
 - Total: 26 synthetic resolution tests, full workspace green
 
-### Pre-history (migrated from old plan.md)
+### Session 0 (2026-04-11) — Pre-history (migrated from old plan.md)
 - Milestones 1-8 complete: shared types, ObjC/C collection, Swift extraction,
   analysis pipeline (resolve/annotate/enrich), shared emitter framework, test
   infrastructure
@@ -467,7 +467,7 @@
     two extractors independently record their decisions; merge
     reconciles.
 
-### Session — 2026-04-13 — Filter `c:@macro@` preprocessor-macro cursor leaks
+### Session N (2026-04-13) — Filter `c:@macro@` preprocessor-macro cursor leaks
 - **Task framed the producer wrong.** Backlog entry said extract-objc was
   letting `c:@macro@` macros through via its Constant builder. Tracing
   showed the opposite: extract-objc's `extract_constant` is only reachable
@@ -899,7 +899,7 @@
   LLM wrote the "Wrong temporal frame" lesson *during* the wasted cycle, not
   before it.
 - **Design choice: shared-script-with-opt-in-hook.** Modified
-  `~/Development/LLM_CONTEXT/run-backlog-plan.sh` to add a generic pre-work
+  `~/Development/Ravel-Lite/` runner to add a generic pre-work
   bootstrap: if `<plan-dir>/pre-work.sh` exists and is executable, run it
   from the project root before launching the work-phase claude session.
   Hook failure aborts the cycle. Verified that none of the 12 sibling plans
