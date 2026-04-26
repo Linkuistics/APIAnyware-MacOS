@@ -1,0 +1,18 @@
+name: APIAnyware
+slug: apianyware
+tagline: Idiomatic macOS API bindings for every language.
+summary: |
+  APIAnyware extracts, analyzes, and generates native platform API bindings for
+  non-mainstream programming languages — not thin C wrappers, but bindings that
+  feel native to each target language (monadic Haskell, message-passing Smalltalk,
+  modules-and-variants OCaml). APIAnyware-MacOS covers the full macOS API surface
+  (218 ObjC frameworks, 151 Swift modules) via a three-phase Collection → Analysis
+  → Generation pipeline; sibling projects for Linux and Windows are planned.
+
+status: progress
+github_url: https://github.com/Linkuistics/APIAnyware-MacOS
+tags: [language-tools, bindings]
+versioning: tags
+
+platforms: "now: macOS · coming: Linux, Windows"
+card_meta: "Collection → Analysis → Generation pipeline · Datalog + LLM semantic annotation · Full API surface"
