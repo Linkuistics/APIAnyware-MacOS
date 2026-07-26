@@ -35,16 +35,27 @@ Child ordering encodes an evidence-before-decision dependency (`plan-k1` Q4):
 3. `plan-mechanism` — the second grilling: transform engine, template engine, the
    projection model's artifact/derivation status, and the escape hatch. Deliberately **not**
    settled by `plan-k1`.
-4. `write-handoff-doc` — author `TODO.language-model-transforms.md`.
-5. `review-handoff-doc` — fresh-context adversarial read of the sole deliverable.
+4. `escape-hatch-closure-check` — the paper check that turns `plan-mechanism` Q1's
+   *provisional* closure of the M1–M5 repertoire into an assertion or a named open problem
+   (k3 §10.1, "the highest-value remaining paper exercise").
+5. `alien-target-meta-schema-check` — the paper check of Q3's shared meta-schema against the
+   most alien planned target, Prolog or Idris2 (k3 §10.4). Targets the one failure mode with
+   a documented precedent: wit-bindgen's interpreted targets forked rather than conform.
+6. `write-handoff-doc` — author `TODO.language-model-transforms.md`.
+7. `review-handoff-doc` — fresh-context adversarial read of the sole deliverable.
 
 (1) before (2) is the one non-obvious ordering: `driving.md` says the leveraged move in a
 research brief is naming the downstream questions, and the audit is what produces them.
+(4) and (5) sit after (3) because both check decisions (3) makes, and before (6) because the
+handoff doc carries their findings rather than deferring them to the build grove.
 
-## Settled design (`plan-k1`, 2026-07-26)
+## Settled design (`plan-k1` + `plan-mechanism-k4`, 2026-07-26)
 
 Recorded here because Q6 keeps it out of `CONTEXT.md` and `adr/` until a build grove commits
-to it. The running log with rejected options and rationale is in `01-DONE-plan-k1.md`.
+to it. The running logs with rejected options and rationale are in `01-DONE-plan-k1.md`
+(architecture) and `04-plan-mechanism-k4.md` (mechanism).
+
+**Architecture.**
 
 - **Q1 — the transform produces an instance-level model.** One node per emitted thing
   (compilation unit, callable, parameter, type reference, …), per target×platform. Being
@@ -58,16 +69,51 @@ to it. The running log with rejected options and rationale is in `01-DONE-plan-k
   layer, and the two names would sit one adjective apart.
 - **Q3 — the construct vocabulary is authored per target over a shared meta-schema.**
   `targets/_shared` owns the meta-schema and engines; each target authors its own construct
-  repertoire. This keeps the design inside ADR-0011 with **no rework**: ADR-0011 permits
-  shared *mechanism* and forbids shared target *semantics*; ADR-0044 confirms hermetic
-  isolation "governs runtime/output, not emitter code". A single closed vocabulary spanning
-  Haskell/Idris2/Prolog/Pharo/Zig would be the lowest-common-denominator straitjacket
-  ADR-0011 rejected by name.
-- **The leverage is *form*, not cross-target reuse.** Rules and templates are per-target
-  semantics and stay per-target. The gain is declarative rules + templates in place of
-  ~14k LOC of imperative Rust per target, provenance from the derivation trace, and a
-  reviewable model as the diff surface. Any argument of the shape "and then all targets can
-  share X" contradicts Q3 and must say so explicitly.
+  repertoire, as authored `.apiw` **data** read at generation time — not as loadable rules.
+  This keeps the design inside ADR-0011 with **no rework**, and leaves ADR-0047 untouched:
+  ADR-0011 permits shared *mechanism* and forbids shared target *semantics*; ADR-0044
+  confirms hermetic isolation "governs runtime/output, not emitter code". A single closed
+  vocabulary spanning Haskell/Idris2/Prolog/Pharo/Zig would be the lowest-common-denominator
+  straitjacket ADR-0011 rejected by name. **Two qualifications, both from k3:** facts about
+  the *Swift adapter's compiler* are not per-target data at all — `KNOWN_UNBINDABLE` is
+  byte-identical in four emitters because the rejecting compiler is the same compiler, and
+  belongs in a shared authored layer keyed by declaration identity, once (k3 §9 Q14). And Q3
+  is a *target-side* commitment, the category with no successful alien-paradigm precedent in
+  the survey (k3 §9 Q12) — `alien-target-meta-schema-check-k8` tests it before any pilot.
+
+**Mechanism.**
+
+- **The escape hatch is the closed five-mechanism repertoire M1–M5** — authored declarative
+  data keyed by path or declaration identity; a host function in a transform pass whose
+  result becomes a model field; an imperative pass staged between declarative ones; a named
+  insertion point in emitted text; a data-dependent output file list. M1 splits by keying
+  (type-keyed vs declaration-keyed) from day one. A general-purpose expression language
+  inside the rule engine is the named anti-pattern. Closure is **provisional** pending
+  `escape-hatch-closure-check-k7`.
+- **The transform is typed Rust node-to-node passes**, separate node types per stage, with
+  `ascent` admitted as *one* pass kind for genuinely relation-shaped derivations — not as the
+  engine. No surveyed system uses a rule engine for the projection transform.
+- **The projection model is derived and uncommitted**, dumpable per stage and diffable per
+  pass. Model *goldens* are committed at fixture scale only.
+- **Templates are Askama, as external per-target files**, under a **computation-free,
+  branching-allowed** contract with uniffi's display-concern exception.
+- **Scope is binding source + Swift adapter sources + doc comments in generated source.**
+  Standalone `.md` docs stay authored prose.
+- **The bar is golden-INTENTIONAL, not equivalence**: every output diff is either on a
+  pre-enumerated deviation list or it is a regression. Proved by a four-layer stack whose
+  primary instrument is per-stage model diffing — which is also chez's answer.
+
+**The leverage is *form*, and the mass argument is secondary.** Rules, templates and
+repertoires are per-target semantics and stay per-target. The gain is declarative authored
+data plus templates in place of imperative Rust, provenance from the derivation trace, a
+reviewable model as the diff surface, the end of the sixth-emitter tax, and a generator a
+target expert can edit without reading Rust. **The mass gain is real but modest and must be
+stated as such:** at the prior art's measured ~40% escape-hatch share, 37,287 production
+lines fall to ~14,900 — a **2.5×** reduction, not the 4.3–6.3× k2 §8 estimated — and with
+test mass (49.2% of the headline) unquantified here and silent in the entire prior art, the
+honest headline is **71,719 → ~50,200 lines of Rust**, roughly 30%. Any argument of the shape
+"and then all targets can share X" contradicts Q3 and must say so explicitly; any argument
+that sells the re-cut on mass or on templating contradicts the evidence.
 
 ## Pointers
 
@@ -104,22 +150,35 @@ Repo conventions that override grove defaults:
 
 ## On the horizon
 
-- Whether the build grove is one grove per target or one grove for the pilot plus four
-  migrations is a question for the handoff doc to *pose*, not for this grove to answer.
-- `chez` has **no golden/snapshot mechanism at all** (confirmed by
-  `objc-object-type-lowering-golden-review-k107`). Any equivalence proof strategy the
-  handoff doc proposes has to say what chez's proof is, since goldens-as-truth is the
-  repo's usual instrument and chez lacks the instrument.
+- The **test-mass question is unresolved and unresolvable here** — 49.2% of today's 71,719
+  lines is test code, no in-repo evidence says whether rules and templates need fewer tests,
+  and k3 §9 Q11 found *complete silence* in the prior art: no system anywhere reports test
+  mass before and after such a migration. The handoff doc names it as the pilot's primary
+  instrumented measurement rather than pretending to answer it.
+- The five `bundle-*` crates (**9,575 LOC**) were outside `emitter-anatomy-audit-k2`'s
+  subject but are touched by the adapter scope; `bundle-sbcl` has no `bundle.rs` at all,
+  suggesting the bundler surface is at least as divergent as the emitter surface. Classifying
+  them the way k2 classified the emitters is build-grove work the handoff doc should name.
+
+Both horizon items `plan-k1` left here are now answered and have moved into *Settled design*:
+the build grove is a **single-target pilot on racket plus N migrations** (`plan-mechanism-k4`
+Q7), and **chez's equivalence proof is per-stage model diffing** (Q6) — the only technique the
+prior art reports as catching real migration bugs, and the one that needs no goldens.
 
 ## Notes
 
 **Two groves are live in this repo concurrently, isolated by jj workspace:** this one
 (`language-model-transforms`, sitting on `main`) and `APIAnyware.add-ocaml-target` (an
 unmerged head, 27 leaves, ending `dune-generalisation-and-goldens-k27`). Because this grove
-is design-only and touches no shared code, there is **no coordination requirement** — but
-the OCaml grove is actively building a sixth emitter under the *old* architecture, which
-makes it a fresh, well-documented data point for the `emitter-anatomy-audit` leaf, and the
-handoff doc should say whether the build grove absorbs OCaml or leaves it.
+is design-only and touches no shared code, there is **no coordination requirement**, and
+`plan-mechanism-k4` Q7 settled that it stays that way: the build grove **leaves OCaml
+alone**. It lands under the old architecture and migrates as one of the N after the racket
+pilot — redirecting it would discard 15,153 LOC of in-flight work and manufacture a
+coordination dependency that does not exist today, and OCaml is not paradigmatically alien
+enough to be the meta-schema's test case anyway (k3 §10.4: "Prolog or Idris2, **not
+OCaml**"). Meanwhile it keeps supplying the duplication-tax evidence the form argument rests
+on — three of its live leaves are *sister-target* defects shared by all five shipped
+emitters.
 
 **The repo is mid-way through `structural-refactoring`** (`REFACTOR.md`, `TODO.md`) — the
 domain tree is authoritative for where things live, and some prose still names pre-refactor
