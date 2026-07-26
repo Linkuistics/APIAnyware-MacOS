@@ -57,10 +57,16 @@ to it. The running logs with rejected options and rationale are in `01-DONE-plan
 
 **Architecture.**
 
-- **Q1 — the transform produces an instance-level model.** One node per emitted thing
-  (compilation unit, callable, parameter, type reference, …), per target×platform. Being
-  instance-level is what makes templates *sufficient*: every projection decision is resolved
-  before rendering, so the renderer only renders.
+- **Q1 — the transform produces an instance-level model.** One node per emitted thing, per
+  target×platform. Being instance-level is what makes templates *sufficient*: every projection
+  decision is resolved before rendering, so the renderer only renders. **The node kinds are the
+  target's, not the shared layer's.** Q1 originally enumerated them as "compilation unit,
+  callable, parameter, type reference" — which is a Racket binding's anatomy promoted to a shared
+  vocabulary, and three of the four have no counterpart in a Prolog binding: no compilation unit
+  in the language's sense, no callable in the params-in/result-out sense, and no type reference
+  anywhere in the emitted source at all (`alien-target-meta-schema-check-k8`,
+  `targets/_shared/docs/research/2026-07-27-alien-target-meta-schema-check.md` §3). Those four are
+  repertoire members racket authors.
 - **Q2 — that model is the `projection model`.** `CONTEXT.md` already calls `semantic/` the
   "projection-**independent** semantic model", and ADR-0044 already names the shared `emit`
   crate "the shared **projection** substrate" — so this is the model that substrate
@@ -70,16 +76,42 @@ to it. The running logs with rejected options and rationale are in `01-DONE-plan
 - **Q3 — the construct vocabulary is authored per target over a shared meta-schema.**
   `targets/_shared` owns the meta-schema and engines; each target authors its own construct
   repertoire, as authored `.apiw` **data** read at generation time — not as loadable rules.
+  **The meta-schema is the *declaration form*** — how a target declares a construct, its slots and
+  their types — and it names **no target-language construct token**; that reading is what the
+  alien check tested and is the only reading that survives it.
   This keeps the design inside ADR-0011 with **no rework**, and leaves ADR-0047 untouched:
   ADR-0011 permits shared *mechanism* and forbids shared target *semantics*; ADR-0044
   confirms hermetic isolation "governs runtime/output, not emitter code". A single closed
   vocabulary spanning Haskell/Idris2/Prolog/Pharo/Zig would be the lowest-common-denominator
-  straitjacket ADR-0011 rejected by name. **Two qualifications, both from k3:** facts about
+  straitjacket ADR-0011 rejected by name. **Three qualifications.** (i) Facts about
   the *Swift adapter's compiler* are not per-target data at all — `KNOWN_UNBINDABLE` is
   byte-identical in four emitters because the rejecting compiler is the same compiler, and
-  belongs in a shared authored layer keyed by declaration identity, once (k3 §9 Q14). And Q3
+  belongs in a shared authored layer keyed by declaration identity, once (k3 §9 Q14). (ii) Q3
   is a *target-side* commitment, the category with no successful alien-paradigm precedent in
-  the survey (k3 §9 Q12) — `alien-target-meta-schema-check-k8` tests it before any pilot.
+  the survey (k3 §9 Q12). (iii) **Q3 holds against the alien case**
+  (`alien-target-meta-schema-check-k8`,
+  `targets/_shared/docs/research/2026-07-27-alien-target-meta-schema-check.md`): SWI-Prolog's
+  construct set — 33 constructs, with Mercury as the type-restored control — is fully expressible
+  as authored data, subject to **five amendments** the handoff doc must carry (a structured
+  identifier, not a string; zero type refs and non-type qualifiers such as mode / determinism /
+  multiplicity; a construct body that may be another language rendered nestedly; per-construct
+  declaration of whether sibling order is semantic or presentational; and a DAG rather than a
+  tree, which gerbil's `generics.ss` shards already needed). Two consequences below.
+- **Two consequences of the meta-schema check.** (i) **The drift Q12 warned of is already present
+  and measured**, so the build grove inherits it rather than risking it. k2 §6.3 measured half:
+  143 of the 263 production lines of `targets/_shared/tools/emit/src/ffi_type_mapping.rs` are
+  **racket's vocabulary**. k8 adds the other half: chez / gerbil / sbcl / typescript each implement
+  the shared `FfiTypeMapper` trait **in their own crate** (233 / 409 / 170 / 400 production lines)
+  and none imports the shared mappers — they **forked** rather than conform, which is wit-bindgen's
+  §2.6 shape in miniature, at target count five, with no paradigm boundary crossed. The check
+  proposes a **deletion test** as a build-time lint: a `_shared` artifact is legitimate if deleting
+  any single target would not shrink it. (ii) **The nucleus must be inverted, not extended.** `plan-k1` named
+  `emit/pattern_dispatch` the nucleus; its *mechanism* is, but its vocabulary — `EmitConstruct`, a
+  closed seven-variant enum in `targets/_shared` mirrored as a schema `enum` at
+  `schemas/spec-format/idioms.kdl-schema:127` — **is the option Q3 rejected**. Widening it to "the
+  target language's full construct repertoire" (Q1) changes the artifact's category, and at that
+  category the taxonomy has to leave `targets/_shared`. That is a change to shipped ws6 artifacts
+  (`CONTEXT.md` §ws6 D3) and is build-grove work.
 
 **Mechanism.**
 
