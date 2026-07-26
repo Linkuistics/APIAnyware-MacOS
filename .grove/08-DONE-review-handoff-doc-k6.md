@@ -68,3 +68,38 @@ cycle applies: propose promotion + `.grove/` deletion, **wait for explicit human
 then `grove-llm complete --done`. Note the asymmetry this grove creates — the handoff doc and the
 two research docs are the durable outputs and they already live outside `.grove/`, so promotion
 should be close to a no-op. Verify that rather than assuming it.
+
+## Findings (2026-07-27, one pass — reconciled with the human, all dispositions accepted)
+
+Verification record: every §9 number reproduces exactly (71,719 / 4,092 / 1,491·24 / 9,575 /
+153 / 2,413 / ADR-0061 / `.gitignore:10-11`); ADR-0011, ADR-0044 (×2) and ADR-0047 quotations
+verbatim and in the cited sections; all spot-checked file:line citations exact
+(`model.rs:86`, `model.rs:103-120` seven-variant enum, `idioms.kdl-schema:127`,
+`emit_framework.rs:49-152`, `emit_generics.rs:148`); the `KNOWN_UNBINDABLE` md5 re-derived
+independently — `4b78965e…` ×4, 51 entries; research docs at the exact cited line counts
+(918/2009/727/789); k2/k3/k7 claims traced (226 deprecated, getter renames, 1,834/20 docs,
+nine CLI passes, 51/17 frameworks); zero `.grove` references in the doc; wit-bindgen issue
+#1265 exists.
+
+Ranked most-severe first; each became a doc fix unless noted:
+
+1. **§5.8.1 — the strongest counter-argument was raised but not answered.** Fleet-stall
+   risk (uniffi's successful Python pilot, stalled fleet) vs a kill criterion that only gates
+   the pilot. Fixed: §5.8.1 now names the gap, states the structural limit (migrations are
+   independent, not sequential; a stall is a bounded cost, not a broken pipeline) and records
+   the residual two-architecture carry as an openly accepted trade-off.
+2. **§0 — "seven ⚠ corrections" vs 38 actual ⚠ flags.** Unverifiable promise. Fixed: count
+   dropped; the load-bearing corrections enumerated by section.
+3. **§2.1 — two CONTEXT.md quotations not verbatim.** "projection-independent semantic model"
+   appears nowhere in CONTEXT.md (which has "projection-independent source semantics" and never
+   the string "semantic model"); the §45.10 quote paraphrased "here" as "`targets/`". Fixed:
+   both quote the actual text.
+4. **§5.1 — kill criterion carried none of its rejected alternatives** (k4 recorded three:
+   the 15–40% bracket, flat 40% uncalibrated, holding 10–20%). Fixed: restored. Also: §4.4's
+   decode table mapped k1 to "§2, §3.2–§3.4" but k1's Q5/Q6 charter content landed in §1.2/§2.4
+   — mapping widened.
+5. **§3.4(a) — `ffi_type_mapping.rs` cited as 1,071 lines; actual 1,070.** Fixed.
+6. **Noise, noted:** k1's GIR transfer-ownership "weakest facet" observation is not carried;
+   the substance is one hop away in k3 §4 (ownership facet), which the doc cites. No change.
+
+One pass sufficed — nothing severe; the doc's numbers, ADR readings and evidence chain held up.

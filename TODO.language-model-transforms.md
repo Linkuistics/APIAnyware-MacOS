@@ -18,7 +18,12 @@ dated research documents under `targets/_shared/docs/research/`, cited by path
 > owed, and a proposed shape — the last being a proposal the build grove may reject.
 >
 > Claims that **correct or contradict** something an earlier stage of this investigation asserted
-> are flagged ⚠ where they appear. There are seven of them and they are not cosmetic.
+> are flagged ⚠ where they appear. The flag also marks caveats and re-check reminders, but the
+> corrections are the load-bearing ones — several reverse claims earlier stages asserted as
+> settled (the honest headline in §0; the A1 restatement in §3.2; the MS-B rejection, the measured
+> drift and the nucleus inversion in §3.4; the ADR-0047 dissolution in §3.5; layer 0 promoted to
+> load-bearing in §3.9; M4's zero-site finding in §3.10). Read them before trusting any summary of
+> this document, this one included.
 
 ---
 
@@ -135,12 +140,14 @@ them there when it builds.
 platform.** Being instance-level is what makes templates *sufficient*: every projection decision is
 resolved before rendering, so the renderer only renders.
 
-- **Why this name.** `CONTEXT.md` already calls `semantic/` the "projection-**independent**
-  semantic model", so this is its projected counterpart in vocabulary the repo already has; and
+- **Why this name.** `CONTEXT.md` already describes `semantic/` as projection-independent
+  ("projection-independent source semantics"), so this is its projected counterpart in vocabulary
+  the repo already has; and
   ADR-0044 independently names the shared `emit` crate "the shared **projection** substrate",
-  making the projection model the model that substrate produces. "Projection" also already carries
-  the placement rule (`CONTEXT.md` §45.10, *"projection lives in `targets/`, never `platforms/`"*),
-  so the name answers *where it belongs* for free.
+  making the projection model the model that substrate produces.
+  "Projection" also already carries the placement rule — `CONTEXT.md`'s **Target model** entry
+  states, citing §45.10: *"Projection lives **here**, never in `platforms/`"* ("here" being
+  `targets/<t>/`) — so the name answers *where it belongs* for free.
 - **_Avoid_: "target API model".** It sits one adjective from the existing **target model**
   (ADR-0051, refactor workstream 6), which is the *capability / idiom / policy knowledge* layer —
   i.e. what the projection model is **not**. Using it retroactively ambiguates every brief and ADR
@@ -292,7 +299,7 @@ day one** (`2026-07-27-alien-target-meta-schema-check.md` §4):
 **Two consequences of that check, both build-grove work.**
 
 **(a) ⚠ The drift is already present and measured, so the build grove inherits it rather than
-risking it.** `targets/_shared/tools/emit/src/ffi_type_mapping.rs` is 1,071 lines; lines **118–262**
+risking it.** `targets/_shared/tools/emit/src/ffi_type_mapping.rs` is 1,070 lines; lines **118–262**
 are `RacketFfiTypeMapper` / `RacketFfi2TypeMapper` / `ffi_unsafe_to_ffi2` — **143 of 263 production
 lines are one target's semantics inside the shared substrate**, emitting `_int64`, `_pointer`,
 `_NSRect`. That is half of it. The other half: chez, gerbil, sbcl and typescript each implement the
@@ -727,7 +734,7 @@ as readable files; their content is transcribed into §2, §3 and §6 of this do
 
 | shorthand | is |
 |---|---|
-| `k1` / `plan-k1` | the architecture grilling — **§2, §3.2–§3.4** here |
+| `k1` / `plan-k1` | the architecture grilling — **§1.2, §2, §3.2–§3.4** here |
 | `k2` | `2026-07-26-emitter-anatomy-audit.md` |
 | `k3` | `2026-07-26-model-transform-codegen-prior-art.md` |
 | `k4` / `plan-mechanism-k4` | the mechanism grilling — **§3.5–§3.10** here |
@@ -788,6 +795,12 @@ load-bearing.
 1. **A pre-registered kill criterion**, so the pilot is falsifiable rather than a commitment:
    > **If the pilot's imperative share exceeds ~50%, or exceeds its own pre-pilot estimate by more
    > than 1.5×, the re-cut is not paying for itself.**
+
+   Rejected thresholds, so the criterion is not re-litigated: a 15–40% bracket (too wide to
+   pre-register a meaningful criterion against); a flat 40% without the 1.5× self-calibration
+   (bakes in one system's shape as everyone's); holding the in-repo 10–20% estimate (argues
+   against the survey's strongest evidence, and SWIG's upper-bound caveat cuts the wrong way for
+   that case).
 2. **A longitudinal escape-hatch ratio**, emitted as a build artifact per target per release.
    ⚠ **No surveyed system measures whether its hatch grew**, so the metric has to be ours. It is
    cheap at the start and **impossible to backfill**. (This repo already has four working
@@ -894,7 +907,15 @@ Stated here so the build grove meets it deliberately rather than in month six.
    "not yet implemented", and its old model still in tree. Our five-plus emitters are larger and far
    more divergent. A reasonable engineer can read that as evidence the migration never finishes and
    the repo carries two architectures indefinitely. **The answer this design offers is the pilot
-   plus the kill criterion — not a claim that we would go faster.**
+   plus the kill criterion — not a claim that we would go faster.** Note what that answer does
+   *not* cover: the kill criterion gates the pilot's numbers, but uniffi's failure mode is not a
+   failed pilot — its Python migration *is* the successful pilot, and the fleet stalled anyway.
+   What structurally limits the same stall here is that the proposed migrations are
+   **independent, not sequential**: each target ships under either architecture, migration N does
+   not depend on migration N−1, and a stall leaves a working repo whose unmigrated targets simply
+   keep paying the sixth-emitter tax — a bounded cost, not a broken pipeline. The residual
+   trade-off is accepted openly: a long stall means carrying two architectures for the unmigrated
+   targets, and nothing in this design evidences that we would go faster than uniffi.
 2. **wit-bindgen chose imperative generators for eight backends and does not appear to regret it.**
    The rebuttal is regime (12.2% vs ~40% text payload) — but note ⚠ **no primary source shows they
    ever considered and rejected templates**, which cuts both ways: it weakens them as counter-
