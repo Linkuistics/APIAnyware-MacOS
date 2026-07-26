@@ -88,8 +88,28 @@ to it. The running logs with rejected options and rationale are in `01-DONE-plan
   result becomes a model field; an imperative pass staged between declarative ones; a named
   insertion point in emitted text; a data-dependent output file list. M1 splits by keying
   (type-keyed vs declaration-keyed) from day one. A general-purpose expression language
-  inside the rule engine is the named anti-pattern. Closure is **provisional** pending
-  `escape-hatch-closure-check-k7`.
+  inside the rule engine is the named anti-pattern. **Closure is settled**
+  (`escape-hatch-closure-check-k7`, `targets/_shared/docs/research/2026-07-27-escape-hatch-closure-check.md`):
+  every site maps in, no sixth mechanism is needed, and the risk is **retired to
+  engineering** — subject to three amendments the handoff doc must carry. **M1 has a second
+  mode** the definition omits: authored *tables* keyed on the emitted identifier and consumed
+  by a host function (chez's 1,715 builtins, sbcl's `KNOWN_TOKENS`, ts's reserved stems) —
+  so the keying split is three-way, not two. **M5 must be desired-state**, not append-only, or
+  gerbil's stale-shard reclamation is unexpressed. And **M4 has zero sites in this repo** —
+  `CodeWriter` is append-only, so no deferred region exists; all three candidate sites compute
+  the header in the transform, which is uniffi's stated ideal. Two consequences below.
+- **Two consequences of the closure check, both corrections to `plan-mechanism-k4` Q7.**
+  (i) The racket pilot exercises M1 override- and type-keyed, M2, M3 and M5's *list* form —
+  its file set is data-dependent five ways (`emit-racket/src/emit_framework.rs:49-152`), so
+  Q7's "racket … not M5" is wrong and k2 §5.1 already said so. What racket does **not**
+  exercise is M1's table mode, M5's *reconcile* form (gerbil's E6 alone), and M4 (nothing does)
+  — those three need paper coverage, not discovery at migration four. Q7's ground (ii) for
+  picking racket — "the repo's only clean M4 site" — does not hold; the other three grounds do,
+  and the pick stands on them. (ii) **The escapes are sparse and framework-specific** —
+  E1's 51 entries span 17 frameworks and neither AppKit nor Foundation is one — so a pilot
+  scoped to a framework subset would measure an escape-hatch share near zero. The pilot must
+  run the full 153-family corpus, which promotes Q6 layer 0 (materialise `resolved.kdl`) from
+  prerequisite to load-bearing.
 - **The transform is typed Rust node-to-node passes**, separate node types per stage, with
   `ascent` admitted as *one* pass kind for genuinely relation-shaped derivations — not as the
   engine. No surveyed system uses a rule engine for the projection transform.
