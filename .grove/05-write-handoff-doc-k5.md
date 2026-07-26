@@ -44,6 +44,22 @@ Beyond the brief chain:
    first-order risk and must be named as such, with what evidence would settle it. Also: the
    ADR-0047 compile-time-rules vs per-target-authored-rules tension; the chez no-goldens gap;
    the TypeScript outlier.
+
+   **Three risks `emitter-anatomy-audit-k2` added that this list predates** — take them from
+   `2026-07-26-emitter-anatomy-audit.md`, not from the wording above:
+   - **The test mass, not the code mass, is the unmeasured risk.** 49.2% of the 71,719 LOC is
+     test code (§1.1); production is 36,421. Whether rules + templates need fewer, the same, or
+     more tests is unknown and no in-repo evidence bears on it (§8). This outranks the LOC
+     argument.
+   - **The goldens gap is five targets, not one.** Four of five corpus snapshot tests silently
+     take a `SKIPPED` path because `resolved.kdl` is gitignored and absent; chez has no snapshot
+     target; the only goldens that run are a synthetic 5-class `TestKit` (§5.3). Rewrite the
+     "chez no-goldens gap" bullet accordingly — the instrument is inert by default everywhere.
+   - **The authored target model is unwired from generation.** No `emit-*` crate depends on
+     `apianyware-target-model`; the 1,491 lines of `.apiw` (ADR-0051) have zero emitter readers
+     and TypeScript has no target model at all (§4.2). A transform reading authored per-target
+     vocabulary (root brief Q3) would be the *first* generation-side consumer — a wiring cost and
+     a staleness question the design has not priced.
 6. **Open questions** — everything `k4` could not settle, with what would settle each.
 7. **ADR work the build grove owes** — which ADRs it will need to mint (next free number **0062**)
    and, critically, which existing ADRs it must **rework in place** rather than supersede.
